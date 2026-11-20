@@ -63,6 +63,8 @@ let forfeited = 0, reconnected = false, timerChecked = false, g1Winner = -1;
 let bRef = b;
 for (let game = 1; a.state.phase !== 'complete'; game++) {
   assert.ok(game <= 6, 'series must finish');
+  // Wait for the fresh round: stale calls from the previous game must not unblock the flip.
+  await until(() => a.state.phase === 'calls' && a.state.calls.every(c => !c), 'fresh round');
   a.send({ type: 'call', side: 'heads' }); bRef.send({ type: 'call', side: 'tails' });
   await until(() => a.state.calls.every(Boolean), 'calls');
   a.send({ type: 'flip' }); await until(() => a.state.phase === 'spin', 'flip');
@@ -115,7 +117,7 @@ for (let game = 1; a.state.phase !== 'complete'; game++) {
   if (game === 2) assert.equal(last.winner, 1 - g1Winner, 'forfeit gives the game to the other seat');
   if (game === 3) assert.equal(last.winner, 0, 'B forfeited the decider');
   console.log(`game ${game}: ${a.state.phase} winner=${last ? ['Ana', 'Beto'][last.winner] : 'draw'} turns=${last?.turns} choices a=${a.choices} b=${bRef.choices}`);
-  if (a.state.phase === 'between') { a.send({ type: 'next' }); await until(() => a.state.phase === 'calls', 'next'); }
+  if (a.state.phase === 'between') { a.send({ type: 'next' }); await until(() => a.state.phase === 'calls' && a.state.calls.every(c => !c), 'next'); }
   a.request = null; bRef.request = null;
 }
 assert.equal(a.state.phase, 'complete');
