@@ -14,7 +14,7 @@ export class Atmosphere {
   constructor(shafts: boolean) {
     this.shaftMat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color('#9fb8ff') }, uIntensity: { value: 0.13 } },
+      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color('#5b5fc4') }, uIntensity: { value: 0.045 } },
       vertexShader: /* glsl */`varying vec2 vUv; varying vec3 vN; varying vec3 vV;
         void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
       fragmentShader: /* glsl */`uniform float uTime, uIntensity; uniform vec3 uColor; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
@@ -40,7 +40,7 @@ export class Atmosphere {
 
     this.mistMat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false,
-      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color('#6b5cff') } },
+      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color('#2e2370') } },
       vertexShader: /* glsl */`varying vec3 vW; void main() { vW = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.0); }`,
       fragmentShader: /* glsl */`uniform float uTime; uniform vec3 uColor; varying vec3 vW;
         float n(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }

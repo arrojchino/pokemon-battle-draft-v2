@@ -51,7 +51,7 @@ export class Petals {
           float notch = smoothstep(0.0, 0.12, length(vec2(p.x - 0.95, p.y * 2.6)));
           float a = body * notch;
           if (a < 0.05) discard;
-          vec3 col = mix(vec3(0.98, 0.55, 0.72), vec3(1.0, 0.82, 0.9), vUv.x) * vShade * 0.8;
+          vec3 col = mix(vec3(0.85, 0.38, 0.55), vec3(0.95, 0.65, 0.78), vUv.x) * vShade * 0.6;
           gl_FragColor = vec4(col, a * 0.92);
           #include <fog_fragment>
         }`,

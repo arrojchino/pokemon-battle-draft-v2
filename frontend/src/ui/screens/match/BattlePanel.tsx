@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { teamImport, type GameAction, type PublicRoom } from '@shared';
 import { characterById } from '../../../characters/roster.js';
 import { settings, useSettings } from '../../../app/settings.js';
-import { FORMATS, SHOWDOWN_URL, challengeCommand, cleanShowdownName, openPokePaste, ouProblems } from '../../../showdown/handoff.js';
-import { CopyButton, Icon, Modal } from '../../primitives.js';
+import { FORMATS, SHOWDOWN_URL, TEAMBUILDER_URL, challengeCommand, cleanShowdownName, copyText, openPokePaste, ouProblems } from '../../../showdown/handoff.js';
+import { CopyButton, Icon, Modal, toast } from '../../primitives.js';
 import { PokemonCard } from '../../pokemon.js';
 import { ResultReport, TeamStrip } from './Panels.js';
 import type { MatchModel } from './model.js';
@@ -32,8 +32,12 @@ export function BattlePanel({ room, m, act }: { room: PublicRoom; m: MatchModel;
         <p className="eyebrow"><span className="jp">ショーダウン</span> Take it to Showdown</p>
         <ol className="steps">
           <li>
-            <div><strong>Copy your team</strong><span>Showdown's Teambuilder → New Team → Import from text → paste → Save.</span></div>
-            <CopyButton className="btn btn--primary" label="Copy my team" getText={() => teamImport(m.myTeam)} />
+            <div><strong>Copy your team</strong><span>Opens Showdown's Teambuilder with your team on the clipboard: New Team → Import from text → paste → Save.</span></div>
+            <button className="btn btn--primary" onClick={async () => {
+              const ok = await copyText(teamImport(m.myTeam));
+              toast(ok ? 'Team copied. Paste it into Import from text.' : 'Copy was blocked; use Copy my team below.', ok ? 'ok' : 'error');
+              window.open(TEAMBUILDER_URL, 'pab-showdown', 'noopener');
+            }}><Icon name="external" />Copy &amp; open Teambuilder</button>
           </li>
           <li>
             <div><strong>Pick the format</strong><span>{format.note}</span></div>
@@ -52,7 +56,8 @@ export function BattlePanel({ room, m, act }: { room: PublicRoom; m: MatchModel;
           </li>
         </ol>
         <div className="dock__row dock__row--wrap">
-          <a className="btn btn--primary" href={`${SHOWDOWN_URL}teambuilder`} target="_blank" rel="noopener noreferrer"><Icon name="external" />Open Team Builder</a>
+          <CopyButton className="btn" label="Copy my team" getText={() => teamImport(m.myTeam)} />
+          <a className="btn" href={SHOWDOWN_URL} target="_blank" rel="noopener noreferrer"><Icon name="external" />Open Showdown</a>
           <button className="btn" onClick={() => openPokePaste(m.myTeam, `Game ${m.gameNo} · ${m.myName}`, m.myName, format.id)} title="Publishes an open team sheet on pokepast.es in a new tab"><Icon name="link" />Open team sheet (PokePaste)</button>
           <CopyButton className="btn btn--ghost" label="Copy rival's team" getText={() => teamImport(m.oppTeam)} />
         </div>

@@ -53,7 +53,7 @@ URL switches for checking things by hand: `?perf` (diagnostics overlay), `?quali
 2. **Format guidance.** The default is `[Gen 9] Custom Game`, which has no tier bans or clauses beyond Team Preview, so every dealt team is legal. The original build suggested `gen9ou`, but OU's Sleep Moves Clause rejects the pool's Breloom (Spore); the app now warns when OU would reject a dealt team. (Verified against Showdown's `config/formats.ts`.)
 3. **Challenge command:** enter your rival's Showdown name to get a ready `/challenge name, format` line.
 4. **Open team sheet (PokePaste)** publishes an open team sheet on pokepast.es through a normal form POST in a new tab (verified against PokePaste's open-source `/create` handler).
-5. **Direct Team Builder link.** Showdown prints `IN FRAME / Please visit Showdown directly` when framed — an explicit client-side framebust — so there is no embedded client. The app opens `play.pokemonshowdown.com/teambuilder` in a real new tab instead.
+5. **Direct Team Builder link.** Showdown prints `IN FRAME / Please visit Showdown directly` when framed, so the dead iframe was removed; the app opens `play.pokemonshowdown.com/teambuilder` in a real new tab.
 
 Battle results are reported in the app by either player (two-step confirm), as before. Self-hosting a modified Showdown client to get true one-click battles is possible but would make that client subject to AGPL-3.0 source obligations; it is out of scope here.
 

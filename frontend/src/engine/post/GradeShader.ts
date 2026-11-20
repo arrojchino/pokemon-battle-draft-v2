@@ -10,11 +10,11 @@ export const GradeShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
     uTime: { value: 0 },
-    uVignette: { value: 0.32 },
-    uSaturation: { value: 1.08 },
-    uShadowTint: { value: new THREE.Color('#2a3a7a') },
+    uVignette: { value: 0.55 },
+    uSaturation: { value: 1.02 },
+    uShadowTint: { value: new THREE.Color('#1a1f4a') },
     uHighlightTint: { value: new THREE.Color('#ffd9c4') },
-    uSplit: { value: 0.09 },
+    uSplit: { value: 0.07 },
     uFringe: { value: 0.0035 },
     uGrain: { value: 0.025 },
     uFade: { value: 0 },
@@ -32,7 +32,8 @@ export const GradeShader = {
       col = mix(vec3(l), col, uSaturation);
       col += uShadowTint * uSplit * (1.0 - smoothstep(0.0, 0.45, l)) - uSplit * 0.5 * (1.0 - smoothstep(0.0, 0.45, l)) * vec3(0.12);
       col = mix(col, col * uHighlightTint, uSplit * smoothstep(0.55, 1.0, l));
-      col *= 1.0 - uVignette * smoothstep(0.08, 0.55, r2 * 1.6);
+      col = max(col - 0.012, 0.0) * 1.012;
+      col *= 1.0 - uVignette * smoothstep(0.06, 0.55, r2 * 1.6);
       float g = hash(vUv * vec2(1920.0, 1080.0) + fract(uTime * 13.0) * 100.0) - 0.5;
       col += g * uGrain;
       col *= 1.0 - uFade;

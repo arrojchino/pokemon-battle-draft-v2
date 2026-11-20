@@ -7,10 +7,10 @@ export function createSky(): THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMateri
     uniforms: {
       uTime: { value: 0 },
       uMoonDir: { value: new THREE.Vector3(-0.42, 0.36, -0.83).normalize() },
-      uTop: { value: new THREE.Color('#03040c') },
-      uMid: { value: new THREE.Color('#140c2e') },
-      uHorizon: { value: new THREE.Color('#5a1d5e') },
-      uGlow: { value: new THREE.Color('#ff5c8a') },
+      uTop: { value: new THREE.Color('#010104') },
+      uMid: { value: new THREE.Color('#070516') },
+      uHorizon: { value: new THREE.Color('#25092c') },
+      uGlow: { value: new THREE.Color('#a8204f') },
     },
     vertexShader: /* glsl */`
       varying vec3 vDir;

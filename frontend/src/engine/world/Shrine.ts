@@ -10,7 +10,7 @@ export class Shrine {
   private lanternMat: THREE.ShaderMaterial;
 
   constructor() {
-    const vermilion = new THREE.MeshStandardMaterial({ color: '#a3241c', roughness: 0.55, metalness: 0.05, emissive: '#2a0402' });
+    const vermilion = new THREE.MeshStandardMaterial({ color: '#6e1712', roughness: 0.6, metalness: 0.05, emissive: '#140101' });
     const black = new THREE.MeshStandardMaterial({ color: '#0d0b10', roughness: 0.4, metalness: 0.3 });
     const neon = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff4f7a').multiplyScalar(3.2), toneMapped: false, fog: true });
 
@@ -53,9 +53,9 @@ export class Shrine {
           vec2 g = vW.xz / 1.8; vec2 f = abs(fract(g) - 0.5);
           float seam = smoothstep(0.47, 0.5, max(f.x, f.y));
           float t = h21(floor(g));
-          vec3 col = vec3(0.016, 0.017, 0.028) * (0.75 + 0.5 * t) * (1.0 - seam * 0.6);
+          vec3 col = vec3(0.008, 0.008, 0.014) * (0.75 + 0.5 * t) * (1.0 - seam * 0.6);
           // Wet sheen: faint warm glow toward the torii and lanterns.
-          col += uTint * 0.05 * smoothstep(18.0, 0.0, length(vW.xz - vec2(0.0, -11.5))) * (0.6 + 0.4 * t);
+          col += uTint * 0.025 * smoothstep(18.0, 0.0, length(vW.xz - vec2(0.0, -11.5))) * (0.6 + 0.4 * t);
           gl_FragColor = vec4(col, 1.0);
           #include <fog_fragment>
         }`,
@@ -109,7 +109,7 @@ export class Shrine {
           float caps = smoothstep(0.30, 0.33, abs(vP.y));
           float flick = 0.9 + 0.1 * sin(uTime * 7.0 + vSeed * 40.0) * sin(uTime * 3.1 + vSeed * 9.0);
           vec3 warm = mix(vec3(1.0, 0.42, 0.18), vec3(1.0, 0.72, 0.4), 0.5 + 0.5 * vN.y);
-          vec3 col = mix(warm * 2.2 * ribs * flick, vec3(0.04, 0.02, 0.02), caps);
+          vec3 col = mix(warm * 1.6 * ribs * flick, vec3(0.03, 0.015, 0.015), caps);
           gl_FragColor = vec4(col, 1.0);
           #include <fog_fragment>
         }`,

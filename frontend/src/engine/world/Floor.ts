@@ -44,7 +44,7 @@ export class StageFloor {
           // Stone: concentric segmented tiles with tiny tonal variation.
           float band = floor(r / 0.75); float seg = floor((a + 3.14159) / (6.28318 / (8.0 + band * 6.0)));
           float tone = h21(vec2(band, seg));
-          vec3 base = vec3(0.022, 0.024, 0.04) * (0.8 + 0.4 * tone);
+          vec3 base = vec3(0.012, 0.012, 0.02) * (0.8 + 0.4 * tone);
           float seam = smoothstep(0.012, 0.0, abs(fract(r / 0.75) - 0.5) - 0.488);
           base *= 1.0 - seam * 0.5;
           vec3 col = base;
@@ -53,13 +53,13 @@ export class StageFloor {
             // Low-frequency ripple instead of per-pixel jitter: reads as wet stone, not noise.
             vec2 j = vec2(sin(p.x * 7.0 + uTime * 0.6) + sin(p.y * 5.3 - uTime * 0.4), cos(p.y * 6.1 + uTime * 0.5) + sin(p.x * 4.7)) * 0.25;
             vec3 refl = texture2D(tDiffuse, ruv + j * 0.003).rgb * 0.6 + texture2D(tDiffuse, ruv + j * 0.007 + vec2(0.0, 0.004)).rgb * 0.4;
-            col += refl * uReflect * (0.55 + 0.25 * tone);
+            col += refl * uReflect * (0.42 + 0.2 * tone);
           #endif
           // Engraved rings: steady outer rings, rotating dashed inner ring tinted by the focused partner.
           float dash = step(0.35, fract(a * 6.0 / 3.14159 + uTime * 0.05));
           vec3 glow = vec3(0.0);
-          glow += vec3(0.55, 0.65, 1.0) * ring(r, 5.75, 0.025) * 1.2;
-          glow += vec3(0.5, 0.6, 1.0) * ring(r, 4.1, 0.012) * 0.6;
+          glow += vec3(0.55, 0.65, 1.0) * ring(r, 5.75, 0.025) * 0.7;
+          glow += vec3(0.5, 0.6, 1.0) * ring(r, 4.1, 0.012) * 0.35;
           glow += uAccent * ring(r, 2.55, 0.02) * dash * 1.5;
           float tick = step(0.92, fract(a * 36.0 / 6.28318)) * smoothstep(3.15, 3.05, r) * smoothstep(2.85, 2.95, r);
           glow += uAccent * tick * 0.9;

@@ -95,7 +95,7 @@ export class World {
   constructor(private host: HTMLElement, private canvas: HTMLCanvasElement, opts: WorldOptions) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance', stencil: false });
     this.renderer.toneMapping = THREE.NeutralToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 0.82;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft was removed in r18x and falls back anyway
     this.renderer.info.autoReset = false; // count the whole frame (all passes), reset manually
@@ -106,7 +106,7 @@ export class World {
     this.director = new CameraDirector(this.camera);
     this.director.reducedMotion = this.reducedMotion;
 
-    this.scene.fog = new THREE.FogExp2('#0d0819', 0.0068);
+    this.scene.fog = new THREE.FogExp2('#05030b', 0.0085);
     this.sky = createSky();
     this.scene.add(this.sky);
     this.shrine = new Shrine();
@@ -117,16 +117,16 @@ export class World {
     this.scene.add(this.coin.group);
 
     // Lighting: cool moon key with shadows, two accent rims for the anime silhouette, warm lantern bounce.
-    this.scene.add(new THREE.HemisphereLight('#5a5fa8', '#140a16', 0.5));
-    this.key = new THREE.DirectionalLight('#e4e9ff', 2.1);
+    this.scene.add(new THREE.HemisphereLight('#3b3f7a', '#0a050c', 0.3));
+    this.key = new THREE.DirectionalLight('#d6deff', 1.75);
     this.key.position.set(2.4, 6.5, 5.5); this.key.target.position.set(0, 1, 0);
     this.key.shadow.camera.left = -3.2; this.key.shadow.camera.right = 3.2; this.key.shadow.camera.top = 3.2; this.key.shadow.camera.bottom = -1.5;
     this.key.shadow.camera.near = 2; this.key.shadow.camera.far = 16; this.key.shadow.bias = -0.0004; this.key.shadow.normalBias = 0.025;
     this.scene.add(this.key, this.key.target);
-    this.rimA = new THREE.DirectionalLight('#3ee6ff', 1.6); this.rimA.position.set(-4, 3, -4);
-    this.rimB = new THREE.DirectionalLight('#ff4f9a', 1.3); this.rimB.position.set(4, 2.5, -3.5);
+    this.rimA = new THREE.DirectionalLight('#3ee6ff', 2.2); this.rimA.position.set(-4, 3, -4);
+    this.rimB = new THREE.DirectionalLight('#ff3d7a', 1.6); this.rimB.position.set(4, 2.5, -3.5);
     this.scene.add(this.rimA, this.rimB);
-    const warm = new THREE.PointLight('#ff9b55', 6, 14, 1.6); warm.position.set(0, 4.2, -6.4);
+    const warm = new THREE.PointLight('#ff7a3d', 4, 14, 1.6); warm.position.set(0, 4.2, -6.4);
     this.scene.add(warm);
 
     this.buildTierDependent();
@@ -222,7 +222,7 @@ export class World {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.envRT = pmrem.fromScene(envScene, 0.02);
     this.scene.environment = this.envRT.texture;
-    this.scene.environmentIntensity = 0.3;
+    this.scene.environmentIntensity = 0.18;
     pmrem.dispose(); disposeTree(envScene);
   }
 

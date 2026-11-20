@@ -13,7 +13,7 @@ export function createSkyline(count: number): THREE.InstancedMesh {
     fog: true,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
       uTime: { value: 0 },
-      uFacade: { value: new THREE.Color('#07070f') },
+      uFacade: { value: new THREE.Color('#030308') },
       uWarm: { value: new THREE.Color('#ffb46b') },
       uCool: { value: new THREE.Color('#7fd8ff') },
       uNeonA: { value: new THREE.Color('#ff3d9a') },
@@ -50,14 +50,14 @@ export function createSkyline(count: number): THREE.InstancedMesh {
         float detail = 1.0 - smoothstep(0.18, 0.45, max(fw.x, fw.y));
         float win = step(0.2, f.x) * step(f.x, 0.8) * step(0.28, f.y) * step(f.y, 0.72);
         float r = h21(cell + vSeed * 17.0);
-        float lit = step(0.7, r) * (1.0 - top);
+        float lit = step(0.8, r) * (1.0 - top);
         float flicker = 0.85 + 0.15 * sin(uTime * (0.5 + r * 2.0) + r * 31.0);
         vec3 wc = mix(uWarm, uCool, step(0.5, fract(r * 7.0)));
-        vec3 sharp = wc * win * lit * flicker * (0.5 + 0.55 * r);
-        vec3 avg = mix(uWarm, uCool, 0.5) * 0.36 * 0.3 * 0.75 * (1.0 - top);
+        vec3 sharp = wc * win * lit * flicker * (0.32 + 0.4 * r);
+        vec3 avg = mix(uWarm, uCool, 0.5) * 0.36 * 0.2 * 0.5 * (1.0 - top);
         col += mix(avg, sharp, detail);
         // Neon crown strip near the roof on some towers.
-        float crown = step(0.7, fract(vSeed * 3.7)) * smoothstep(vSize.y - 1.2, vSize.y - 0.9, vLocal.y) * (1.0 - smoothstep(vSize.y - 0.5, vSize.y - 0.3, vLocal.y)) * (1.0 - top);
+        float crown = step(0.82, fract(vSeed * 3.7)) * smoothstep(vSize.y - 1.2, vSize.y - 0.9, vLocal.y) * (1.0 - smoothstep(vSize.y - 0.5, vSize.y - 0.3, vLocal.y)) * (1.0 - top);
         col += mix(uNeonA, uNeonB, step(0.5, fract(vSeed * 11.3))) * crown * 2.4;
         // Red aviation beacon on the tallest towers.
         float beacon = top * step(55.0, vSize.y) * smoothstep(0.6, 0.0, length(vLocal.xz)) * step(0.5, fract(uTime * 0.5 + vSeed));

@@ -8,6 +8,8 @@ import { teamImport, type Pokemon } from '@shared';
  *    (its /create endpoint accepts a plain form POST), and the standard `/challenge user, format` command.
  */
 export const SHOWDOWN_URL = 'https://play.pokemonshowdown.com/';
+/** The client treats the URL path as a room id; `teambuilder` opens the Teambuilder directly. */
+export const TEAMBUILDER_URL = 'https://play.pokemonshowdown.com/teambuilder';
 export const POKEPASTE_CREATE = 'https://pokepast.es/create';
 
 export type FormatOption = { id: string; label: string; note: string };
