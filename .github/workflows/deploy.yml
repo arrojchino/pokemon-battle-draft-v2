@@ -4,34 +4,41 @@ on:
     branches: [main]
     paths: ['frontend/**', 'shared/**', 'backend/**', '.github/workflows/deploy.yml']
   pull_request:
-permissions: { contents: read, pages: write, id-token: write }
-concurrency: { group: pages-${{ github.ref }}, cancel-in-progress: true }
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      # frontend/package-lock.json must be regenerated after the v2 dependency change (see README).
-      # Until it is committed, `npm ci` would fail, so fall back to `npm install`.
+        with:
+          node-version: 22
       - run: npm ci || npm install --no-audit --no-fund
         working-directory: frontend
       - run: npm test
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-        env: { VITE_BASE_PATH: /pokemon-battle-draft-v2/ }
+        env:
+          VITE_BASE_PATH: /pokemon-battle-draft-v2/
       - run: npm ci && npm run build
         working-directory: backend
       - name: Two-client backend flow test
         working-directory: backend
         run: |
-          PORT=8787 npm start & sleep 2
+          PORT=8787 npm start &
+          sleep 2
           npm test
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name == 'push'
-        with: { path: frontend/dist }
+        with:
+          path: frontend/dist
   deploy:
     if: github.event_name == 'push'
     needs: test
