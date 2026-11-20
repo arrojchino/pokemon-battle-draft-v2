@@ -1,0 +1,24 @@
+import { winsNeeded, type CharacterId, type PublicRoom, type Seat } from '@shared';
+import { ROSTER } from '../../../characters/roster.js';
+
+/** Everything the match UI needs, derived once from authoritative room state and the local seat. */
+export function matchModel(room: PublicRoom, seat: Seat, localPartner: CharacterId) {
+  const me = seat; const opp = (1 - seat) as Seat;
+  const meP = room.players[me]; const oppP = room.players[opp];
+  const mine = meP?.avatar ?? localPartner;
+  // v1 peers send no avatar: give them a partner that differs from ours.
+  const theirs = oppP ? (oppP.avatar ?? ROSTER.find(c => c.id !== mine)!.id) : null;
+  const names: [string, string] = [room.players[0]?.name ?? 'Player 1', room.players[1]?.name ?? 'Player 2'];
+  return {
+    me, opp, mine, theirs, names,
+    myName: names[me], oppName: oppP ? names[opp] : 'Waiting…',
+    hasOpponent: !!oppP,
+    oppConnected: !!oppP?.connected,
+    target: winsNeeded(room.bestOf),
+    gameNo: Math.min(room.games + (room.phase === 'between' || room.phase === 'complete' ? 0 : 1), room.bestOf),
+    iWonToss: room.tossWinner === me,
+    myTeam: room.teams[me], oppTeam: room.teams[opp],
+    seriesWinner: room.phase === 'complete' ? ((room.wins[0] > room.wins[1] ? 0 : 1) as Seat) : null,
+  };
+}
+export type MatchModel = ReturnType<typeof matchModel>;

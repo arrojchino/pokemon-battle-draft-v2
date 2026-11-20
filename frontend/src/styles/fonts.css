@@ -1,0 +1,6 @@
+/* Self-hosted, subset fonts (SIL OFL 1.1, licenses next to the files). Regenerate with tools/subset_fonts.sh. */
+@font-face { font-family: 'Chakra Petch'; src: url('../assets/fonts/chakra-petch-medium.woff') format('woff'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Chakra Petch'; src: url('../assets/fonts/chakra-petch-semibold.woff') format('woff'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Chakra Petch'; src: url('../assets/fonts/chakra-petch-bold.woff') format('woff'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Manrope'; src: url('../assets/fonts/manrope-var.woff') format('woff'); font-weight: 200 800; font-display: swap; }
+@font-face { font-family: 'Zen Kaku JP'; src: url('../assets/fonts/zen-kaku-jp-700.woff') format('woff'); font-weight: 400 900; font-display: swap; }

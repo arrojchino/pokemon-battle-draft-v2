@@ -1,0 +1,7 @@
+{
+  "name": "@pokemon-anime-battle/shared",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Isomorphic game rules, data and wire protocol shared by backend/ and frontend/. No dependencies; consumed as source."
+}
