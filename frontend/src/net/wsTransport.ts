@@ -1,5 +1,5 @@
-import { parseServerMessage, type CharacterId, type ClientMessage, type GameAction } from '@shared';
-import { SnapshotStore, sessionStore, type Transport } from './types.js';
+import { parseServerMessage, type BattleMode, type CharacterId, type ClientMessage, type GameAction } from '@shared';
+import { SnapshotStore, sessionStore, type BattleListener, type Transport } from './types.js';
 
 /**
  * Dedicated WebSocket backend (server-authoritative). One socket for the whole session; reconnects
@@ -8,6 +8,10 @@ import { SnapshotStore, sessionStore, type Transport } from './types.js';
  */
 export class WsTransport implements Transport {
   readonly kind = 'backend' as const;
+  readonly supportsBattles = true;
+  private battleListeners = new Set<BattleListener>();
+  /** Everything received for the current battle, so a screen mounted later can rebuild it. */
+  private battleLog: { id: number; lines: string[]; deadline: number | null } | null = null;
   private store = new SnapshotStore({ kind: 'backend', link: 'connecting', room: null, seat: null, error: '', errorId: 0 });
   private ws: WebSocket | null = null;
   private queue: ClientMessage[] = [];
@@ -39,6 +43,11 @@ export class WsTransport implements Transport {
       if (!msg) return;
       if (msg.type === 'state') this.store.set({ room: msg.room });
       else if (msg.type === 'joined') { sessionStore.save({ kind: 'backend', code: msg.code, token: msg.token }); this.store.set({ seat: msg.seat }); }
+      else if (msg.type === 'battle') {
+        if (msg.reset || this.battleLog?.id !== msg.id) this.battleLog = { id: msg.id, lines: [], deadline: null };
+        this.battleLog.lines.push(...msg.lines); this.battleLog.deadline = msg.deadline;
+        this.battleListeners.forEach(l => l(msg.id, msg.lines, msg.reset, msg.deadline));
+      }
       else if (msg.type === 'error') {
         if (msg.message === 'Invalid session' || msg.message === 'Unknown room') { sessionStore.clear(); if (!this.store.get().room) return; this.store.set({ room: null, seat: null }); }
         this.store.fail(msg.message);
@@ -59,13 +68,21 @@ export class WsTransport implements Transport {
     else this.queue.push(m);
   }
 
-  create(name: string, bestOf: 3 | 5, avatar: CharacterId | null) { sessionStore.clear(); this.raw({ type: 'create', name, bestOf, avatar }); }
+  create(name: string, bestOf: 3 | 5, avatar: CharacterId | null, mode: BattleMode) { sessionStore.clear(); this.raw({ type: 'create', name, bestOf, avatar, mode }); }
   join(code: string, name: string, avatar: CharacterId | null) { sessionStore.clear(); this.raw({ type: 'join', code: code.trim().toUpperCase(), name, avatar }); }
   act(action: GameAction) {
     if (this.store.get().link !== 'online') { this.store.fail('Connection lost, reconnecting…'); return; }
     this.raw(action);
   }
+  choose(choice: string) { this.raw({ type: 'choose', choice }); }
+  forfeit() { this.raw({ type: 'forfeit' }); }
+  onBattle(listener: BattleListener) {
+    this.battleListeners.add(listener);
+    if (this.battleLog) listener(this.battleLog.id, this.battleLog.lines.slice(), true, this.battleLog.deadline);
+    return () => { this.battleListeners.delete(listener); };
+  }
   leave() {
+    this.battleLog = null;
     sessionStore.clear();
     this.store.set({ room: null, seat: null });
     // A fresh socket drops the seat binding server-side without affecting the opponent's room.

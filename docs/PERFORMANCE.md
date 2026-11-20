@@ -57,3 +57,4 @@ Resource hygiene (scripted checks):
 - MToon outlines double the draw items of outlined materials; this is the price of the toon look.
 - Real-GPU profiling (Chrome Performance panel with GPU, or `EXT_disjoint_timer_query_webgl2`) should be run on target hardware; this environment had no GPU.
 - KTX2 textures and meshopt geometry would cut download size further (see ASSETS.md).
+- In-app battle stage (`engine/battle/BattleStage.ts`): it exists only in the arena layout and is cleared on every other layout. Each side is one shader card plus an emitter ring, a beam cone and a Tera wireframe; projectiles and impact bursts are `THREE.Points` with fixed-size buffers updated per frame, so a battle does not grow geometry or materials over time. Pokémon art textures are cached per species (bounded by the 38-set pool) and disposed with the stage. Battle playback is paced by a timer queue, not by frames, so a dropped frame never desyncs the log from the 3D effects.

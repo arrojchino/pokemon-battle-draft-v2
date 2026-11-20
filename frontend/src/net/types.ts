@@ -1,6 +1,7 @@
-import type { CharacterId, GameAction, PublicRoom, Seat } from '@shared';
+import type { BattleMode, CharacterId, GameAction, PublicRoom, Seat } from '@shared';
 
 export type TransportKind = 'backend' | 'peer';
+export type BattleListener = (id: number, lines: string[], reset: boolean, deadline: number | null) => void;
 export type LinkStatus = 'connecting' | 'online' | 'offline';
 
 export type SessionSnapshot = {
@@ -19,9 +20,15 @@ export interface Transport {
   readonly kind: TransportKind;
   getSnapshot(): SessionSnapshot;
   subscribe(listener: () => void): () => void;
-  create(name: string, bestOf: 3 | 5, avatar: CharacterId | null): void;
+  /** Whether this transport can host in-app battles (needs the dedicated server). */
+  readonly supportsBattles: boolean;
+  create(name: string, bestOf: 3 | 5, avatar: CharacterId | null, mode: BattleMode): void;
   join(code: string, name: string, avatar: CharacterId | null): void;
   act(action: GameAction): void;
+  choose(choice: string): void;
+  forfeit(): void;
+  /** This player's simulator stream. Listeners added late get the full log replayed. */
+  onBattle(listener: BattleListener): () => void;
   leave(): void;
   clearError(): void;
   dispose(): void;

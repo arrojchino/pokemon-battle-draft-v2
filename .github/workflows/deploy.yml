@@ -27,13 +27,15 @@ jobs:
         working-directory: frontend
         env:
           VITE_BASE_PATH: /pokemon-battle-draft-v2/
-      - run: npm ci && npm run build
+      - run: npm ci || npm install --no-audit --no-fund
         working-directory: backend
-      - name: Two-client backend flow test
+      - run: npm run build
+        working-directory: backend
+      - name: Backend flow + in-app battle tests
         working-directory: backend
         run: |
-          PORT=8787 npm start &
-          sleep 2
+          BATTLE_DECISION_SECONDS=3 PORT=8787 npm start &
+          sleep 3
           npm test
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name == 'push'

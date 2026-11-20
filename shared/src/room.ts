@@ -9,7 +9,11 @@ export type Pair<T> = [T, T];
 /** Server-side seat record. `token` is a bearer secret and must never be broadcast. */
 export type SeatRecord = { name: string; token: string; avatar: CharacterId | null };
 
-export type RoundRecord = { game: number; winner: Seat; teams: Pair<Pokemon[]>; toss: CoinSide | null };
+export type RoundRecord = { game: number; winner: Seat; teams: Pair<Pokemon[]>; toss: CoinSide | null; turns?: number };
+
+/** 'app': battles run on the server's simulator inside this app. 'showdown': players battle on Pokémon Showdown and report the winner. */
+export type BattleMode = 'app' | 'showdown';
+export type BattleStatus = { id: number; status: 'preview' | 'active' | 'ended'; turn: number };
 
 export type RoomState = {
   code: string;
@@ -24,6 +28,8 @@ export type RoomState = {
   wins: Pair<number>;
   games: number;
   history: RoundRecord[];
+  mode: BattleMode;
+  battle: BattleStatus | null;
 };
 
 /** What clients receive. Same field names as protocol v1 so older clients keep working. */
@@ -38,7 +44,13 @@ export type GameAction =
   | { type: 'result'; winner: Seat }
   | { type: 'next' }
   | { type: 'reset'; bestOf: 3 | 5 }
-  | { type: 'avatar'; avatar: CharacterId };
+  | { type: 'avatar'; avatar: CharacterId }
+  | { type: 'mode'; mode: BattleMode };
+
+/** Actions only the authority itself may apply (never parsed from a client message). */
+export type ServerAction =
+  | { type: 'battleStatus'; status: BattleStatus['status']; turn: number }
+  | { type: 'battleEnd'; winner: Seat | null; turns: number };
 
 /** Randomness is injected so the reducer stays pure and testable. Hosts pass crypto-backed sources. */
 export type Rng = { coin(): CoinSide; float(): number };
@@ -47,25 +59,34 @@ export type ReduceResult = { ok: true; room: RoomState } | { ok: false; error: s
 
 export const normalizeBestOf = (v: unknown): 3 | 5 => (Number(v) === 5 ? 5 : 3);
 
-export function createRoom(code: string, host: SeatRecord, bestOf: 3 | 5): RoomState {
+export function createRoom(code: string, host: SeatRecord, bestOf: 3 | 5, mode: BattleMode = 'showdown'): RoomState {
   return {
     code, players: [host, null], bestOf, phase: 'calls', calls: [null, null], result: null, tossWinner: null,
-    candidates: null, teams: [[], []], wins: [0, 0], games: 0, history: [],
+    candidates: null, teams: [[], []], wins: [0, 0], games: 0, history: [], mode, battle: null,
   };
 }
 
 const clone = <T>(v: T): T => (typeof structuredClone === 'function' ? structuredClone(v) : JSON.parse(JSON.stringify(v)) as T);
 
 const clearRound = (s: RoomState) => {
-  s.phase = 'calls'; s.calls = [null, null]; s.result = null; s.tossWinner = null; s.candidates = null; s.teams = [[], []];
+  s.phase = 'calls'; s.calls = [null, null]; s.result = null; s.tossWinner = null; s.candidates = null; s.teams = [[], []]; s.battle = null;
+};
+
+const recordWin = (s: RoomState, w: Seat, turns?: number) => {
+  s.games++; s.wins[w]++;
+  s.history.push({ game: s.games, winner: w, teams: [s.teams[0].slice(), s.teams[1].slice()], toss: s.result, ...(turns !== undefined ? { turns } : {}) });
+  s.phase = s.wins[w] >= winsNeeded(s.bestOf) ? 'complete' : 'between';
+  s.battle = null;
 };
 
 /**
  * The authoritative game rules. Both the WebSocket backend and the PeerJS host call this, so the two
  * transports can no longer drift apart. Returns a new state; the input is never mutated.
  */
-export function reduce(room: RoomState, seat: Seat, action: GameAction, rng: Rng): ReduceResult {
+export function reduce(room: RoomState, seat: Seat, action: GameAction | ServerAction, rng: Rng): ReduceResult {
   const s = clone(room);
+  // Rooms persisted by v2 hosts have no mode/battle fields.
+  s.mode ??= 'showdown'; s.battle ??= null;
   const fail = (error: string): ReduceResult => ({ ok: false, error });
   switch (action.type) {
     case 'avatar': {
@@ -103,14 +124,29 @@ export function reduce(room: RoomState, seat: Seat, action: GameAction, rng: Rng
       s.teams[seat] = s.candidates[t].slice();
       s.teams[1 - seat] = s.candidates[1 - t].slice();
       s.phase = 'battle';
+      s.battle = s.mode === 'app' ? { id: s.games + 1, status: 'preview', turn: 0 } : null;
       return { ok: true, room: s };
     }
     case 'result': {
       if (s.phase !== 'battle' || s.teams[0].length !== 6) return fail('No battle in progress');
-      const w = action.winner;
-      s.games++; s.wins[w]++;
-      s.history.push({ game: s.games, winner: w, teams: [s.teams[0].slice(), s.teams[1].slice()], toss: s.result });
-      s.phase = s.wins[w] >= winsNeeded(s.bestOf) ? 'complete' : 'between';
+      if (s.mode === 'app') return fail('This battle is decided in the arena');
+      recordWin(s, action.winner);
+      return { ok: true, room: s };
+    }
+    case 'battleStatus': {
+      if (s.phase !== 'battle' || !s.battle) return fail('No battle in progress');
+      s.battle = { ...s.battle, status: action.status, turn: action.turn };
+      return { ok: true, room: s };
+    }
+    case 'battleEnd': {
+      if (s.phase !== 'battle') return fail('No battle in progress');
+      if (action.winner === null) { clearRound(s); return { ok: true, room: s }; } // draw: replay the game from a new toss
+      recordWin(s, action.winner, action.turns);
+      return { ok: true, room: s };
+    }
+    case 'mode': {
+      if (s.phase === 'battle' || s.phase === 'pick') return fail('Finish this game first');
+      s.mode = action.mode;
       return { ok: true, room: s };
     }
     case 'next': {

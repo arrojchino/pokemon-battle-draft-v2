@@ -18,6 +18,14 @@ export const TypeBadge = ({ type, tera = false, size = 'md' }: { type: TypeName;
 
 const ROLE_LABEL = { hazard: 'Hazards', support: 'Support', setup: 'Setup', attacker: 'Attacker', other: 'Flex' } as const;
 
+/** Official art with a lettered fallback when the image host is unreachable. */
+export function Sprite({ artId, name, className = '', eager = false }: { artId: number; name: string; className?: string; eager?: boolean }) {
+  const [failed, setFailed] = useState(false);
+  return failed
+    ? <span className={`${className} art--missing sprite--missing`} title={name} aria-label={name}>{name.slice(0, 2)}</span>
+    : <img className={className} src={pokemonArt(artId)} alt={name} title={name} loading={eager ? 'eager' : 'lazy'} decoding="async" draggable={false} onError={() => setFailed(true)} />;
+}
+
 function Art({ p, className }: { p: Pokemon; className: string }) {
   const [failed, setFailed] = useState(false);
   return failed

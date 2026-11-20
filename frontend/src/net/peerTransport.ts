@@ -1,9 +1,9 @@
 import type { DataConnection, default as PeerType } from 'peerjs';
 import {
   PROTOCOL_VERSION, createRoom, isRoomCode, parseClientMessage, parseServerMessage, publicView, reduce, seatForToken, seatGuest,
-  type CharacterId, type GameAction, type RoomState, type Rng, type ServerMessage,
+  type BattleMode, type CharacterId, type GameAction, type RoomState, type Rng, type ServerMessage,
 } from '@shared';
-import { SnapshotStore, sessionStore, type Transport } from './types.js';
+import { SnapshotStore, sessionStore, type BattleListener, type Transport } from './types.js';
 
 const HOST_KEY = 'pab-peer-host';
 type HostSave = { id: string; room: RoomState; savedAt: number };
@@ -21,6 +21,8 @@ const token = () => crypto.randomUUID();
  */
 export class PeerTransport implements Transport {
   readonly kind = 'peer' as const;
+  /** The simulator runs on the dedicated server only; peer rooms use the Showdown handoff. */
+  readonly supportsBattles = false;
   private store = new SnapshotStore({ kind: 'peer', link: 'connecting', room: null, seat: null, error: '', errorId: 0 });
   private peer: PeerType | null = null;
   private PeerCtor: typeof PeerType | null = null;
@@ -108,6 +110,7 @@ export class PeerTransport implements Transport {
         this.publish(); return;
       }
       if (msg.type === 'create') return;
+      if (msg.type === 'choose' || msg.type === 'forfeit') { reply({ type: 'error', message: 'In-app battles need the dedicated server' }); return; }
       if (conn !== this.guestConn) { reply({ type: 'error', message: 'Not seated' }); return; }
       this.apply(msg, 1, reply);
     });
@@ -148,7 +151,10 @@ export class PeerTransport implements Transport {
   }
 
   // ---------- Transport ----------
-  create(name: string, bestOf: 3 | 5, avatar: CharacterId | null) {
+  choose() { this.store.fail('In-app battles need the dedicated server'); }
+  forfeit() { this.store.fail('In-app battles need the dedicated server'); }
+  onBattle(_listener: BattleListener) { return () => {}; }
+  create(name: string, bestOf: 3 | 5, avatar: CharacterId | null, _mode: BattleMode) {
     this.whenOpen(() => {
       if (!this.peer) return;
       this.hostConn?.close(); this.hostConn = null;

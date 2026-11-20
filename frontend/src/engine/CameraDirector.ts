@@ -17,6 +17,9 @@ export class CameraDirector {
   readonly pointer = new THREE.Vector2();
   private par = new THREE.Vector2();
   reducedMotion = false;
+  private shakeAmt = 0;
+  /** Short camera impulse for big impacts (ignored with reduced motion). */
+  kick(amount: number) { if (!this.reducedMotion) this.shakeAmt = Math.max(this.shakeAmt, amount); }
 
   constructor(private camera: THREE.PerspectiveCamera) {}
 
@@ -35,9 +38,11 @@ export class CameraDirector {
     const drift = this.reducedMotion ? 0 : 1;
     this.par.x += (this.pointer.x - this.par.x) * (1 - Math.exp(-2.5 * dt));
     this.par.y += (this.pointer.y - this.par.y) * (1 - Math.exp(-2.5 * dt));
+    this.shakeAmt = Math.max(0, this.shakeAmt - dt * 2.5);
+    const sk = this.shakeAmt * this.shakeAmt * 0.06;
     this.camera.position.set(
-      p.x + (wobble(this.t * 0.25, 1) * 0.02 + this.par.x * 0.12) * drift,
-      p.y + (wobble(this.t * 0.21, 2) * 0.015 + this.par.y * 0.05) * drift,
+      p.x + (wobble(this.t * 0.25, 1) * 0.02 + this.par.x * 0.12) * drift + wobble(this.t * 40, 3) * sk,
+      p.y + (wobble(this.t * 0.21, 2) * 0.015 + this.par.y * 0.05) * drift + wobble(this.t * 37, 4) * sk,
       p.z,
     );
     this.camera.lookAt(tg.x + this.par.x * 0.03 * drift, tg.y + this.par.y * 0.02 * drift, tg.z);

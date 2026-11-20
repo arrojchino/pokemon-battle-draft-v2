@@ -30,3 +30,7 @@ All casino presentation (scenes, dealer art, copy, styles) and the UI. See ARCHI
 ## Additions
 
 Partner selection synced through the protocol (`avatar`), presence indicators, leave room, PokePaste team sheet, challenge command builder, team composition summary, species type badges, history drawer, settings, credits, diagnostics overlay, still-portrait fallback without WebGL, error boundaries, 15 new unit tests and a much broader backend flow test (token leak, validation, third client, illegal transitions, resume, full series, reset).
+
+## v3: in-app battles
+
+Battles can now run inside the app on the backend with the MIT `pokemon-showdown` simulator package. Security properties: per-seat streams (no hidden-information leak, asserted in `backend/tests/battle.mjs`), double validation of choices, server-only result actions, decision timers against stalling, all sessions destroyed with the room or on shutdown. The upstream Showdown build script is not used; the backend loads the published package through `createRequire`. Tests added: model replay on real simulator logs from both perspectives, the controller decision regression (simulator player streams carry no `rqid`, so every `|request|` opens a new decision), reducer and protocol coverage for v3, and a backend test that plays complete series with two clients including timeout, reconnect and forfeit.

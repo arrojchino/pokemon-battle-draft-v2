@@ -33,9 +33,34 @@ React never re-renders per frame. The engine owns one canvas, one `WebGLRenderer
 
 The original v1 `backend/tests/flow.mjs` passes unchanged against the v2 server, and v2 clients read v1 servers through `parseServerMessage`.
 
-## Backend (`backend/src/index.ts`)
+### Protocol v3: in-app battles
 
-Identity and transport only: room codes, seats, resume tokens, origin allow-list, per-socket message rate limit, per-address room-creation limit, room cap, 4 KB max payload, heartbeat-based presence and TTL expiry. All game transitions go through `reduce()`.
+| Addition | Shape |
+|---|---|
+| Room fields | `mode: 'app' \| 'showdown'`, `battle: {id, status: 'preview' \| 'active', turn} \| null`, `RoundRecord.turns` |
+| `create` | adds optional `mode` |
+| Client `choose` | `{choice}`, must match `^(move [1-4]( terastallize)?\|switch [1-6]\|team [1-6]{1,6}\|default\|undo)$` before it reaches the simulator |
+| Client `forfeit`, `mode` | forfeit the live battle; switch mode between games only |
+| Server `battle` | `{id, lines, reset, deadline}`: protocol lines for this seat only; `reset` means replace the local log (join, resume, reconnect) |
+| Server-only actions | `battleStatus`, `battleEnd` go through the same `reduce()` but `parseClientMessage` can never produce them, so a client cannot report an in-app result |
+
+### Battle flow
+
+```
+pick (mode app) -> reduce sets battle {id, preview}
+backend syncBattle(): new BattleSession(p1 team, p2 team)  [pokemon-showdown BattleStream + getPlayerStreams]
+  p1 stream --lines--> seat 0 socket          p2 stream --lines--> seat 1 socket
+  omniscient stream: |teampreview| |turn| -> battleStatus ; |win| |tie| -> battleEnd -> recordWin / replay
+client: WsTransport.onBattle -> BattleController (queue + per-line pacing) -> BattleModel (state, log, fx)
+        fx -> stageBridge -> World.battle (holograms, bolts, bursts, camera kick, floor pulse) + partner emotes
+        snapshot -> BattleArena (plates, HP, move grid, Tera, switches, preview, log, timer)
+```
+
+The client never learns a result before the server records it: the end banner's Continue button waits for the room state, and series scoring always comes from `reduce()`.
+
+## Backend (`backend/src/index.ts`, `backend/src/battle.ts`)
+
+`battle.ts` owns one simulator session per in-app game: decision timers that play `default` on timeout, forfeits through `>forcelose`, replay on resume, and cleanup with the room. `index.ts` is identity and transport: room codes, seats, resume tokens, origin allow-list, per-socket message rate limit, per-address room-creation limit, room cap, 4 KB max payload, heartbeat-based presence and TTL expiry. All game transitions go through `reduce()`.
 
 ## Networking (`frontend/src/net/`)
 

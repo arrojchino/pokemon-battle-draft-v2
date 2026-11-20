@@ -77,7 +77,8 @@
 .pcard { --rx: 0deg; --ry: 0deg; --gx: 50%; perspective: 900px; animation: deal 0.6s var(--ease) both; animation-delay: calc(var(--i) * 45ms); }
 @keyframes deal { from { opacity: 0; transform: translateY(18px) rotateX(18deg); } }
 .pcard__frame {
-  position: relative; height: 100%; display: grid; grid-template-rows: auto auto auto auto 1fr; gap: 6px; padding: 10px 10px 12px;
+  /* minmax(0, 1fr): without it the artwork's 475px natural size widens the column past the card. */
+  position: relative; height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto 1fr; gap: 6px; padding: 10px 10px 12px;
   background: radial-gradient(120% 60% at var(--gx) 0%, color-mix(in srgb, var(--t1) 28%, transparent), transparent 70%), linear-gradient(180deg, #121430, #0a0b1a);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t1) 35%, var(--line)), 0 0 0 1px var(--hl);
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
@@ -85,12 +86,12 @@
   transition: transform 0.35s var(--ease), box-shadow 0.3s;
 }
 .pcard:hover .pcard__frame { box-shadow: inset 0 0 0 1px var(--t1), 0 14px 40px -18px var(--t1); }
-.pcard--compact .pcard__art { aspect-ratio: 16 / 8; }
+.pcard--compact .pcard__art { aspect-ratio: 16 / 9; }
 .pcard--compact .pcard__frame { gap: 5px; padding: 8px 9px 10px; }
-.pcard__art { position: relative; aspect-ratio: 16 / 11; display: grid; place-items: center; background: radial-gradient(closest-side, color-mix(in srgb, var(--t2) 30%, transparent), transparent); }
-.pcard__img { display: block; width: 88%; height: 100%; margin-inline: auto; object-fit: contain; object-position: center; filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.6)); transform: translateZ(30px); transition: transform 0.4s var(--ease); }
-.pcard:hover .pcard__img { transform: translateZ(30px) scale(1.06); }
-.art--missing { display: grid; place-items: center; font: 700 22px var(--display); color: var(--muted); }
+.pcard__art { position: relative; width: 100%; aspect-ratio: 16 / 11; overflow: hidden; background: radial-gradient(closest-side, color-mix(in srgb, var(--t2) 30%, transparent), transparent); }
+.pcard__img { position: absolute; inset: 4%; width: 92%; height: 92%; object-fit: contain; object-position: 50% 50%; filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.6)); transition: transform 0.4s var(--ease); }
+.pcard:hover .pcard__img { transform: scale(1.06); }
+.art--missing { position: absolute; inset: 0; display: grid; place-items: center; font: 700 22px var(--display); color: var(--muted); }
 .pcard__head h4 { margin: 0; font: 700 15px/1.15 var(--display); letter-spacing: 0.05em; text-transform: uppercase; }
 .pcard__role { font-size: 11px; color: var(--muted); }
 .pcard__types { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -124,8 +125,8 @@
 .strip { display: grid; gap: 6px; width: 100%; }
 .strip__label { font: 600 11px var(--display); letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); }
 .strip__row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
-.pchip { position: relative; display: grid; justify-items: center; gap: 2px; padding: 6px 4px; background: linear-gradient(180deg, color-mix(in srgb, var(--t1) 22%, transparent), rgba(255, 255, 255, 0.02)); box-shadow: inset 0 0 0 1px var(--line); min-width: 0; }
-.pchip__img { width: 100%; max-width: 64px; aspect-ratio: 1; object-fit: contain; }
+.pchip { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 2px; padding: 6px 4px; background: linear-gradient(180deg, color-mix(in srgb, var(--t1) 22%, transparent), rgba(255, 255, 255, 0.02)); box-shadow: inset 0 0 0 1px var(--line); min-width: 0; }
+.pchip__img { display: block; width: 100%; max-width: 64px; aspect-ratio: 1; object-fit: contain; object-position: 50% 50%; margin: 0 auto; }
 .pchip__name { font: 600 10px var(--display); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .pchip__tera { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; transform: rotate(45deg); background: var(--t); box-shadow: 0 0 8px var(--t); }
 

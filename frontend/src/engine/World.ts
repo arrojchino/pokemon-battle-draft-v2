@@ -19,6 +19,7 @@ import { Shrine } from './world/Shrine.js';
 import { Petals } from './world/Petals.js';
 import { Atmosphere } from './world/Atmosphere.js';
 import { Coin } from './world/Coin.js';
+import { BattleStage } from './battle/BattleStage.js';
 import { rand } from './math.js';
 
 export type DuoShot = 'room' | 'match' | 'draft' | 'battle';
@@ -26,7 +27,9 @@ export type Layout =
   | { mode: 'title'; featured: CharacterId }
   | { mode: 'select'; focus: CharacterId | null }
   | { mode: 'duo'; mine: CharacterId | null; theirs: CharacterId | null; shot: DuoShot; coin: boolean }
-  | { mode: 'victory'; winner: CharacterId; loser: CharacterId | null };
+  | { mode: 'victory'; winner: CharacterId; loser: CharacterId | null }
+  /** In-app battle: partners step back, holograms of the active Pokémon take the centre. */
+  | { mode: 'arena'; mine: CharacterId; theirs: CharacterId };
 
 type Slot = { key: string; x: number; z: number; facing: number; focus: boolean };
 
@@ -56,6 +59,7 @@ export class World {
   private shrine: Shrine;
   private sky: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
   private coin: Coin;
+  readonly battle: BattleStage;
   private key: THREE.DirectionalLight;
   private rimA: THREE.DirectionalLight;
   private rimB: THREE.DirectionalLight;
@@ -115,6 +119,9 @@ export class World {
     this.coin.group.position.set(0, 1.08, 0.75);
     this.coin.onLand = () => this.floor.pulse();
     this.scene.add(this.coin.group);
+    this.battle = new BattleStage(this.camera, () => this.reducedMotion);
+    this.battle.onImpact = color => this.floor.pulse(color);
+    this.scene.add(this.battle.group);
 
     // Lighting: cool moon key with shadows, two accent rims for the anime silhouette, warm lantern bounce.
     this.scene.add(new THREE.HemisphereLight('#3b3f7a', '#0a050c', 0.3));
@@ -313,6 +320,7 @@ export class World {
         if (l.shot === 'battle') return { pos: [0, 1.5, 5.3], target: [0, 1.25, 0], fov: 33, time: 1.3 };
         return { pos: [0, 1.25, 4.7], target: [0, 1.05, 0], fov: 34, time: 1.3 };
       case 'victory': return { pos: [0.25, 1.0, 2.75], target: [0, 1.25, 0.25], fov: 33, time: 1.6 };
+      case 'arena': return { pos: [0, 1.6, 5.6], target: [0, 1.0, 0], fov: 36, time: 1.4 };
     }
   }
 
@@ -332,6 +340,11 @@ export class World {
       accent = l.mine;
       this.coin.visibleTarget = l.coin ? 1 : 0;
     } else this.coin.visibleTarget = 0;
+    if (l.mode === 'arena') {
+      slots.push({ key: l.mine, x: -2.15, z: -0.95, facing: 0.55, focus: false });
+      slots.push({ key: l.theirs === l.mine ? `${l.theirs}#2` : l.theirs, x: 2.15, z: -1.15, facing: -0.55, focus: false });
+      accent = l.mine;
+    } else this.battle.clear();
     if (l.mode === 'victory') {
       slots.push({ key: l.winner, x: 0, z: 0.35, facing: 0, focus: true });
       if (l.loser) slots.push({ key: l.loser === l.winner ? `${l.loser}#2` : l.loser, x: 1.7, z: -0.8, facing: -0.5, focus: false });
@@ -362,7 +375,7 @@ export class World {
     const l = this.layout;
     let key: string | null = who;
     if (who === 'mine' || who === 'theirs') {
-      if (l?.mode !== 'duo') return;
+      if (l?.mode !== 'duo' && l?.mode !== 'arena') return;
       key = who === 'mine' ? l.mine : l.theirs === l.mine && l.theirs ? `${l.theirs}#2` : l.theirs;
     }
     if (key) this.rigs.get(key)?.play(e);
@@ -448,6 +461,7 @@ export class World {
     this.petals.update(t);
     this.atmosphere.update(t, dt);
     this.coin.update(dt);
+    if (this.layout?.mode === 'arena') { this.battle.update(dt); if (this.battle.shake > 0) { this.director.kick(this.battle.shake); this.battle.shake = 0; } }
     this.sky.material.uniforms.uTime.value = t;
     (this.skyline.material as THREE.ShaderMaterial).uniforms.uTime.value = t;
     this.grade.uniforms.uTime.value = t;
@@ -473,6 +487,7 @@ export class World {
     this.camera.zoom = w / h < 1 ? Math.max(0.55, w / h * 1.15) : 1;
     this.camera.updateProjectionMatrix();
     this.coin.setPixelScale(h * dpr / 900);
+    this.battle?.setPixelScale(h * dpr / 900);
   }
 
   /** Live numbers for the diagnostics overlay. */
@@ -492,7 +507,7 @@ export class World {
     this.removeListeners.forEach(f => f());
     for (const r of this.rigs.values()) r.dispose();
     this.rigs.clear();
-    this.floor.dispose(); this.petals.dispose();
+    this.floor.dispose(); this.petals.dispose(); this.battle.dispose();
     disposeTree(this.scene);
     this.envRT?.dispose();
     for (const pass of this.composer.passes) pass.dispose();

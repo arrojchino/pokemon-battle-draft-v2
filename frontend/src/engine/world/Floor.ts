@@ -13,6 +13,7 @@ export class StageFloor {
     uTime: { value: 0 },
     uAccent: { value: new THREE.Color('#40e0ff') },
     uPulse: { value: 0 },
+    uPulseColor: { value: new THREE.Color('#40e0ff') },
     uSlots: { value: Array.from({ length: MAX_SLOTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
     uReflect: { value: 0 },
   };
@@ -35,7 +36,7 @@ export class StageFloor {
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: /* glsl */`
-        uniform sampler2D tDiffuse; uniform vec3 color; uniform float uTime, uPulse, uReflect; uniform vec3 uAccent; uniform vec4 uSlots[${MAX_SLOTS}];
+        uniform sampler2D tDiffuse; uniform vec3 color; uniform float uTime, uPulse, uReflect; uniform vec3 uAccent, uPulseColor; uniform vec4 uSlots[${MAX_SLOTS}];
         varying vec4 vUvRefl; varying vec3 vWorld;
         float ring(float r, float c, float w) { return smoothstep(w, 0.0, abs(r - c)); }
         float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -65,7 +66,7 @@ export class StageFloor {
           glow += uAccent * tick * 0.9;
           // Pulse wave expanding from the centre on events (coin landing, confirm).
           float wave = ring(r, uPulse * 7.0, 0.35) * (1.0 - uPulse);
-          glow += uAccent * wave * 2.5;
+          glow += uPulseColor * wave * 2.5;
           // Pedestal glow under each active character slot (xz = position, z = radius, w = intensity).
           for (int i = 0; i < ${MAX_SLOTS}; i++) {
             vec4 s = uSlots[i];
@@ -104,7 +105,7 @@ export class StageFloor {
   }
 
   setSlot(i: number, x: number, z: number, radius: number, intensity: number) { this.uniforms.uSlots.value[i].set(x, z, radius, intensity); }
-  pulse() { this.pulseT = 0; }
+  pulse(color?: THREE.ColorRepresentation) { this.pulseT = 0; this.uniforms.uPulseColor.value.set(color ?? this.uniforms.uAccent.value); }
   update(t: number, dt: number) {
     this.uniforms.uTime.value = t;
     this.pulseT = Math.min(1, this.pulseT + dt / 1.6);

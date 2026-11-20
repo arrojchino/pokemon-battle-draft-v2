@@ -1,15 +1,25 @@
 {
   "name": "pokemon-anime-battle-backend",
   "private": true,
-  "version": "2.0.0",
+  "version": "3.0.0",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/backend/src/index.js",
     "dev": "tsc --watch",
-    "test": "node tests/flow.mjs"
+    "test": "node tests/flow.mjs && node tests/battle.mjs",
+    "gen:moves": "node scripts/gen-moves.mjs"
   },
-  "dependencies": { "ws": "^8.18.0" },
-  "devDependencies": { "@types/ws": "^8.5.13", "@types/node": "^22.10.2", "typescript": "^5.7.2" }
+  "dependencies": {
+    "ws": "^8.18.0",
+    "pokemon-showdown": "^0.11.11"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
 }

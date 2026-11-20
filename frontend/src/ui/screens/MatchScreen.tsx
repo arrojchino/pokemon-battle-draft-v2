@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import type { GameAction, PublicRoom, Seat } from '@shared';
 import { characterById } from '../../characters/roster.js';
 import { useSettings } from '../../app/settings.js';
@@ -12,6 +12,15 @@ import { Scoreboard } from './match/Scoreboard.js';
 import { CompletePanel, DraftBoard, IntervalPanel, TossPanel, TossResultPanel, WaitingPanel } from './match/Panels.js';
 import { BattlePanel } from './match/BattlePanel.js';
 import { HistoryDrawer } from './match/HistoryDrawer.js';
+import { BattleArena } from './match/BattleArena.js';
+import { BattleController } from '../../battle/controller.js';
+import type { BattleFx } from '../../battle/model.js';
+import { createStageBridge } from '../../battle/stageBridge.js';
+import { useReducedMotion } from '../../app/settings.js';
+
+/** `?fast` plays battle animations at ~12x speed (for testing). */
+const FAST = new URLSearchParams(location.search).has('fast');
+type Arena = { id: number; controller: BattleController; dispose: () => void; dismissed: boolean; reacted: boolean };
 
 /**
  * The match. Authoritative state comes from the transport; this component maps it onto the stage
@@ -28,6 +37,44 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
   const prev = useRef<PublicRoom | null>(null);
   const flippedKey = useRef('');
   const accent = characterById(m.mine)?.accent ?? '#3ee6ff';
+  const reduced = useReducedMotion();
+  const reducedRef = useRef(reduced); reducedRef.current = reduced;
+
+  // In-app battle: one controller per battle id, fed by this player's simulator stream.
+  const [arena, setArena] = useState<Arena | null>(null);
+  // Battle events reach the 3D stage through a ref, so a stage that arrives late (page reload, slow
+  // asset load, context restore) still gets them; it is then resynced to the current position.
+  const fxRef = useRef<((f: BattleFx, instant: boolean) => void) | undefined>(undefined);
+  const bridged = useRef<{ world: unknown; id: number } | null>(null);
+  const battleId = room.mode === 'app' ? room.battle?.id ?? null : null;
+  useEffect(() => {
+    if (battleId === null || (arena && arena.id === battleId)) return;
+    const controller = new BattleController({ mySide: seat, send: c => transport.choose(c), onFx: (f, instant) => fxRef.current?.(f, instant), speed: () => (FAST ? 0.08 : reducedRef.current ? 0.5 : 1) });
+    const off = transport.onBattle((id, lines, reset, deadline) => { if (id === battleId) controller.ingest(id, lines, reset, deadline); });
+    setArena({ id: battleId, controller, dispose: () => { off(); controller.dispose(); }, dismissed: false, reacted: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [battleId, transport, seat]);
+  useEffect(() => () => arena?.dispose(), [arena]);
+  const arenaSnap = useSyncExternalStore(arena ? arena.controller.subscribe : noopSubscribe, arena ? arena.controller.getSnapshot : nullSnapshot);
+  const battleOver = !!arenaSnap && arenaSnap.state.phase === 'ended' && !arenaSnap.busy;
+  // Visible during the battle phase, and after it until Continue (so the final knockout plays out).
+  // A reset mid-battle abandons an unfinished arena.
+  // Keep the arena up after the server records the result until local playback has shown the ending
+  // (a slower client may still be animating the last turn) and the player continues or it auto-dismisses.
+  const showArena = !!arena && !arena.dismissed && (room.phase === 'battle' || (!!arenaSnap && arenaSnap.state.phase !== 'idle'));
+  const dismissArena = () => setArena(a => (a ? { ...a, dismissed: true } : a));
+  useEffect(() => {
+    if (!arena || arena.reacted || !battleOver || !world || !arenaSnap) return;
+    arena.reacted = true;
+    const w = arenaSnap.state.winnerSide;
+    if (w === null) return;
+    const mineWon = w === seat;
+    const mineC = characterById(m.mine); const theirsC = characterById(m.theirs);
+    world.emote('mine', mineWon ? mineC?.personality.on.gameWin ?? 'victory' : mineC?.personality.on.gameLose ?? 'sad');
+    world.emote('theirs', mineWon ? theirsC?.personality.on.gameLose ?? 'sad' : theirsC?.personality.on.gameWin ?? 'victory');
+  }, [arena, battleOver, arenaSnap, world, seat, m.mine, m.theirs]);
+  // Once the result is recorded, move on by itself after a beat.
+  useEffect(() => { if (!showArena || !battleOver || room.phase === 'battle') return; const t = setTimeout(dismissArena, 9000); return () => clearTimeout(t); }, [showArena, battleOver, room.phase]);
 
   // Keep our partner in sync with the authority (v2 servers only; v1 just ignores the message).
   useEffect(() => {
@@ -38,7 +85,9 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
   useEffect(() => {
     if (!world) return;
     let layout: Layout;
-    if (room.phase === 'complete' && m.seriesWinner !== null) {
+    if (showArena && m.theirs) {
+      layout = { mode: 'arena', mine: m.mine, theirs: m.theirs };
+    } else if (room.phase === 'complete' && m.seriesWinner !== null) {
       const winnerIsMe = m.seriesWinner === m.me;
       layout = { mode: 'victory', winner: (winnerIsMe ? m.mine : m.theirs) ?? m.mine, loser: winnerIsMe ? m.theirs : m.mine };
     } else {
@@ -46,7 +95,17 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
       layout = { mode: 'duo', mine: m.mine, theirs: m.theirs, shot, coin: m.hasOpponent && (room.phase === 'calls' || room.phase === 'spin') };
     }
     world.setLayout(layout);
-  }, [world, room.phase, m]);
+  }, [world, room.phase, m, showArena]);
+
+  // Attach the battle bridge after the layout so a late stage is resynced onto the arena.
+  useEffect(() => {
+    if (!world || !arena) { fxRef.current = undefined; return; }
+    fxRef.current = createStageBridge(world, seat, characterById(m.mine)!, characterById(m.theirs));
+    if (bridged.current?.world !== world || bridged.current.id !== arena.id) {
+      bridged.current = { world, id: arena.id };
+      arena.controller.resync();
+    }
+  }, [world, arena, seat, m.mine, m.theirs]);
 
   // Reactions to authoritative transitions.
   useEffect(() => {
@@ -80,7 +139,7 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
       else { world.showCoinFace(room.result); setRevealed(true); }
     }
     if (room.phase !== 'spin' && room.phase !== 'calls') setRevealed(true);
-    if (p && room.games > p.games && room.history.length) {
+    if (p && room.games > p.games && room.history.length && room.mode !== 'app') {
       const w = room.history[room.history.length - 1].winner;
       if (room.phase === 'complete') setTimeout(() => world.emote(who(w), charOf(w)?.personality.on.seriesWin ?? 'victory'), 1400);
       else { world.emote(who(w), charOf(w)?.personality.on.gameWin ?? 'victory'); world.emote(who((1 - w) as Seat), charOf((1 - w) as Seat)?.personality.on.gameLose ?? 'sad'); }
@@ -91,6 +150,11 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
   useEffect(() => { if (status.kind === 'fallback') { setRevealed(true); setFlipping(false); } }, [status.kind]);
 
   const panel = () => {
+    if (showArena && arena) {
+      const w = arenaSnap?.state.winnerSide;
+      return <BattleArena controller={arena.controller} mineLabel={m.myName} theirsLabel={m.oppName} onForfeit={() => transport.forfeit()}
+        finished={room.phase !== 'battle'} onContinue={dismissArena} iWon={w === undefined || w === null ? null : w === seat} />;
+    }
     if (!m.hasOpponent) return <WaitingPanel room={room} />;
     switch (room.phase) {
       case 'calls': return <TossPanel room={room} m={m} act={act} flipping={flipping} />;
@@ -104,7 +168,7 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
   const inviteLink = `${location.origin}${location.pathname}?room=${encodeURIComponent(room.code)}`;
 
   return (
-    <main className={`screen match phase-${room.phase}`} style={{ '--accent': accent } as CSSProperties}>
+    <main className={`screen match phase-${room.phase} ${showArena ? 'has-arena' : ''}`} style={{ '--accent': accent } as CSSProperties}>
       <Scoreboard room={room} m={m} />
       <div className="roombar">
         <span className={`dot ${link === 'online' ? 'dot--on' : link === 'connecting' ? 'dot--wait' : ''}`} title={`Link ${link}`} />
@@ -114,6 +178,9 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
         <details className="roombar__menu">
           <summary className="iconbtn" aria-label="Room menu"><Icon name="gear" /></summary>
           <div className="menu-pop panel">
+            {transport.supportsBattles && room.phase !== 'battle' && room.phase !== 'pick' && (
+              <button onClick={() => act({ type: 'mode', mode: room.mode === 'app' ? 'showdown' : 'app' })}><Icon name="swords" />{room.mode === 'app' ? 'Battle on Showdown instead' : 'Battle here instead'}</button>
+            )}
             <button onClick={() => act({ type: 'reset', bestOf: 3 })}>New series · Best of 3</button>
             <button onClick={() => act({ type: 'reset', bestOf: 5 })}>New series · Best of 5</button>
             <button onClick={() => transport.leave()}><Icon name="leave" />Leave room</button>
@@ -121,9 +188,12 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
         </details>
       </div>
       <ErrorBoundary label="match panel" compact>
-        <div className="match__dock" key={`${room.phase}-${m.hasOpponent}`}>{panel()}</div>
+        <div className="match__dock" key={showArena ? `arena-${arena?.id}` : `${room.phase}-${m.hasOpponent}`}>{panel()}</div>
       </ErrorBoundary>
       <HistoryDrawer room={room} m={m} open={history} onClose={() => setHistory(false)} />
     </main>
   );
 }
+
+const noopSubscribe = () => () => {};
+const nullSnapshot = () => null;

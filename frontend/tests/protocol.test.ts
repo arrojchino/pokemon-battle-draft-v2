@@ -3,7 +3,10 @@ import { parseClientMessage, parseServerMessage, cleanName, isRoomCode } from '.
 
 describe('protocol validation', () => {
   it('accepts every v1 client message shape', () => {
-    expect(parseClientMessage({ type: 'create', name: 'Ana', bestOf: 5 })).toEqual({ type: 'create', name: 'Ana', bestOf: 5, avatar: null });
+    expect(parseClientMessage({ type: 'create', name: 'Ana', bestOf: 5 })).toEqual({ type: 'create', name: 'Ana', bestOf: 5, avatar: null, mode: 'showdown' });
+    expect(parseClientMessage({ type: 'create', name: 'Ana', bestOf: 3, mode: 'app' })).toEqual({ type: 'create', name: 'Ana', bestOf: 3, avatar: null, mode: 'app' });
+    expect(parseClientMessage({ type: 'choose', choice: 'move 2 terastallize' })).toEqual({ type: 'choose', choice: 'move 2 terastallize' });
+    expect(parseClientMessage({ type: 'choose', choice: 'team 213456' })).toEqual({ type: 'choose', choice: 'team 213456' });
     expect(parseClientMessage({ type: 'join', code: 'ABC123', name: 'Beto' })).toEqual({ type: 'join', code: 'ABC123', name: 'Beto', avatar: null });
     expect(parseClientMessage({ type: 'resume', code: 'ABC123', token: 't' })).toEqual({ type: 'resume', code: 'ABC123', token: 't' });
     expect(parseClientMessage({ type: 'call', side: 'tails' })).toEqual({ type: 'call', side: 'tails' });
@@ -22,6 +25,9 @@ describe('protocol validation', () => {
     expect(parseClientMessage({ type: 'avatar', avatar: 'admin' })).toBeNull();
     expect(parseClientMessage({ type: 'resume', code: 'ABC123', token: 'x'.repeat(65) })).toBeNull();
     expect(parseClientMessage({ type: '__proto__' })).toBeNull();
+    expect(parseClientMessage({ type: 'choose', choice: 'move 5' })).toBeNull();
+    expect(parseClientMessage({ type: 'choose', choice: 'move 1\n>forcewin p1' })).toBeNull();
+    expect(parseClientMessage({ type: 'choose', choice: '>eval process.exit()' })).toBeNull();
   });
   it('cleans names', () => {
     expect(cleanName('  A‮B\u0007  C ', 'x')).toBe('AB C');

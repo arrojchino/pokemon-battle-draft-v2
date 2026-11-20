@@ -12,6 +12,7 @@ export type Settings = {
   name: string;
   showdownName: string;
   format: string;
+  battleMode: 'app' | 'showdown';
 };
 
 const KEY = 'pab-settings';
@@ -29,6 +30,7 @@ function load(): Settings {
     name: typeof s.name === 'string' ? s.name.slice(0, 24) : '',
     showdownName: typeof s.showdownName === 'string' ? s.showdownName.slice(0, 18) : '',
     format: typeof s.format === 'string' ? s.format : 'gen9customgame',
+    battleMode: s.battleMode === 'showdown' ? 'showdown' : 'app',
   };
 }
 

@@ -25,7 +25,7 @@ export function SetupScreen({ mode, setMode, inviteCode, onBack, onChangePartner
     const n = name.trim() || (mode === 'create' ? 'Player 1' : 'Player 2');
     setBusy(true); session.transport.clearError();
     world?.emote(s.partner, 'nod');
-    if (mode === 'create') session.transport.create(n, bestOf, s.partner);
+    if (mode === 'create') session.transport.create(n, bestOf, s.partner, session.transport.supportsBattles ? s.battleMode : 'showdown');
     else session.transport.join(code, n, s.partner);
   };
   const online = session.link === 'online';
@@ -46,6 +46,16 @@ export function SetupScreen({ mode, setMode, inviteCode, onBack, onChangePartner
           <div className="field">
             <span>Series length</span>
             <Segmented label="Series length" value={bestOf} onChange={setBestOf} options={[{ value: 3, label: 'Best of 3' }, { value: 5, label: 'Best of 5' }]} />
+          </div>
+        ) : null}
+        {mode === 'create' ? (
+          <div className="field">
+            <span>Battles</span>
+            {session.transport.supportsBattles ? (
+              <Segmented label="Where battles happen" value={s.battleMode} onChange={v => settings.set({ battleMode: v })}
+                options={[{ value: 'app', label: 'Battle here' }, { value: 'showdown', label: 'On Showdown' }]} />
+            ) : <small>Peer rooms battle on Pokémon Showdown. Connect a server (?ws=) to battle here.</small>}
+            {session.transport.supportsBattles && <small>{s.battleMode === 'app' ? 'Instant: the drafted teams fight right here, no import.' : 'Copy teams into Pokémon Showdown and report the winner.'}</small>}
           </div>
         ) : (
           <label className="field">

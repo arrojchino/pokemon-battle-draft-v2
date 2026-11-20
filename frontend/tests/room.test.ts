@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createRoom, reduce, seatGuest, seatForToken, publicView, type RoomState, type Rng, type GameAction, type Seat } from '../../shared/src/room.js';
+import { createRoom, reduce, seatGuest, seatForToken, publicView, type RoomState, type Rng, type GameAction, type ServerAction, type Seat } from '../../shared/src/room.js';
 
 const rng = (side: 'heads' | 'tails' = 'heads'): Rng => { let x = 0.123; return { coin: () => side, float: () => (x = (x * 9301 + 49297) % 233280 / 233280) }; };
 const host = { name: 'Ana', token: 'tok-a', avatar: 'rei' as const };
@@ -10,7 +10,7 @@ function seated(): RoomState {
   if (!r.ok) throw new Error(r.error);
   return r.room;
 }
-function apply(room: RoomState, seat: Seat, action: GameAction, side: 'heads' | 'tails' = 'heads'): RoomState {
+function apply(room: RoomState, seat: Seat, action: GameAction | ServerAction, side: 'heads' | 'tails' = 'heads'): RoomState {
   const r = reduce(room, seat, action, rng(side));
   if (!r.ok) throw new Error(r.error);
   return r.room;
@@ -100,4 +100,24 @@ describe('room reducer', () => {
     expect(v.players[1]!.connected).toBe(false);
     expect(v.protocol).toBe(2);
   });
+
+  it('runs in-app battles: server decides results, draws replay the game', () => {
+    let s = seatGuest(createRoom('ABC123', host, 3, 'app'), guest);
+    if (!s.ok) throw new Error(s.error);
+    let r = s.room;
+    r = apply(r, 0, { type: 'call', side: 'heads' }); r = apply(r, 1, { type: 'call', side: 'tails' });
+    r = apply(r, 0, { type: 'flip' }); r = apply(r, 0, { type: 'spin' }); r = apply(r, 0, { type: 'pick', team: 0 });
+    expect(r.battle).toEqual({ id: 1, status: 'preview', turn: 0 });
+    expect(rejects(r, 0, { type: 'result', winner: 0 })).toBe('This battle is decided in the arena');
+    expect(rejects(r, 0, { type: 'mode', mode: 'showdown' })).toBe('Finish this game first');
+    r = apply(r, 0, { type: 'battleStatus', status: 'active', turn: 7 });
+    expect(r.battle!.turn).toBe(7);
+    const draw = apply(r, 0, { type: 'battleEnd', winner: null, turns: 7 });
+    expect(draw.phase).toBe('calls'); expect(draw.games).toBe(0); expect(draw.battle).toBeNull();
+    r = apply(r, 0, { type: 'battleEnd', winner: 1, turns: 12 });
+    expect(r.phase).toBe('between'); expect(r.wins).toEqual([0, 1]); expect(r.history[0].turns).toBe(12); expect(r.battle).toBeNull();
+    r = apply(r, 0, { type: 'mode', mode: 'showdown' });
+    expect(r.mode).toBe('showdown');
+  });
 });
+
