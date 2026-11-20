@@ -60,7 +60,7 @@
 @keyframes grow { from { transform: scaleX(0); } }
 .profile__credit { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
 
-.roster { position: absolute; left: 50%; bottom: clamp(16px, 4vh, 40px); transform: translateX(-30%); display: flex; gap: 10px; }
+.roster { position: absolute; left: 50%; bottom: clamp(16px, 4vh, 40px); transform: translateX(-50%); display: flex; gap: 10px; }
 .roster__card {
   position: relative; width: 132px; height: 168px; padding: 0; border: 0; cursor: pointer; overflow: hidden; display: grid; align-content: end; justify-items: start; text-align: left;
   background: linear-gradient(180deg, transparent 40%, rgba(4, 5, 12, 0.92)), linear-gradient(160deg, color-mix(in srgb, var(--accent) 30%, #0b0c1a), #0b0c1a);

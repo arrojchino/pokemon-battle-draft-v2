@@ -88,7 +88,7 @@
 .pcard--compact .pcard__art { aspect-ratio: 16 / 8; }
 .pcard--compact .pcard__frame { gap: 5px; padding: 8px 9px 10px; }
 .pcard__art { position: relative; aspect-ratio: 16 / 11; display: grid; place-items: center; background: radial-gradient(closest-side, color-mix(in srgb, var(--t2) 30%, transparent), transparent); }
-.pcard__img { width: 88%; height: 100%; object-fit: contain; filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.6)); transform: translateZ(30px); transition: transform 0.4s var(--ease); }
+.pcard__img { display: block; width: 88%; height: 100%; margin-inline: auto; object-fit: contain; object-position: center; filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.6)); transform: translateZ(30px); transition: transform 0.4s var(--ease); }
 .pcard:hover .pcard__img { transform: translateZ(30px) scale(1.06); }
 .art--missing { display: grid; place-items: center; font: 700 22px var(--display); color: var(--muted); }
 .pcard__head h4 { margin: 0; font: 700 15px/1.15 var(--display); letter-spacing: 0.05em; text-transform: uppercase; }
