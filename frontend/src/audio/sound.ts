@@ -1,9 +1,10 @@
 /**
  * All game audio, synthesized live with the Web Audio API: no sound files to download or license.
+ * Sound effects only: the game deliberately has no background music.
  *
- * Buses: sfx and music feed a master gain; sfx runs through a little tape saturation and a short
- * generated "back alley" reverb, so everything shares the same grimy room. The context starts on the
- * first user gesture (browser autoplay rules) and is suspended when the tab is hidden.
+ * Effects run through a little tape saturation and a short generated "back alley" reverb into a master
+ * gain (volume and mute), so everything shares the same grimy room. The context starts on the first
+ * user gesture (browser autoplay rules) and is suspended when the tab is hidden.
  */
 
 export type Cue =
@@ -21,24 +22,20 @@ export type Cue =
   // Bots
   | 'chirp' | 'chirpHappy' | 'chirpSad' | 'chirpAngry';
 
-export type Music = 'none' | 'alley' | 'battle';
 export type PlayOpts = { gain?: number; pan?: number; pitch?: number };
 
-const SCALE = [0, 3, 5, 7, 10]; // minor pentatonic
 const midi = (n: number) => 440 * Math.pow(2, (n - 69) / 12);
+/** Level of the effects bus into the saturator (headroom); the player's volume sets the master gain. */
+const SFX_LEVEL = 0.9;
 
 class SoundEngine {
   private ctx: BaseAudioContext | null = null;
   private live: AudioContext | null = null;
   private offline = false;
-  private master!: GainNode; private sfx!: GainNode; private music!: GainNode; private verb!: ConvolverNode; private verbSend!: GainNode;
+  private master!: GainNode; private sfx!: GainNode; private verb!: ConvolverNode; private verbSend!: GainNode;
   private noise: AudioBuffer | null = null;
-  private vol = { master: 0.8, music: 0.5, sfx: 0.9 };
+  private volume = 0.8;
   private muted = false;
-  private track: Music = 'none';
-  private wanted: Music = 'none';
-  private seqTimer = 0; private nextNote = 0; private step = 0;
-  private drone: { stop: () => void } | null = null;
   private last = new Map<Cue, number>();
   private meter: AnalyserNode | null = null;
 
@@ -52,10 +49,9 @@ class SoundEngine {
       document.addEventListener('visibilitychange', () => { if (document.hidden) void ctx.suspend(); else void ctx.resume(); });
     }
     if (this.live.state === 'suspended') void this.live.resume();
-    if (this.wanted !== this.track) this.setMusic(this.wanted);
   }
 
-  /** Buses, saturation, reverb and meter for a context (live or offline). */
+  /** Effects bus, saturation, reverb and meter for a context (live or offline). */
   private build(ctx: BaseAudioContext) {
     {
       this.ctx = ctx; this.noise = null;
@@ -64,17 +60,16 @@ class SoundEngine {
       comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
       this.master.connect(comp).connect(ctx.destination);
       this.meter = ctx.createAnalyser(); this.meter.fftSize = 512; comp.connect(this.meter);
-      this.music = ctx.createGain(); this.music.connect(this.master);
       // Tape-ish saturation on effects for grit.
       const shaper = ctx.createWaveShaper();
       const curve = new Float32Array(1024);
       for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(x * 1.8) / Math.tanh(1.8); }
       shaper.curve = curve; shaper.oversample = '2x';
-      this.sfx = ctx.createGain(); this.sfx.connect(shaper).connect(this.master);
+      this.sfx = ctx.createGain(); this.sfx.gain.value = SFX_LEVEL; this.sfx.connect(shaper).connect(this.master);
       this.verb = ctx.createConvolver(); this.verb.buffer = this.impulse(1.6);
       this.verbSend = ctx.createGain(); this.verbSend.gain.value = 0.22;
       this.verbSend.connect(this.verb).connect(this.master);
-      this.applyVolumes();
+      this.applyVolume();
     }
   }
 
@@ -83,10 +78,10 @@ class SoundEngine {
    * automated check can prove every cue produces sound.
    */
   async renderCue(cue: Cue): Promise<{ peak: number; rms: number }> {
-    const keep = { ctx: this.ctx, master: this.master, sfx: this.sfx, music: this.music, verb: this.verb, verbSend: this.verbSend, meter: this.meter, noise: this.noise, last: this.last };
+    const keep = { ctx: this.ctx, master: this.master, sfx: this.sfx, verb: this.verb, verbSend: this.verbSend, meter: this.meter, noise: this.noise, last: this.last };
     const off = new OfflineAudioContext(2, 44100 * 3, 44100);
     this.build(off); this.offline = true; this.last = new Map();
-    this.master.gain.value = 0.8; this.sfx.gain.value = 0.9;
+    this.master.gain.value = 0.8;
     try { this.play(cue); } finally { this.offline = false; }
     Object.assign(this, keep);
     const buf = await off.startRendering();
@@ -95,13 +90,11 @@ class SoundEngine {
     return { peak, rms: Math.sqrt(sum / d.length) };
   }
 
-  setVolumes(v: Partial<typeof this.vol>, muted?: boolean) { Object.assign(this.vol, v); if (muted !== undefined) this.muted = muted; this.applyVolumes(); }
-  private applyVolumes() {
+  /** Sound-effects volume (0..1) and mute; mute keeps the level so unmuting restores it. */
+  setVolume(volume: number, muted: boolean) { this.volume = volume; this.muted = muted; this.applyVolume(); }
+  private applyVolume() {
     if (!this.ctx || this.offline) return;
-    const t = this.ctx.currentTime;
-    this.master.gain.setTargetAtTime(this.muted ? 0 : this.vol.master, t, 0.05);
-    this.music.gain.setTargetAtTime(this.vol.music * 0.55, t, 0.1);
-    this.sfx.gain.setTargetAtTime(this.vol.sfx, t, 0.05);
+    this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume, this.ctx.currentTime, 0.05);
   }
 
   /** Peak output level right now (0..1), for diagnostics and tests. */
@@ -278,73 +271,6 @@ class SoundEngine {
       const d = t + i * 0.075;
       this.tone(kind === 'chirpAngry' ? 'sawtooth' : 'square', f, f * (Math.random() < 0.5 ? 1.25 : 0.8), d, 0.06, 0.06, { ...o, pitch: 1 });
     }
-  }
-
-  /* ------------------------------------------------------------ music */
-  setMusic(m: Music) {
-    this.wanted = m;
-    if (!this.ctx || this.ctx.state !== 'running' || m === this.track) return;
-    this.track = m;
-    window.clearInterval(this.seqTimer); this.seqTimer = 0;
-    this.drone?.stop(); this.drone = null;
-    if (m === 'none') return;
-    this.drone = this.startDrone(m === 'battle' ? 0.6 : 1);
-    this.step = 0; this.nextNote = this.ctx.currentTime + 0.1;
-    const bpm = m === 'battle' ? 128 : 76;
-    const spb = 60 / bpm / 4; // sixteenth notes
-    this.seqTimer = window.setInterval(() => {
-      const ctx = this.ctx!; if (ctx.state !== 'running') return;
-      while (this.nextNote < ctx.currentTime + 0.12) { this.beat(m, this.step, this.nextNote, spb); this.nextNote += spb; this.step++; }
-    }, 25);
-  }
-
-  /** Low detuned hum and rain hiss under everything. */
-  private startDrone(level: number) {
-    const ctx = this.ctx!; const t = ctx.currentTime;
-    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22 * level, t + 2.5); g.connect(this.music);
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 220; lp.Q.value = 2; lp.connect(g);
-    const lfo = ctx.createOscillator(); const lg = ctx.createGain(); lfo.frequency.value = 0.07; lg.gain.value = 90; lfo.connect(lg).connect(lp.frequency);
-    const oscs = [midi(28), midi(28) * 1.006, midi(35) * 0.997].map(f => { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.connect(lp); return o; });
-    const rain = ctx.createBufferSource(); rain.buffer = this.noiseBuf(); rain.loop = true;
-    const rf = ctx.createBiquadFilter(); rf.type = 'bandpass'; rf.frequency.value = 2600; rf.Q.value = 0.5;
-    const rg = ctx.createGain(); rg.gain.value = 0.05; rain.connect(rf).connect(rg).connect(g);
-    [...oscs, lfo, rain].forEach(o => o.start(t));
-    return { stop: () => { const n = ctx.currentTime; g.gain.cancelScheduledValues(n); g.gain.setTargetAtTime(0.0001, n, 0.4); [...oscs, lfo, rain].forEach(o => o.stop(n + 2)); } };
-  }
-
-  private beat(m: Music, s: number, t: number, spb: number) {
-    const bar = Math.floor(s / 16) % 4; const i = s % 16;
-    const bus = this.music;
-    if (m === 'alley') {
-      // Sparse detuned plucks and the odd distant clank.
-      if (i % 4 === 0 && Math.random() < 0.35) { const n = 40 + 12 + SCALE[Math.floor(Math.random() * 5)] + (Math.random() < 0.3 ? 12 : 0); this.pluck(midi(n), t, 0.06, bus); }
-      if (i === 0 && bar === 0 && Math.random() < 0.5) this.hiss(t, 0.15, 0.04, 'bandpass', 1800, 900, 8, { pan: Math.random() * 1.6 - 0.8 }, 0.005, bus);
-      return;
-    }
-    // Battle: crunchy half-time groove in E minor.
-    const kick = i === 0 || i === 6 || i === 10 || (bar === 3 && i === 14);
-    if (kick) { this.tone('sine', 150, 42, t, 0.28, 0.55, {}, 0.002, bus); }
-    if (i === 4 || i === 12) { this.hiss(t, 0.16, 0.22, 'bandpass', 1800, 900, 0.7, {}, 0.002, bus); this.tone('triangle', 220, 160, t, 0.07, 0.1, {}, 0.001, bus); }
-    if (i % 2 === 0) this.hiss(t, 0.03, i % 4 === 2 ? 0.07 : 0.035, 'highpass', 7000, 9000, 1, {}, 0.001, bus);
-    const riff = [0, 0, 12, 0, 3, 0, 10, 7][(i >> 1)];
-    const root = [40, 40, 43, 38][bar];
-    if (i % 2 === 0) this.bass(midi(root + riff - 12), t, spb * 1.8, bus);
-    if (bar === 3 && i === 8) this.pluck(midi(root + 24 + 7), t, 0.08, bus);
-  }
-  private bass(f: number, t: number, dur: number, bus: AudioNode) {
-    const ctx = this.ctx!;
-    const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f;
-    const flt = ctx.createBiquadFilter(); flt.type = 'lowpass'; flt.Q.value = 8; flt.frequency.setValueAtTime(900, t); flt.frequency.exponentialRampToValueAtTime(180, t + dur);
-    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.12, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(flt).connect(g).connect(bus); o.start(t); o.stop(t + dur + 0.05);
-  }
-  private pluck(f: number, t: number, peak: number, bus: AudioNode) {
-    const ctx = this.ctx!;
-    [1, 1.004].forEach(d => {
-      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f * d;
-      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
-      o.connect(g); g.connect(bus); g.connect(this.verbSend); o.start(t); o.stop(t + 1.3);
-    });
   }
 }
 

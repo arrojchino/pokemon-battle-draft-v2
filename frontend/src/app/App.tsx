@@ -1,59 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { isRoomCode } from '@shared';
 import { useSession } from '../net/session.js';
 import { useSettings } from './settings.js';
-import { WorldProvider, useWorld } from './WorldProvider.js';
+import { WorldProvider } from './WorldProvider.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
+import { useAudio } from './useAudio.js';
+import { useApplySettings } from './applySettings.js';
 import { TitleScreen } from '../ui/screens/TitleScreen.js';
 import { PartnerSelect } from '../ui/screens/PartnerSelect.js';
-import { SetupScreen } from '../ui/screens/SetupScreen.js';
+import { MultiplayerScreen } from '../ui/screens/MultiplayerScreen.js';
+import { PokedexScreen } from '../ui/screens/PokedexScreen.js';
+import { SettingsPanel, SettingsScreen } from '../ui/screens/SettingsScreen.js';
 import { MatchScreen } from '../ui/screens/MatchScreen.js';
-import { CreditsDialog, FallbackBackdrop, LoadingVeil, PerfOverlay, SettingsDialog } from '../ui/Overlays.js';
-import { Toasts, toast } from '../ui/primitives.js';
-import { sound } from '../audio/sound.js';
+import { CreditsDialog, FallbackBackdrop, LoadingVeil, PerfOverlay } from '../ui/Overlays.js';
+import { Modal, Toasts, toast, useSettingsOpener } from '../ui/primitives.js';
 
-type Screen = 'title' | 'partners' | 'setup';
+type Screen = 'title' | 'partners' | 'multiplayer' | 'pokedex' | 'settings';
 const inviteFromUrl = () => { const c = new URLSearchParams(location.search).get('room')?.trim() ?? ''; return isRoomCode(c) ? c : ''; };
-
-/**
- * Audio wiring: unlock on the first gesture, follow the volume settings, route stage noises, and give
- * every button a hover tick and a clunk. Battle music is chosen by the match screen.
- */
-function useAudio(inMatch: boolean) {
-  const s = useSettings();
-  const { world } = useWorld();
-  useEffect(() => { sound.setVolumes({ master: s.volume, music: s.music }, s.muted); }, [s.volume, s.music, s.muted]);
-  useEffect(() => { if (!inMatch) sound.setMusic('alley'); }, [inMatch]);
-  useEffect(() => world?.events.on('sound', ({ cue, pan, gain }) => sound.play(cue, { pan, gain })), [world]);
-  useEffect(() => {
-    const unlock = () => sound.unlock();
-    let hovered: Element | null = null;
-    const over = (e: PointerEvent) => {
-      const b = (e.target as Element).closest?.('button:not(:disabled), .menu__item, a');
-      if (b && b !== hovered && e.pointerType === 'mouse') sound.play('hover');
-      hovered = b;
-    };
-    const click = (e: MouseEvent) => {
-      const b = (e.target as Element).closest?.('button, a, input[type=checkbox]');
-      if (!b || (b as HTMLButtonElement).disabled) return;
-      const label = b.textContent?.trim().toLowerCase() ?? '';
-      sound.play(b.matches('.btn--primary, .menu__item.is-primary') ? 'confirm' : label.startsWith('back') || b.matches('[aria-label^="Close"]') ? 'back' : b.matches('.seg button, input[type=checkbox], .swatch') ? 'toggle' : 'click');
-    };
-    window.addEventListener('pointerdown', unlock, true); window.addEventListener('keydown', unlock, true);
-    window.addEventListener('pointerover', over); window.addEventListener('click', click, true);
-    return () => { window.removeEventListener('pointerdown', unlock, true); window.removeEventListener('keydown', unlock, true); window.removeEventListener('pointerover', over); window.removeEventListener('click', click, true); };
-  }, []);
-}
 
 function Shell() {
   const session = useSession();
   const s = useSettings();
   const [screen, setScreen] = useState<Screen>('title');
   const [mode, setMode] = useState<'create' | 'join'>(inviteFromUrl() ? 'join' : 'create');
-  const [afterPartner, setAfterPartner] = useState<Screen>('title');
-  const [returnTo, setReturnTo] = useState<Screen>('title');
+  const [partnerReturn, setPartnerReturn] = useState<Screen>('title');
   const [dialog, setDialog] = useState<'settings' | 'credits' | null>(null);
   const invite = inviteFromUrl();
+  useSettingsOpener(useCallback(() => setDialog('settings'), []));
 
   useEffect(() => { if (session.error) toast(session.error, 'error'); }, [session.errorId, session.error]);
   // Once seated, drop ?room= from the URL so a refresh resumes the session instead of re-joining.
@@ -67,23 +40,27 @@ function Shell() {
   useEffect(() => { if (hadRoom.current && !session.room) setScreen('title'); hadRoom.current = !!session.room; }, [session.room]);
 
   const inMatch = !!session.room && session.seat !== null;
-  const goPartners = (next: Screen) => { setReturnTo(screen); setAfterPartner(next); setScreen('partners'); };
+  const goPartners = (back: Screen) => { setPartnerReturn(back); setScreen('partners'); };
+  const toMultiplayer = (m: 'create' | 'join') => { setMode(m); setScreen('multiplayer'); };
 
   let body;
-  if (inMatch) body = <MatchScreen room={session.room!} seat={session.seat!} transport={session.transport} link={session.link} />;
-  else if (screen === 'partners') body = <PartnerSelect onBack={() => setScreen(returnTo)} onConfirm={() => setScreen(afterPartner)} confirmLabel={afterPartner === 'setup' ? 'Roll out as {name}' : 'Paint it {name}'} />;
-  else if (screen === 'setup') body = <SetupScreen mode={mode} setMode={setMode} inviteCode={invite} onBack={() => setScreen('title')} onChangePartner={() => goPartners('setup')} />;
-  else body = <TitleScreen inviteCode={invite} onPlay={() => { setMode('create'); goPartners('setup'); }} onJoin={() => { setMode('join'); goPartners('setup'); }} onPartners={() => goPartners('title')} onSettings={() => setDialog('settings')} onCredits={() => setDialog('credits')} />;
+  let key: string = screen;
+  if (inMatch) { key = 'match'; body = <MatchScreen room={session.room!} seat={session.seat!} transport={session.transport} link={session.link} />; }
+  else if (screen === 'partners') body = <PartnerSelect onBack={() => setScreen(partnerReturn)} onConfirm={() => setScreen(partnerReturn)} confirmLabel={partnerReturn === 'multiplayer' ? 'Roll out as {name}' : 'Paint it {name}'} />;
+  else if (screen === 'multiplayer') body = <MultiplayerScreen mode={mode} inviteCode={invite} onBack={() => setScreen('title')} onChangePartner={() => goPartners('multiplayer')} />;
+  else if (screen === 'pokedex') body = <PokedexScreen onBack={() => setScreen('title')} />;
+  else if (screen === 'settings') body = <SettingsScreen onBack={() => setScreen('title')} />;
+  else body = <TitleScreen inviteCode={invite} onPlay={() => toMultiplayer('create')} onJoin={() => toMultiplayer('join')} onPokedex={() => setScreen('pokedex')} onPartners={() => goPartners('title')} onSettings={() => setScreen('settings')} onCredits={() => setDialog('credits')} />;
 
-  const featured = [s.partner];
-  useAudio(inMatch);
+  useAudio();
+  useApplySettings();
   return (
     <>
-      <FallbackBackdrop featured={featured} />
+      <FallbackBackdrop featured={[s.partner]} />
       <div className="ui">
-        <ErrorBoundary label="screen">{body}</ErrorBoundary>
+        <ErrorBoundary label="screen"><div className="screen-wrap" key={key}>{body}</div></ErrorBoundary>
       </div>
-      <SettingsDialog open={dialog === 'settings'} onClose={() => setDialog(null)} />
+      <Modal open={dialog === 'settings'} onClose={() => setDialog(null)} title="Settings" wide><SettingsPanel /></Modal>
       <CreditsDialog open={dialog === 'credits'} onClose={() => setDialog(null)} />
       {s.perf && <PerfOverlay />}
       <Toasts />

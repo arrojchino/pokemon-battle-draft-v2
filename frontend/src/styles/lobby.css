@@ -1,0 +1,98 @@
+/* ============================================================
+   Multiplayer: hub, lobby browser, private lobby, waiting room and coin toss.
+   Owned by the multiplayer workstream. Tokens only (styles/tokens.css).
+   ============================================================ */
+
+/* ---------- waiting room ---------- */
+.wait { justify-items: stretch; text-align: center; }
+.wait__seats { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--s-3); }
+.seat {
+  display: flex; align-items: center; gap: var(--s-3); min-width: 0; padding: var(--s-3); text-align: left;
+  background: var(--surface-1); border: 1px solid var(--border-1); border-radius: var(--r-lg);
+  box-shadow: inset 3px 0 0 var(--partner, var(--border-3));
+  animation: slide-l var(--dur-4) var(--ease-out) both;
+}
+.seat--open { border-style: dashed; box-shadow: none; animation-name: slide-r; }
+.seat__text { display: grid; gap: 2px; min-width: 0; }
+.seat__text strong { font: 700 var(--fs-md)/1.2 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seat__text small { display: flex; align-items: center; gap: 4px; color: var(--text-3); font-size: var(--fs-xs); }
+.seat__text small .icon { color: var(--gold); }
+.seat .badge { margin-left: auto; }
+.seat__ring { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; border: 1px dashed var(--border-3); }
+.wait__vs { font: 800 var(--fs-sm)/1 var(--font-display); letter-spacing: var(--tracking-caps); color: var(--text-4); }
+.wait .code { color: var(--text-1); }
+.mp-avatar { --size: 44px; display: grid; place-items: center; flex: none; width: var(--size); height: var(--size); overflow: hidden; border-radius: 50%; background: var(--surface-well); box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 4px var(--partner, var(--border-3)); }
+.mp-avatar--sm { --size: 30px; } .mp-avatar--lg { --size: 64px; }
+.mp-avatar img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 10%; }
+
+/* ---------- coin toss ---------- */
+.toss .calls { margin-top: var(--s-1); }
+.call { background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border-2), var(--shadow-1); transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2), background-color var(--dur-2); }
+.call .icon { color: var(--gold); transition: transform var(--dur-4) var(--ease-spring); }
+.call:hover:not(:disabled) { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--gold), 0 12px 30px -16px color-mix(in srgb, var(--gold) 70%, transparent); }
+.call:hover:not(:disabled) .icon { transform: rotate(-12deg) scale(1.12); }
+.call:focus-visible { outline: none; box-shadow: var(--ring); }
+.toss__wait { display: flex; align-items: center; justify-content: center; gap: var(--s-3); padding: var(--s-4); color: var(--text-2); background: var(--surface-well); border: 1px dashed var(--border-2); border-radius: var(--r-lg); }
+.dock__title--gold { color: var(--gold); text-shadow: 0 0 28px color-mix(in srgb, var(--gold) 35%, transparent); }
+.toss-result .dock__title--gold { animation: pop var(--dur-4) var(--ease-spring) both; }
+
+@media (max-width: 560px) {
+  .wait__seats { grid-template-columns: 1fr; }
+  .wait__vs { display: none; }
+}
+
+/* ---------- multiplayer hub ---------- */
+.mp { display: grid; align-content: start; padding: var(--screen-pad); overflow: auto; }
+.mp__grid { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: var(--s-5); align-items: start; width: min(1040px, 100%); }
+.mp__trainer { display: grid; gap: var(--s-4); box-shadow: inset 0 3px 0 var(--partner, var(--border-3)), var(--shadow-2); animation: slide-l var(--dur-4) var(--ease-out) both; }
+.mp__id { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s-3); align-items: center; }
+.mp__idtext { display: grid; min-width: 0; }
+.mp__idtext small { font: 600 var(--fs-2xs)/1.4 var(--font-display); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-3); }
+.mp__idtext strong { font: 700 var(--fs-lg)/1.2 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mp__status { margin: 0; font-size: var(--fs-xs); color: var(--text-3); }
+.mp__main { display: grid; gap: var(--s-4); min-height: 420px; align-content: start; animation: rise var(--dur-4) var(--ease-out) both; }
+.mp__tabs { display: flex; gap: var(--s-1); padding: 4px; background: var(--surface-well); border: 1px solid var(--border-1); border-radius: var(--r-md); }
+.mp__tab {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: 40px; padding: 0 var(--s-3);
+  font: 700 var(--fs-xs)/1 var(--font-display); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-3);
+  background: transparent; border: 0; border-radius: var(--r-sm); cursor: pointer; transition: color var(--dur-2), background-color var(--dur-2);
+}
+.mp__tab:hover { color: var(--text-1); }
+.mp__tab.is-on { color: var(--text-1); background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--cyan), var(--shadow-1); }
+.mp__tab.is-on .icon { color: var(--cyan); }
+.mp__tab:focus-visible { outline: none; box-shadow: var(--ring); }
+.mp__body { animation: rise var(--dur-3) var(--ease-out) both; }
+.mp__form { display: grid; gap: var(--s-5); max-width: 520px; }
+.mp__form .btn--xl { justify-self: start; }
+.mp__code { font: 700 var(--fs-xl)/1 var(--font-mono) !important; letter-spacing: 0.2em; text-transform: uppercase; }
+
+.lobbies { display: grid; gap: var(--s-3); }
+.lobbies__bar { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
+.lobbies__search { flex: 1 1 200px; display: flex; align-items: center; gap: var(--s-2); min-height: 38px; padding: 0 var(--s-3); color: var(--text-3); background: var(--surface-well); border: 1px solid var(--border-2); border-radius: var(--r-md); }
+.lobbies__search:focus-within { border-color: var(--cyan); box-shadow: var(--ring); }
+.lobbies__search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-1); font-size: var(--fs-sm); }
+.lobbies__refresh.is-loading .icon { animation: spin 0.9s linear infinite; }
+.lobbies__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+.lobby {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--s-3); align-items: center; padding: var(--s-3);
+  background: var(--surface-1); border: 1px solid var(--border-1); border-radius: var(--r-lg); box-shadow: inset 3px 0 0 var(--partner, var(--border-3));
+  animation: rise var(--dur-3) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 40ms); transition: border-color var(--dur-2), background-color var(--dur-2);
+}
+.lobby:hover { background: var(--surface-2); border-color: var(--border-2); }
+.lobby__text { display: grid; gap: 2px; min-width: 0; }
+.lobby__text strong { font: 700 var(--fs-md)/1.2 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lobby__text small { color: var(--text-3); font-size: var(--fs-xs); }
+.lobby__tags { display: flex; flex-wrap: wrap; gap: var(--s-1); justify-content: flex-end; }
+.lobby__tags .badge { display: inline-flex; align-items: center; gap: 4px; }
+.lobbies__empty { display: grid; justify-items: center; gap: var(--s-3); padding: var(--s-8) var(--s-4); text-align: center; color: var(--text-2); background: var(--surface-well); border: 1px dashed var(--border-2); border-radius: var(--r-lg); }
+.lobbies__empty p { margin: 0; }
+.lobbies__ball { width: 44px; height: 44px; border-radius: 50%; opacity: 0.5; background: linear-gradient(180deg, var(--text-3) 0 46%, var(--surface-well) 46% 54%, var(--text-4) 54%); box-shadow: inset 0 0 0 3px var(--surface-well), 0 0 0 1px var(--border-2); position: relative; }
+.lobbies__ball::after { content: ''; position: absolute; inset: 35%; border-radius: 50%; background: var(--surface-2); box-shadow: 0 0 0 3px var(--surface-well); }
+.lobbies__foot { margin: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 860px) {
+  .mp__grid { grid-template-columns: 1fr; }
+  .lobby { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .lobby__tags { grid-column: 2 / -1; justify-content: flex-start; }
+}

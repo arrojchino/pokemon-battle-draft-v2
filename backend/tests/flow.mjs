@@ -28,7 +28,7 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 const a = client('a'); const b = client('b');
 await connect(a); await connect(b);
 await until(() => a.hello && b.hello, 'hello');
-assert.equal(a.hello.protocol, 3);
+assert.equal(a.hello.protocol, 4);
 
 // v2 create with avatar; v1-style join (no avatar field) must still work.
 a.send({ type: 'create', name: 'Ana\u0000‮', bestOf: 3, avatar: 'rust' });
@@ -60,35 +60,42 @@ c.send({ type: 'flip' });
 await until(() => c.errors.includes('Not seated'), 'unseated action');
 c.ws.close();
 
-// Calls must be opposite (v1 PeerJS host allowed equal calls, which soft-locked the room).
-a.send({ type: 'call', side: 'heads' });
-await until(() => a.state.calls[0] === 'heads', 'call a');
-b.send({ type: 'call', side: 'heads' });
-await until(() => b.errors.includes('Calls must be opposite'), 'same call rejected');
-b.send({ type: 'call', side: 'tails' });
-await until(() => a.state.calls.every(Boolean) && b.state.calls.every(Boolean), 'calls');
+// One caller per coin, drawn at random for game 1; the call itself flips the coin.
+await until(() => a.state.caller === 0 || a.state.caller === 1, 'caller drawn');
+const callerSeat = a.state.caller;
+const caller = callerSeat === 0 ? a : b; const nonCaller = callerSeat === 0 ? b : a;
+nonCaller.send({ type: 'call', side: 'heads' });
+await until(() => nonCaller.errors.some(e => e.endsWith('calls this coin')), 'non-caller call rejected');
 b.send({ type: 'spin' });
-await until(() => b.errors.includes('Not time to deal'), 'deal before flip rejected');
+await until(() => b.errors.includes('Not time to deal'), 'deal before the call rejected');
+caller.send({ type: 'call', side: 'heads' });
+await until(() => a.state.phase === 'spin' && b.state.phase === 'spin', 'call flips the coin');
 a.send({ type: 'flip' });
-await until(() => a.state.phase === 'spin' && b.state.phase === 'spin', 'flip');
+await until(() => a.errors.includes('The coin flips as soon as it is called'), 'retired flip rejected');
 const result = a.state.result;
 const winner = a.state.tossWinner;
-assert.equal(result === 'heads' ? 0 : 1, winner);
+assert.equal(a.state.calls[callerSeat], 'heads'); assert.equal(a.state.calls[1 - callerSeat], 'tails');
+assert.equal(result === 'heads' ? callerSeat : 1 - callerSeat, winner);
 assert.equal(b.state.result, result);
 
 b.send({ type: 'spin' });
 await until(() => a.state.phase === 'pick' && b.state.phase === 'pick', 'deal');
-const candidates = a.state.candidates;
+const picker = winner === 0 ? a : b; const other = winner === 0 ? b : a;
+assert.equal(other.state.candidates, null, 'only the toss winner sees the dealt teams');
+const candidates = picker.state.candidates;
 assert.equal(candidates.length, 2);
 assert.equal(new Set([...candidates[0], ...candidates[1]].map(p => p.name)).size, 12);
 assert.ok(candidates[0].every(p => Array.isArray(p.types) && p.types.length >= 1), 'types are included');
-const picker = winner === 0 ? a : b; const other = winner === 0 ? b : a;
 other.send({ type: 'pick', team: 0 });
 await until(() => other.errors.includes('Only the toss winner picks'), 'non-winner pick rejected');
 picker.send({ type: 'pick', team: 1 });
 await until(() => b.state.phase === 'battle' && a.state.phase === 'battle', 'pick');
-assert.deepEqual(a.state.teams[winner].map(p => p.name), candidates[1].map(p => p.name));
-assert.deepEqual(a.state.teams, b.state.teams);
+// Each player gets their own six in full and only the rival's species and types.
+assert.deepEqual(picker.state.teams[winner].map(p => p.name), candidates[1].map(p => p.name));
+assert.deepEqual(other.state.teams[1 - winner].map(p => p.name), candidates[0].map(p => p.name));
+assert.equal(picker.state.teams[1 - winner].length, 0); assert.equal(other.state.teams[winner].length, 0);
+assert.deepEqual(other.state.rival.map(p => p.name), candidates[1].map(p => p.name));
+assert.ok(other.state.rival.every(p => !('moves' in p) && !('item' in p) && !('ability' in p)), 'rival sets stay hidden');
 
 b.send({ type: 'result', winner: 1 - winner });
 await until(() => a.state.phase === 'between', 'result');
@@ -96,6 +103,7 @@ assert.equal(a.state.wins[1 - winner], 1);
 assert.equal(a.state.history[0].toss, result);
 a.send({ type: 'next' });
 await until(() => b.state.phase === 'calls' && b.state.games === 1, 'next');
+assert.equal(a.state.caller, 1 - winner, 'the winner of game 1 calls game 2');
 
 // Reconnect with the stored token (what the browser does after a refresh).
 const tokenB = b.joined.token;
@@ -110,9 +118,8 @@ await until(() => b2.joined?.seat === 1 && a.state.players[1].connected, 'resume
 // Seat 0 wins until the best-of-3 completes (1 or 2 more games depending on game 1's toss).
 for (let g = 0; a.state.phase !== 'complete'; g++) {
   assert.ok(g < 3, 'series should complete');
-  a.send({ type: 'call', side: 'heads' }); b2.send({ type: 'call', side: 'tails' });
-  await until(() => a.state.calls.every(Boolean), 'calls ' + g);
-  a.send({ type: 'flip' }); await until(() => a.state.phase === 'spin', 'flip ' + g);
+  (a.state.caller === 0 ? a : b2).send({ type: 'call', side: 'heads' });
+  await until(() => a.state.phase === 'spin', 'call ' + g);
   a.send({ type: 'spin' }); await until(() => a.state.phase === 'pick', 'deal ' + g);
   (a.state.tossWinner === 0 ? a : b2).send({ type: 'pick', team: 0 });
   await until(() => a.state.phase === 'battle', 'pick ' + g);
@@ -120,12 +127,14 @@ for (let g = 0; a.state.phase !== 'complete'; g++) {
   await until(() => a.state.games === 2 + g, 'result ' + g);
   if (a.state.phase === 'between') a.send({ type: 'next' });
   await until(() => a.state.phase === 'calls' || a.state.phase === 'complete', 'advance ' + g);
+  if (a.state.phase === 'calls') assert.equal(a.state.caller, 0, 'the previous winner calls');
 }
 assert.equal(a.state.phase, 'complete');
 assert.equal(a.state.wins[0], 2);
 assert.equal(a.state.history.length, a.state.games);
 a.send({ type: 'reset', bestOf: 5 });
 await until(() => b2.state.phase === 'calls' && b2.state.bestOf === 5 && b2.state.games === 0, 'reset');
+assert.ok(b2.state.caller === 0 || b2.state.caller === 1, 'a new series draws a caller');
 
 console.log('FLOW_OK', { code, result, winner, protocol: a.hello.protocol });
 a.ws.close(); b2.ws.close();

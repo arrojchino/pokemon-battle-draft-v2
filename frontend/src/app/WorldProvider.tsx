@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { World } from '../engine/World.js';
-import { settings, useReducedMotion, useSettings } from './settings.js';
+import { displayOf, settings, useReducedMotion, useSettings } from './settings.js';
 
 export type WorldStatus = { kind: 'loading'; progress: number; label: string } | { kind: 'ready' } | { kind: 'fallback'; reason: string };
 type Ctx = { world: World | null; status: WorldStatus; firstCharacter: boolean };
@@ -9,7 +9,7 @@ const WorldCtx = createContext<Ctx>({ world: null, status: { kind: 'loading', pr
 export const useWorld = () => useContext(WorldCtx);
 
 /**
- * Owns the one WebGL canvas for the whole app. The engine chunk (three.js + three-vrm) is loaded
+ * Owns the one WebGL canvas for the whole app. The engine chunk (three.js) is loaded
  * lazily so the UI paints immediately; without WebGL2 the app falls back to rendered portraits.
  */
 export function WorldProvider({ children }: { children: ReactNode }) {
@@ -30,8 +30,8 @@ export function WorldProvider({ children }: { children: ReactNode }) {
         const { World } = await import('../engine/World.js');
         if (cancelled) return;
         if (!World.supported()) { setStatus({ kind: 'fallback', reason: 'WebGL 2 is not available in this browser' }); return; }
-        const st = settings.get();
-        w = new World(host.current!, canvas.current!, { quality: st.quality, reducedMotion: reduced, preload: [st.partner] });
+        const st = settings.get(); const d = displayOf(st);
+        w = new World(host.current!, canvas.current!, { ...d, calm: st.calm, steady: st.camera === 'steady', reducedMotion: reduced, preload: [st.partner] });
         offs.push(w.events.on('progress', p => setStatus(prev => prev.kind === 'loading' ? { kind: 'loading', progress: p.total ? p.loaded / p.total : 0, label: `Loading ${p.label}` } : prev)));
         offs.push(w.events.on('characterReady', () => { setFirstCharacter(true); setStatus(prev => prev.kind === 'loading' ? { kind: 'ready' } : prev); }));
         offs.push(w.events.on('contextLost', () => setStatus({ kind: 'fallback', reason: 'The graphics context was lost' })));
@@ -50,7 +50,11 @@ export function WorldProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => { world?.setReducedMotion(reduced); document.documentElement.dataset.motion = reduced ? 'reduced' : 'full'; }, [world, reduced]);
-  useEffect(() => { world?.setQuality(s.quality); }, [world, s.quality]);
+  const d = displayOf(s);
+  useEffect(() => { world?.setQuality(d.quality); }, [world, d.quality]);
+  useEffect(() => { world?.setRenderScale(d.renderScale); }, [world, d.renderScale]);
+  useEffect(() => { world?.setEffects(d.effects, s.calm); }, [world, d.effects, s.calm]);
+  useEffect(() => { world?.setCameraStyle(s.camera); }, [world, s.camera]);
 
   return (
     <WorldCtx.Provider value={{ world, status, firstCharacter }}>

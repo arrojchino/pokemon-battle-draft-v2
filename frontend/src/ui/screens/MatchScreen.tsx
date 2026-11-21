@@ -4,12 +4,14 @@ import { characterById } from '../../characters/roster.js';
 import { useSettings } from '../../app/settings.js';
 import { useWorld } from '../../app/WorldProvider.js';
 import type { Transport } from '../../net/types.js';
+import { inviteLink } from '../../net/session.js';
 import type { Layout } from '../../engine/World.js';
 import { ErrorBoundary } from '../../app/ErrorBoundary.js';
-import { CopyButton, Icon, toast } from '../primitives.js';
+import { CopyButton, Icon, openSettings, toast } from '../primitives.js';
 import { matchModel } from './match/model.js';
 import { Scoreboard } from './match/Scoreboard.js';
-import { CompletePanel, DraftBoard, IntervalPanel, TossPanel, TossResultPanel, WaitingPanel } from './match/Panels.js';
+import { CompletePanel, DraftBoard, IntervalPanel } from './match/Panels.js';
+import { TossPanel, TossResultPanel, WaitingPanel } from './match/LobbyPanels.js';
 import { BattlePanel } from './match/BattlePanel.js';
 import { HistoryDrawer } from './match/HistoryDrawer.js';
 import { BattleArena } from './match/BattleArena.js';
@@ -37,7 +39,7 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
   const [flipping, setFlipping] = useState(false);
   const prev = useRef<PublicRoom | null>(null);
   const flippedKey = useRef('');
-  const accent = characterById(m.mine)?.accent ?? '#3ee6ff';
+  const partnerColor = characterById(m.mine)?.accent;
   const reduced = useReducedMotion();
   const reducedRef = useRef(reduced); reducedRef.current = reduced;
 
@@ -63,7 +65,6 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
   // Keep the arena up after the server records the result until local playback has shown the ending
   // (a slower client may still be animating the last turn) and the player continues or it auto-dismisses.
   const showArena = !!arena && !arena.dismissed && (room.phase === 'battle' || (!!arenaSnap && arenaSnap.state.phase !== 'idle'));
-  useEffect(() => { sound.setMusic(showArena ? 'battle' : 'alley'); }, [showArena]);
   const dismissArena = () => setArena(a => (a ? { ...a, dismissed: true } : a));
   useEffect(() => {
     if (!arena || arena.reacted || !battleOver || !world || !arenaSnap) return;
@@ -132,6 +133,8 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
         sound.play(winner === seat ? 'tossWin' : 'tossLose');
         world.emote(who(winner), charOf(winner)?.personality.on.tossWin ?? 'excited');
         world.emote(who((1 - winner) as Seat), charOf((1 - winner) as Seat)?.personality.on.tossLose ?? 'surprised');
+        // The toss winner's client deals as soon as the coin lands; the other player keeps a Deal button.
+        if (winner === seat) window.setTimeout(() => transport.act({ type: 'spin' }), reducedRef.current ? 300 : 1200);
       };
       // The reveal never waits on rendering alone: if frames are slow or the tab is hidden, a wall-clock
       // timeout finishes it so the game can always continue.
@@ -162,7 +165,7 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
       return <BattleArena controller={arena.controller} mineLabel={m.myName} theirsLabel={m.oppName} onForfeit={() => transport.forfeit()}
         finished={room.phase !== 'battle'} onContinue={dismissArena} iWon={w === undefined || w === null ? null : w === seat} />;
     }
-    if (!m.hasOpponent) return <WaitingPanel room={room} />;
+    if (!m.hasOpponent) return <WaitingPanel room={room} m={m} />;
     switch (room.phase) {
       case 'calls': return <TossPanel room={room} m={m} act={act} flipping={flipping} />;
       case 'spin': return <TossResultPanel room={room} m={m} act={act} revealed={revealed || status.kind === 'fallback'} />;
@@ -172,15 +175,14 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
       case 'complete': return <CompletePanel room={room} m={m} act={act} />;
     }
   };
-  const inviteLink = `${location.origin}${location.pathname}?room=${encodeURIComponent(room.code)}`;
 
   return (
-    <main className={`screen match phase-${room.phase} ${showArena ? 'has-arena' : ''}`} style={{ '--accent': accent } as CSSProperties}>
+    <main className={`screen match phase-${room.phase} ${showArena ? 'has-arena' : ''}`} style={{ '--partner': partnerColor } as CSSProperties}>
       <Scoreboard room={room} m={m} />
       <div className="roombar">
         <span className={`dot ${link === 'online' ? 'dot--on' : link === 'connecting' ? 'dot--wait' : ''}`} title={`Link ${link}`} />
         <span className="roombar__code mono" title={room.code}>{room.code.length > 10 ? room.code.slice(0, 8) + '…' : room.code}</span>
-        <CopyButton className="iconbtn iconbtn--text" label="Invite" getText={() => inviteLink} />
+        <CopyButton className="iconbtn iconbtn--text" label="Invite" getText={() => inviteLink(room.code)} />
         <button className="iconbtn iconbtn--text" onClick={() => setHistory(h => !h)} aria-expanded={history}><Icon name="history" />History</button>
         <details className="roombar__menu">
           <summary className="iconbtn" aria-label="Room menu"><Icon name="gear" /></summary>
@@ -188,6 +190,7 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
             {transport.supportsBattles && room.phase !== 'battle' && room.phase !== 'pick' && (
               <button onClick={() => act({ type: 'mode', mode: room.mode === 'app' ? 'showdown' : 'app' })}><Icon name="swords" />{room.mode === 'app' ? 'Battle on Showdown instead' : 'Battle here instead'}</button>
             )}
+            <button onClick={openSettings}><Icon name="sliders" />Settings</button>
             <button onClick={() => act({ type: 'reset', bestOf: 3 })}>New series · Best of 3</button>
             <button onClick={() => act({ type: 'reset', bestOf: 5 })}>New series · Best of 5</button>
             <button onClick={() => transport.leave()}><Icon name="leave" />Leave room</button>

@@ -34,7 +34,9 @@ export class BattleCamera {
   private mon(side: 0 | 1) { const m = ARENA.mon[side]; return { x: m.x, y: ARENA.cardY, z: m.z }; }
 
   neutral(): Shot {
-    const s = Math.sin(this.clock * 0.11), c = Math.cos(this.clock * 0.083);
+    // Disabled (steady camera style or reduced motion): a locked-off establishing shot instead of a slow breathe.
+    const k = this.enabled ? this.clock : 0;
+    const s = Math.sin(k * 0.11), c = Math.cos(k * 0.083);
     return { pos: v(-1.5 + s * 0.35, 1.78 + c * 0.07, 5.8 + c * 0.22), target: v(-0.3 + s * 0.1, 0.88, -0.6), fov: 40, time: 1.6, roll: 0 };
   }
   /** Over the attacker's shoulder (yours), or a low hero angle on the opponent's Pokémon. */

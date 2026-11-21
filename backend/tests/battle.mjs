@@ -69,9 +69,7 @@ for (let game = 1; a.state.phase !== 'complete'; game++) {
   assert.ok(game <= 6, 'series must finish');
   // The bots spam choices and can trip the per-socket rate limit ("Slow down"), so control
   // messages are re-sent until the server state confirms them.
-  await sendSure(a, { type: 'call', side: 'heads' }, () => a.state.calls[0], 'call A');
-  await sendSure(bRef, { type: 'call', side: 'tails' }, () => a.state.calls[1], 'call B');
-  await sendSure(a, { type: 'flip' }, () => a.state.phase === 'spin', 'flip');
+  await sendSure(a.state.caller === 0 ? a : bRef, { type: 'call', side: 'heads' }, () => a.state.phase === 'spin', 'call');
   await sendSure(a, { type: 'spin' }, () => a.state.phase === 'pick', 'deal');
   await sendSure(a.state.tossWinner === 0 ? a : bRef, { type: 'pick', team: 0 }, () => a.state.phase === 'battle', 'pick');
   await until(() => a.state.phase === 'battle' && a.state.battle, 'battle starts');

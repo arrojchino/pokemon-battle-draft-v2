@@ -1,6 +1,6 @@
-import type { CSSProperties } from 'react';
 import type { PublicRoom } from '@shared';
 import { characterById } from '../../../characters/roster.js';
+import { partnerStyle } from '../LobbyParts.js';
 import type { MatchModel } from './model.js';
 
 const PHASE_LABEL: Record<PublicRoom['phase'], string> = {
@@ -10,7 +10,7 @@ const PHASE_LABEL: Record<PublicRoom['phase'], string> = {
 function Plate({ side, name, partner, wins, target, online, you, active }: { side: 'l' | 'r'; name: string; partner: string | null; wins: number; target: number; online: boolean | null; you: boolean; active: boolean }) {
   const c = characterById(partner as never);
   return (
-    <div className={`plate plate--${side} ${active ? 'is-active' : ''}`} style={{ '--accent': c?.accent ?? '#555b7a' } as CSSProperties}>
+    <div className={`plate plate--${side} ${active ? 'is-active' : ''}`} style={partnerStyle(c?.id)}>
       <div className="plate__portrait">{c ? <img src={c.portrait} alt="" /> : <span>?</span>}</div>
       <div className="plate__text">
         <strong>{name}{you && <em>You</em>}</strong>

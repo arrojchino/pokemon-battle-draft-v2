@@ -1,9 +1,9 @@
 import type { DataConnection, default as PeerType } from 'peerjs';
 import {
   PROTOCOL_VERSION, createRoom, isRoomCode, parseClientMessage, parseServerMessage, publicView, reduce, seatForToken, seatGuest,
-  type BattleMode, type CharacterId, type GameAction, type RoomState, type Rng, type ServerMessage,
+  type BattleMode, type CharacterId, type GameAction, type RoomState, type Rng, type ServerMessage, type Visibility,
 } from '@shared';
-import { SnapshotStore, sessionStore, type BattleListener, type Transport } from './types.js';
+import { SnapshotStore, sessionStore, type BattleListener, type LobbyList, type Transport } from './types.js';
 
 const HOST_KEY = 'pab-peer-host';
 type HostSave = { id: string; room: RoomState; savedAt: number };
@@ -23,7 +23,7 @@ export class PeerTransport implements Transport {
   readonly kind = 'peer' as const;
   /** The simulator runs on the dedicated server only; peer rooms use the Showdown handoff. */
   readonly supportsBattles = false;
-  private store = new SnapshotStore({ kind: 'peer', link: 'connecting', room: null, seat: null, error: '', errorId: 0 });
+  private store = new SnapshotStore({ kind: 'peer', link: 'connecting', room: null, seat: null, serverProtocol: null, error: '', errorId: 0 });
   private peer: PeerType | null = null;
   private PeerCtor: typeof PeerType | null = null;
   private host: RoomState | null = null;        // set when we are the authority
@@ -85,9 +85,10 @@ export class PeerTransport implements Transport {
 
   private publish() {
     if (!this.host) return;
-    const view = publicView(this.host, [true, !!this.guestConn?.open], PROTOCOL_VERSION);
-    this.store.set({ room: view });
-    if (this.guestConn?.open) this.guestConn.send({ type: 'state', room: view } satisfies ServerMessage);
+    // The host plays seat 0 and sees only seat 0's view; the guest gets seat 1's (see publicView).
+    const conn: [boolean, boolean] = [true, !!this.guestConn?.open];
+    this.store.set({ room: publicView(this.host, conn, PROTOCOL_VERSION, 0) });
+    if (this.guestConn?.open) this.guestConn.send({ type: 'state', room: publicView(this.host, conn, PROTOCOL_VERSION, 1) } satisfies ServerMessage);
     this.saveHost();
   }
 
@@ -103,13 +104,13 @@ export class PeerTransport implements Transport {
           this.bindGuest(conn); reply({ type: 'joined', code: this.host.code, token: msg.token, seat: 1 });
         } else {
           const t = token();
-          const r = seatGuest(this.host, { name: msg.name, token: t, avatar: msg.avatar });
+          const r = seatGuest(this.host, { name: msg.name, token: t, avatar: msg.avatar }, cryptoRng);
           if (!r.ok) { reply({ type: 'error', message: r.error }); setTimeout(() => conn.close(), 200); return; }
           this.host = r.room; this.bindGuest(conn); reply({ type: 'joined', code: this.host.code, token: t, seat: 1 });
         }
         this.publish(); return;
       }
-      if (msg.type === 'create') return;
+      if (msg.type === 'create' || msg.type === 'lobbies' || msg.type === 'quick') return;
       if (msg.type === 'choose' || msg.type === 'forfeit') { reply({ type: 'error', message: 'In-app battles need the dedicated server' }); return; }
       if (conn !== this.guestConn) { reply({ type: 'error', message: 'Not seated' }); return; }
       this.apply(msg, 1, reply);
@@ -154,7 +155,8 @@ export class PeerTransport implements Transport {
   choose() { this.store.fail('In-app battles need the dedicated server'); }
   forfeit() { this.store.fail('In-app battles need the dedicated server'); }
   onBattle(_listener: BattleListener) { return () => {}; }
-  create(name: string, bestOf: 3 | 5, avatar: CharacterId | null, _mode: BattleMode) {
+  /** Peer rooms are invite-only: there is no server to list them, so `visibility` does not apply. */
+  create(name: string, bestOf: 3 | 5, avatar: CharacterId | null, _mode: BattleMode, _visibility: Visibility) {
     this.whenOpen(() => {
       if (!this.peer) return;
       this.hostConn?.close(); this.hostConn = null;
@@ -167,6 +169,8 @@ export class PeerTransport implements Transport {
     sessionStore.clear();
     this.whenOpen(() => this.connectTo(c, { type: 'join', code: c, name, avatar }));
   }
+  quickJoin() { this.store.fail('Quick join needs the dedicated server'); }
+  listLobbies(): Promise<LobbyList> { return Promise.reject(new Error('Public lobbies need the dedicated server')); }
   act(action: GameAction) {
     if (this.host) this.apply(action, 0, m => { if (m.type === 'error') this.store.fail(m.message); });
     else if (this.hostConn?.open) this.hostConn.send(action);

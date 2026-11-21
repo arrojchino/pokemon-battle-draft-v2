@@ -44,6 +44,16 @@ The original v1 `backend/tests/flow.mjs` passes unchanged against the v2 server,
 | Server `battle` | `{id, lines, reset, deadline}`: protocol lines for this seat only; `reset` means replace the local log (join, resume, reconnect) |
 | Server-only actions | `battleStatus`, `battleEnd` go through the same `reduce()` but `parseClientMessage` can never produce them, so a client cannot report an in-app result |
 
+### Protocol v4: lobbies, one caller, private views
+
+| Addition | Shape |
+|---|---|
+| `create` | adds `visibility: 'private' \| 'public'`; public rooms are listed until a rival sits down |
+| Client `lobbies`, `quick` | list open public rooms (`{lobbies, now}`), or take the longest-waiting one (else open a public room) |
+| Room `caller` | the seat that calls this coin: random for the first game of a series, then the winner of the previous game; a draw keeps the caller. Calling flips the coin at once |
+| Per-seat views | `publicView(room, connected, protocol, viewer)`: during the pick only the toss winner receives `candidates`; during a game the rival's six arrive as `rival` (species and types, like Team Preview). Finished games are public in `history` |
+| Battle format | `gen9purehackmons`, so the rival's HP reaches each player in percent only (asserted in `backend/tests/sleep.mjs`) |
+
 ### Battle flow
 
 ```

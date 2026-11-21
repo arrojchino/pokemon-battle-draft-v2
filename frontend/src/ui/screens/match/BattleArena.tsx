@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { moveInfo, type TypeName } from '@shared';
 import type { BattleController } from '../../../battle/controller.js';
-import { setFor as setForSpecies, type BattleRequest, type LogEntry, type MonView, type RequestPokemon, type SideView } from '../../../battle/model.js';
+import { setFor as setForSpecies, switchLocked, type BattleRequest, type LogEntry, type MonView, type RequestPokemon, type SideView } from '../../../battle/model.js';
 import { Icon } from '../../primitives.js';
 import { sound } from '../../../audio/sound.js';
 import { moveVerdict, type Fighter } from '../../../battle/matchup.js';
@@ -22,10 +22,34 @@ function HpBar({ mon, exact }: { mon: MonView; exact: boolean }) {
   );
 }
 
-/** What we know about a Pokémon on the field (sets are public after the draft). */
-export function fighterOfMon(mon: MonView | null): Fighter | null {
+/**
+ * What we know about a Pokémon on the field. Our own sets are fully known; for the rival only species,
+ * types and what the battle has revealed (moves used, item and ability once shown).
+ */
+export function fighterOfMon(mon: MonView | null, known = true): Fighter | null {
   if (!mon) return null;
-  return { species: mon.species, types: mon.set?.types ?? ['Normal'], tera: mon.tera, ability: mon.set?.ability ?? '', item: mon.item };
+  const item = known || mon.revealed.item ? mon.item : 'Unknown';
+  return { species: mon.species, types: mon.set?.types ?? ['Normal'], tera: mon.tera, ability: known ? mon.set?.ability ?? '' : mon.revealed.ability ?? '', item };
+}
+const hiddenNote = (mon: MonView) => (mon.revealed.moves.length ? `${mon.revealed.moves.length} of 4 moves revealed. The rest of its set is hidden.` : 'Its set stays hidden until it acts.');
+
+/** Floating damage and healing numbers from observed HP changes of the active Pokémon. */
+function useHpPops(mon: MonView | null, exact: boolean) {
+  const last = useRef<{ key: string; hp: number } | null>(null);
+  const seq = useRef(0);
+  const [pops, setPops] = useState<{ id: number; text: string; heal: boolean }[]>([]);
+  const hp = mon ? (mon.fainted ? 0 : mon.hp) : 0;
+  useEffect(() => {
+    if (!mon) return;
+    const prev = last.current; last.current = { key: mon.key, hp };
+    if (!prev || prev.key !== mon.key || prev.hp === hp) return;
+    const d = hp - prev.hp;
+    const id = ++seq.current;
+    setPops(p => [...p.slice(-2), { id, text: `${d < 0 ? '−' : '+'}${Math.abs(d)}${exact ? '' : '%'}`, heal: d > 0 }]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mon?.key, hp]);
+  const done = (id: number) => setPops(p => p.filter(x => x.id !== id));
+  return { pops, done };
 }
 /** Our own Pokémon, straight from the simulator request (exact item and ability). */
 function fighterOfReq(p: RequestPokemon, mon?: MonView | null): Fighter {
@@ -38,9 +62,11 @@ function fighterOfReq(p: RequestPokemon, mon?: MonView | null): Fighter {
 
 function MonPlate({ mon, side, label, mine, foe }: { mon: MonView | null; side: SideView; label: string; mine: boolean; foe: MonView | null }) {
   const tip = useTip(() => {
-    const f = fighterOfMon(mon); if (!f || !mon) return null;
-    return <MonCard f={f} hp={mon} status={mon.status} moves={mon.set?.moves ?? []} vs={fighterOfMon(foe)} foeAttacker={fighterOfMon(foe)} note={mine ? undefined : 'Drafted set: all four moves are known.'} />;
+    const f = fighterOfMon(mon, mine); if (!f || !mon) return null;
+    const vs = fighterOfMon(foe, !mine);
+    return <MonCard f={f} hp={mon} pct={!mine} status={mon.status} moves={mine ? mon.set?.moves ?? [] : mon.revealed.moves} vs={vs} foeAttacker={vs} note={mine ? undefined : hiddenNote(mon)} />;
   });
+  const { pops, done } = useHpPops(mon, mine);
   if (!mon) return null;
   const types: TypeName[] = mon.tera ? [mon.tera] : mon.set?.types ?? [];
   const boosts = Object.entries(mon.boosts).filter(([, v]) => v);
@@ -52,7 +78,8 @@ function MonPlate({ mon, side, label, mine, foe }: { mon: MonView | null; side: 
         {mon.status && <span className={`stat-chip stat-chip--${mon.status}`}>{STATUS_LABEL[mon.status] ?? mon.status}</span>}
         {mon.tera && <TypeBadge type={mon.tera} tera size="sm" />}
       </header>
-      <HpBar mon={mon} exact />
+      <HpBar mon={mon} exact={mine} />
+      <div className="pops" aria-hidden="true">{pops.map(p => <b key={p.id} className={`pop ${p.heal ? 'pop--heal' : ''}`} onAnimationEnd={() => done(p.id)}>{p.text}</b>)}</div>
       <div className="plate2__row">
         <div className="plate2__types">{!mon.tera && mon.set?.types.map(t => <TypeBadge key={t} type={t} size="sm" />)}</div>
         {boosts.map(([k, v]) => <span key={k} className={`boost ${v > 0 ? 'boost--up' : 'boost--down'}`}>{v > 0 ? '+' : ''}{v} {STAT_SHORT[k] ?? k}</span>)}
@@ -97,7 +124,7 @@ function TeamPreview({ req, theirs, choose }: { req: BattleRequest; theirs: Side
   );
 }
 function FoePreview({ mon }: { mon: MonView }) {
-  const tip = useTip(() => { const f = fighterOfMon(mon)!; return <MonCard f={f} moves={mon.set?.moves ?? []} vs={null} note="Drafted set: all four moves are known." />; });
+  const tip = useTip(() => <MonCard f={fighterOfMon(mon, false)!} moves={[]} vs={null} note="Its set stays hidden until it is revealed in battle." />);
   return <span {...tip} tabIndex={0} className="preview__foe"><Sprite eager artId={mon.set?.artId ?? mon.set?.id ?? 0} name={mon.species} /></span>;
 }
 function LeadButton({ p, sp, onPick }: { p: RequestPokemon; sp: string; onPick: () => void }) {
@@ -148,11 +175,10 @@ function Actions({ req, choose, mons, foe }: { req: BattleRequest; choose: (c: s
   const [tera, setTera] = useState(false);
   const active = req.active?.[0];
   const forced = !!req.forceSwitch?.[0];
-  const trapped = !!active?.trapped;
   const bench = req.side.pokemon.map((p, i) => ({ p, i, mon: mons.mons.find(m => m.key === p.ident.replace(/^(p[12])[a-z]?:\s*/, '$1: ')) }));
   const me = bench.find(b => b.p.active);
   const user = me ? fighterOfReq(me.p, me.mon) : null;
-  const target = fighterOfMon(foe);
+  const target = fighterOfMon(foe, false);
   const teraPreview = tera && active?.canTerastallize ? active.canTerastallize as TypeName : null;
   return (
     <div className="actions">
@@ -173,7 +199,7 @@ function Actions({ req, choose, mons, foe }: { req: BattleRequest; choose: (c: s
         <div className="switches" aria-label="Switch">
           {forced && <p className="actions__prompt">Choose your next Pokémon</p>}
           {bench.map(({ p, i, mon }) => (
-            <SwapButton key={p.ident} p={p} mon={mon} foe={target} disabled={p.active || p.condition.endsWith(' fnt') || (trapped && !forced)} onPick={() => choose(`switch ${i + 1}`)} />
+            <SwapButton key={p.ident} p={p} mon={mon} foe={target} disabled={switchLocked(p, req)} onPick={() => choose(`switch ${i + 1}`)} />
           ))}
         </div>
       </div>
@@ -190,31 +216,29 @@ function Log({ log, open, onClose }: { log: LogEntry[]; open: boolean; onClose: 
   );
 }
 
-type StampTone = 'crit' | 'super' | 'meh' | 'whiff' | 'ko' | 'nope';
-const STAMPS: [RegExp, string, StampTone][] = [
-  [/^A critical hit!/, 'CRIT!', 'crit'],
-  [/^It's super effective!/, 'SUPER EFFECTIVE!', 'super'],
-  [/^It's not very effective/, 'MEH.', 'meh'],
-  [/avoided the attack!$|^But it failed!/, 'WHIFF!', 'whiff'],
-  [/fainted!$/, 'K.O.!', 'ko'],
-  [/^It doesn't affect/, 'NOPE.', 'nope'],
+type Tone = 'crit' | 'super' | 'resist' | 'miss' | 'ko' | 'immune';
+const TONES: [RegExp, Tone][] = [
+  [/^A critical hit!/, 'crit'],
+  [/^It's super effective!/, 'super'],
+  [/^It's not very effective/, 'resist'],
+  [/avoided the attack!$|^But it failed!/, 'miss'],
+  [/fainted!$/, 'ko'],
+  [/^It doesn't affect/, 'immune'],
 ];
+const toneOf = (text: string): Tone | null => TONES.find(([re]) => re.test(text))?.[1] ?? null;
 
-/** Spray-painted callouts for the moments worth shouting about, picked from fresh log lines. */
-function useStamp(log: LogEntry[]) {
+/** The big moments get a sound cue; the words themselves stay in the message box. */
+function useMomentCues(log: LogEntry[]) {
   const seen = useRef(log.length ? log[log.length - 1].id : 0);
-  const [stamp, setStamp] = useState<{ id: number; text: string; tone: StampTone; tilt: number } | null>(null);
   useEffect(() => {
     const fresh = log.filter(e => e.id > seen.current);
     if (!fresh.length) return;
     seen.current = fresh[fresh.length - 1].id;
-    for (const e of fresh.reverse()) {
-      const hit = STAMPS.find(([re]) => re.test(e.text));
-      if (hit) { setStamp({ id: e.id, text: hit[1], tone: hit[2], tilt: Math.round((Math.random() * 14 - 7) * 10) / 10 }); sound.play(hit[2] === 'ko' ? 'ko' : 'stamp', { gain: 0.8 }); return; }
-    }
+    const tones = fresh.map(e => toneOf(e.text));
+    if (tones.includes('ko')) sound.play('ko', { gain: 0.8 });
+    else if (tones.includes('crit') || tones.includes('super')) sound.play('stamp', { gain: 0.5 });
     // The log array may be mutated in place, so key on its length and last id too.
   }, [log, log.length, log[log.length - 1]?.id]);
-  return stamp;
 }
 
 /**
@@ -234,15 +258,14 @@ export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, fin
   const choose = (c: string) => controller.choose(c);
   const caption = [...s.log].reverse().find(e => e.kind !== 'turn');
   const ended = s.phase === 'ended' && !snap.busy;
-  const stamp = useStamp(s.log);
+  useMomentCues(s.log);
+  const tone = caption ? toneOf(caption.text) : null;
 
   return (
     <TipLayer>
     <section className="arena" aria-label="Battle">
       <MonPlate mon={snap.active[opp]} side={s.sides[opp]} label={theirsLabel} mine={false} foe={snap.active[me]} />
       <MonPlate mon={snap.active[me]} side={s.sides[me]} label={mineLabel} mine foe={snap.active[opp]} />
-      {caption && !ended && <p className="caption" key={caption.id} aria-live="polite">{caption.text}</p>}
-      {stamp && <b className={`stamp stamp--${stamp.tone}`} key={stamp.id} style={{ '--tilt': `${stamp.tilt}deg` } as CSSProperties} aria-hidden>{stamp.text}</b>}
       <div className="arena__bar">
         <span className="arena__turn">{s.phase === 'preview' ? 'Team preview' : `Turn ${s.turn || 1}`}</span>
         <Timer deadline={snap.deadline} active={snap.canChoose} />
@@ -265,13 +288,16 @@ export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, fin
         ) : !req || s.phase === 'idle' ? (
           <p className="actions__wait">Preparing the arena…</p>
         ) : snap.busy ? (
-          <p className="actions__wait">{caption?.text ?? '…'}</p>
+          <p className={`actions__wait msg ${tone ? `msg--${tone}` : ''}`} key={caption?.id} aria-live="polite">{caption?.text ?? '…'}</p>
         ) : req.wait || snap.choiceSent ? (
           <p className="actions__wait">{snap.choiceSent ? `Locked in. Waiting for ${theirsLabel}…` : `Waiting for ${theirsLabel}…`}</p>
         ) : req.teamPreview ? (
           <TeamPreview req={req} theirs={s.sides[opp]} choose={choose} />
         ) : (
-          <Actions req={req} choose={choose} mons={s.sides[me]} foe={snap.active[opp]} />
+          <>
+            {caption && s.turn > 1 && <p className={`msg msg--last ${tone ? `msg--${tone}` : ''}`}>{caption.text}</p>}
+            <Actions req={req} choose={choose} mons={s.sides[me]} foe={snap.active[opp]} />
+          </>
         )}
       </div>
       <Log log={s.log} open={logOpen} onClose={() => setLogOpen(false)} />

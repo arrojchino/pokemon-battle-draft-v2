@@ -20,6 +20,8 @@ export type MonView = {
   transformed: string | null;
   /** Held item as far as the log shows (starts as the drafted item; null once consumed or knocked off). */
   item: string | null;
+  /** What the battle has shown so far: the rival's set stays hidden except for these. */
+  revealed: { moves: string[]; item: boolean; ability: string | null };
 };
 export type SideView = { name: string; mons: MonView[]; active: string | null; conditions: string[] };
 
@@ -83,6 +85,12 @@ const sideOf = (ident: string): SideId => (ident.startsWith('p2') ? 1 : 0);
 /** "p1a: Gholdengo" → "p1: Gholdengo" */
 const monKey = (ident: string) => ident.replace(/^(p[12])[a-z]?:\s*/, '$1: ');
 const speciesOf = (details: string) => details.split(',')[0].trim();
+/** Switching is locked only for the active Pokémon, fainted ones, and when the simulator reports a trap
+ * (sleep, paralysis and other statuses never lock it). A forced replacement ignores traps. */
+export function switchLocked(p: RequestPokemon, req: BattleRequest): boolean {
+  return p.active || p.condition.endsWith(' fnt') || (!!req.active?.[0]?.trapped && !req.forceSwitch?.[0]);
+}
+
 export function setFor(species: string): Pokemon | null {
   return POOL.find(p => p.name === species) ?? POOL.find(p => species.startsWith(p.name + '-')) ?? null;
 }
@@ -121,7 +129,7 @@ export class BattleModel {
     }
     if (!m) {
       const species = details ? speciesOf(details) : key.split(': ')[1];
-      { const set = setFor(species); m = { key, species, set, hp: 100, maxhp: 100, status: null, fainted: false, boosts: {}, tera: null, transformed: null, item: set?.item ?? null }; }
+      { const set = setFor(species); m = { key, species, set, hp: 100, maxhp: 100, status: null, fainted: false, boosts: {}, tera: null, transformed: null, item: set?.item ?? null, revealed: { moves: [], item: false, ability: null } }; }
       side.mons.push(m);
       if (fromPreview) this.provisional.add(m);
     }
@@ -139,6 +147,10 @@ export class BattleModel {
     const s = this.state;
     const fx: BattleFx[] = [];
     const from = kw.from ? clean(kw.from) : '';
+    // `[from] item: X` / `[from] ability: Y` reveal the holder's item or ability ([of] names the holder when it is not args[0]).
+    const holder = [kw.of, args[0]].find(a => a && /^p[12][a-d]: /.test(a));
+    if (holder && kw.from?.startsWith('item:')) this.mon(holder).revealed.item = true;
+    if (holder && kw.from?.startsWith('ability:')) this.mon(holder).revealed.ability = from;
     switch (cmd) {
       case 'player': if (args[1]) s.sides[args[0] === 'p2' ? 1 : 0].name = args[1]; break;
       case 'poke': { const side = s.sides[args[0] === 'p2' ? 1 : 0]; const sp = speciesOf(args[1]); if (!side.mons.some(m => m.species === sp)) this.mon(`${args[0]}: ${sp}`, args[1], true); break; }
@@ -171,6 +183,7 @@ export class BattleModel {
       case 'move': {
         const m = this.mon(args[0]);
         const info = moveInfo(args[1]);
+        if (args[1] !== 'Struggle' && !m.revealed.moves.includes(args[1])) m.revealed.moves.push(args[1]);
         this.pendingCrit = false; this.pendingEffect = 'normal';
         this.log(`${this.cap(this.name(m))} used ${args[1]}!`, 'move');
         const target = args[2] ? sideOf(args[2]) : null;
@@ -234,12 +247,13 @@ export class BattleModel {
       case '-fieldend': { const f = clean(args[0]); s.field = s.field.filter(x => x !== f); this.log(`${f} ended.`); break; }
       case '-sidestart': { const side = sideOf(args[0]); const c = clean(args[1]); if (!s.sides[side].conditions.includes(c)) s.sides[side].conditions.push(c); this.log(`${c} was set on ${side === s.mySide ? 'your' : "the opponent's"} side.`); break; }
       case '-sideend': { const side = sideOf(args[0]); const c = clean(args[1]); s.sides[side].conditions = s.sides[side].conditions.filter(x => x !== c); this.log(`${c} ended on ${side === s.mySide ? 'your' : "the opponent's"} side.`); break; }
-      case '-enditem': { const m = this.mon(args[0]); m.item = null; this.log(kw.eat !== undefined ? `${this.cap(this.name(m))} ate its ${args[1]}.` : `${this.cap(this.name(m))}'s ${args[1]} ${from === 'Knock Off' || kw.from?.includes('Knock Off') ? 'was knocked off' : 'was used up'}.`); break; }
-      case '-item': { const m = this.mon(args[0]); m.item = args[1] ?? m.item; this.log(`${this.cap(this.name(m))} has ${args[1]}${from ? ` (${from})` : ''}.`); break; }
-      case '-ability': { const m = this.mon(args[0]); this.log(`[${this.cap(this.name(m))}'s ${args[1]}]`); break; }
+      case '-enditem': { const m = this.mon(args[0]); m.item = null; m.revealed.item = true; this.log(kw.eat !== undefined ? `${this.cap(this.name(m))} ate its ${args[1]}.` : `${this.cap(this.name(m))}'s ${args[1]} ${from === 'Knock Off' || kw.from?.includes('Knock Off') ? 'was knocked off' : 'was used up'}.`); break; }
+      case '-item': { const m = this.mon(args[0]); m.item = args[1] ?? m.item; m.revealed.item = true; this.log(`${this.cap(this.name(m))} has ${args[1]}${from ? ` (${from})` : ''}.`); break; }
+      case '-ability': { const m = this.mon(args[0]); m.revealed.ability = args[1] ?? m.revealed.ability; this.log(`[${this.cap(this.name(m))}'s ${args[1]}]`); break; }
       case '-start': { const m = this.mon(args[0]); const e = clean(args[1]); if (!/typechange|typeadd/.test(e)) this.log(`${this.cap(this.name(m))}: ${e}${kw.silent !== undefined ? '' : '!'}`); break; }
       case '-end': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))}'s ${clean(args[1])} ended.`); break; }
-      case '-activate': { if (args[0] && args[1]) this.log(`${clean(args[1])} activated${args[0].includes(':') ? ` for ${this.name(this.mon(args[0]))}` : ''}.`); break; }
+      case '-activate': { if (args[0]?.includes(':') && args[1]?.startsWith('ability: ')) this.mon(args[0]).revealed.ability = clean(args[1]);
+        if (args[0] && args[1]) this.log(`${clean(args[1])} activated${args[0].includes(':') ? ` for ${this.name(this.mon(args[0]))}` : ''}.`); break; }
       case '-hitcount': this.log(`Hit ${args[1]} time${args[1] === '1' ? '' : 's'}!`); break;
       case '-prepare': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))} is preparing ${args[1]}…`); break; }
       case 'cant': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))} can't move${args[1] ? ` (${clean(args[1])})` : ''}!`); break; }

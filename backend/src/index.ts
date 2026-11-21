@@ -4,19 +4,20 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { BattleSession, type BattleTiming } from './battle.js';
 import {
   PROTOCOL_VERSION, createRoom, parseClientMessage, publicView, reduce, seatForToken, seatGuest,
-  type Pair, type RoomState, type Rng, type Seat, type ServerAction, type ServerMessage,
+  type BattleMode, type CharacterId, type LobbySummary, type Pair, type RoomState, type Rng, type Seat, type ServerAction, type ServerMessage, type Visibility,
 } from '../../shared/src/index.js';
 
 /**
  * Authoritative room server. All game rules live in shared/src/room.ts (`reduce`), the same code the
  * PeerJS host runs, so the two transports cannot diverge. This file only owns identity, sockets,
- * rate limiting and expiry.
+ * rate limiting, expiry and the public lobby list.
  */
 
 const PORT = Number(process.env.PORT || 8787);
 const ALLOWED = (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
 const TTL_MS = Number(process.env.ROOM_TTL_MINUTES || 45) * 60_000;
 const MAX_ROOMS = Number(process.env.MAX_ROOMS || 5000);
+const MAX_LISTED = 50;
 const MSG_PER_SEC = 20;
 const CREATES_PER_MIN = 10;
 const TIMING: BattleTiming = {
@@ -24,7 +25,7 @@ const TIMING: BattleTiming = {
   previewMs: Number(process.env.BATTLE_PREVIEW_SECONDS || 90) * 1000,
 };
 
-type Room = { state: RoomState; updatedAt: number };
+type Room = { state: RoomState; updatedAt: number; createdAt: number };
 type Meta = { room: string; seat: Seat };
 const rooms = new Map<string, Room>();
 const sessions = new Map<string, BattleSession>();
@@ -49,13 +50,52 @@ function connectedSeats(code: string): Pair<boolean> {
 function broadcast(code: string) {
   const room = rooms.get(code);
   if (!room) return;
-  const payload = JSON.stringify({ type: 'state', room: publicView(room.state, connectedSeats(code), PROTOCOL_VERSION) } satisfies ServerMessage);
-  for (const [ws, meta] of sockets) if (meta && meta.room === code && ws.readyState === WebSocket.OPEN) ws.send(payload);
+  // Each seat gets its own view: the dealt teams and the rival's sets stay hidden (see publicView).
+  const conn = connectedSeats(code);
+  const payloads = ([0, 1] as const).map(v => JSON.stringify({ type: 'state', room: publicView(room.state, conn, PROTOCOL_VERSION, v) } satisfies ServerMessage));
+  for (const [ws, meta] of sockets) if (meta && meta.room === code && ws.readyState === WebSocket.OPEN) ws.send(payloads[meta.seat]);
 }
 function seat(ws: WebSocket, code: string, s: Seat) {
   const prev = sockets.get(ws);
   sockets.set(ws, { room: code, seat: s });
   if (prev && prev.room !== code) broadcast(prev.room);
+}
+
+/** Host a fresh room. Room creation is rate limited per client address. */
+function openRoom(ws: WebSocket, addr: string, name: string, avatar: CharacterId | null, bestOf: 3 | 5, mode: BattleMode, visibility: Visibility) {
+  if (!take(`create:${addr}`, CREATES_PER_MIN / 60, CREATES_PER_MIN)) { send(ws, { type: 'error', message: 'Too many rooms created, wait a minute' }); return; }
+  if (rooms.size >= MAX_ROOMS) { send(ws, { type: 'error', message: 'Server is full, try again later' }); return; }
+  const code = newCode();
+  const token = randomUUID();
+  const now = Date.now();
+  rooms.set(code, { state: createRoom(code, { name, token, avatar }, bestOf, mode, visibility), updatedAt: now, createdAt: now });
+  seat(ws, code, 0);
+  send(ws, { type: 'joined', code, token, seat: 0 });
+  broadcast(code);
+}
+
+/** Seat a guest in the room's open seat. */
+function admit(ws: WebSocket, room: Room, name: string, avatar: CharacterId | null) {
+  const token = randomUUID();
+  const r = seatGuest(room.state, { name, token, avatar }, rng);
+  if (!r.ok) { send(ws, { type: 'error', message: r.error }); return; }
+  room.state = r.room; room.updatedAt = Date.now();
+  seat(ws, room.state.code, r.seat);
+  send(ws, { type: 'joined', code: room.state.code, token, seat: r.seat });
+  broadcast(room.state.code);
+}
+
+/** Public rooms whose host is connected and whose second seat is open, longest-waiting first. */
+function openLobbies(): LobbySummary[] {
+  const hosting = new Set<string>();
+  for (const [ws, meta] of sockets) if (meta?.seat === 0 && ws.readyState === WebSocket.OPEN) hosting.add(meta.room);
+  const list: LobbySummary[] = [];
+  for (const { state: st, createdAt } of rooms.values()) {
+    const host = st.players[0];
+    if (st.visibility !== 'public' || st.players[1] || !host || !hosting.has(st.code)) continue;
+    list.push({ code: st.code, host: host.name, avatar: host.avatar, bestOf: st.bestOf, mode: st.mode, createdAt, players: 1 });
+  }
+  return list.sort((a, b) => a.createdAt - b.createdAt);
 }
 
 /** Server-side state change (simulator events), applied through the same reducer as player actions. */
@@ -125,39 +165,27 @@ wss.on('connection', (ws, req) => {
     if (!msg) { send(ws, { type: 'error', message: 'Malformed message' }); return; }
     const meta = sockets.get(ws) ?? null;
 
-    if (msg.type === 'create') {
-      if (!take(`create:${addr}`, CREATES_PER_MIN / 60, CREATES_PER_MIN)) { send(ws, { type: 'error', message: 'Too many rooms created, wait a minute' }); return; }
-      if (rooms.size >= MAX_ROOMS) { send(ws, { type: 'error', message: 'Server is full, try again later' }); return; }
-      const code = newCode();
-      const token = randomUUID();
-      rooms.set(code, { state: createRoom(code, { name: msg.name, token, avatar: msg.avatar }, msg.bestOf, msg.mode), updatedAt: Date.now() });
-      seat(ws, code, 0);
-      send(ws, { type: 'joined', code, token, seat: 0 });
-      broadcast(code); return;
+    if (msg.type === 'create') { openRoom(ws, addr, msg.name, msg.avatar, msg.bestOf, msg.mode, msg.visibility); return; }
+    if (msg.type === 'lobbies') { send(ws, { type: 'lobbies', lobbies: openLobbies().slice(0, MAX_LISTED), now: Date.now() }); return; }
+    if (msg.type === 'quick') {
+      const open = openLobbies().find(l => l.code !== meta?.room);
+      if (open) admit(ws, rooms.get(open.code)!, msg.name || 'Player 2', msg.avatar);
+      else openRoom(ws, addr, msg.name || 'Player 1', msg.avatar, msg.bestOf, msg.mode, 'public');
+      return;
     }
 
     if (msg.type === 'join' || msg.type === 'resume') {
       const room = rooms.get(msg.code.toUpperCase());
       if (!room) { send(ws, { type: 'error', message: 'Unknown room' }); return; }
-      if (msg.type === 'resume') {
-        const s = seatForToken(room.state, msg.token);
-        if (s === null) { send(ws, { type: 'error', message: 'Invalid session' }); return; }
-        seat(ws, room.state.code, s);
-        send(ws, { type: 'joined', code: room.state.code, token: msg.token, seat: s });
-      } else {
-        const token = randomUUID();
-        const r = seatGuest(room.state, { name: msg.name, token, avatar: msg.avatar });
-        if (!r.ok) { send(ws, { type: 'error', message: r.error }); return; }
-        room.state = r.room;
-        seat(ws, room.state.code, r.seat);
-        send(ws, { type: 'joined', code: room.state.code, token, seat: r.seat });
-      }
+      if (msg.type === 'join') { admit(ws, room, msg.name, msg.avatar); return; }
+      const s = seatForToken(room.state, msg.token);
+      if (s === null) { send(ws, { type: 'error', message: 'Invalid session' }); return; }
+      seat(ws, room.state.code, s);
+      send(ws, { type: 'joined', code: room.state.code, token: msg.token, seat: s });
       room.updatedAt = Date.now();
       broadcast(room.state.code);
-      // A (re)seated player gets the whole battle so far, so a refresh mid-battle resumes exactly.
-      const sess = sessions.get(room.state.code);
-      const m = sockets.get(ws);
-      if (sess && m) sess.replay(m.seat);
+      // A returning player gets the whole battle so far, so a refresh mid-battle resumes exactly.
+      sessions.get(room.state.code)?.replay(s);
       return;
     }
 

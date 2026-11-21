@@ -64,6 +64,28 @@ export function useTip(content: () => ReactNode) {
   };
 }
 
+/**
+ * Move cards for a whole region: any descendant with `data-move` shows that move when the mouse rests
+ * on it. One listener pair instead of one per chip; `userOf` says whose move it is (for STAB).
+ */
+export function useMoveTips(userOf: (el: Element) => Fighter | null) {
+  const set = useContext(TipCtx);
+  const current = useRef<Element | null>(null);
+  const hide = useCallback(() => { current.current = null; set(null); }, [set]);
+  useEffect(() => hide, [hide]);
+  return {
+    onPointerOver: (e: React.PointerEvent) => {
+      if (e.pointerType !== 'mouse') return;
+      const el = (e.target as Element).closest('[data-move]');
+      if (el === current.current) return;
+      current.current = el;
+      const user = el && userOf(el);
+      set(el && user ? { content: <MoveCard name={el.getAttribute('data-move')!} user={user} target={null} teraPreview={null} />, rect: el.getBoundingClientRect() } : null);
+    },
+    onPointerLeave: hide,
+  };
+}
+
 /* ------------------------------------------------------------------ cards */
 
 const pct = (a: number) => (a ? `${a}%` : 'Never misses');
@@ -103,8 +125,8 @@ function TypeRow({ label, types, tone }: { label: string; types: TypeName[]; ton
 }
 
 /** A Pokémon card: typing, set, HP, the defensive chart, and its moves against the opposing active. */
-export function MonCard({ f, hp, status, moves, vs, foeAttacker, note }: {
-  f: Fighter; hp?: { hp: number; maxhp: number } | null; status?: string | null; moves: string[]; vs: Fighter | null; foeAttacker?: Fighter | null; note?: string;
+export function MonCard({ f, hp, pct, status, moves, vs, foeAttacker, note }: {
+  f: Fighter; hp?: { hp: number; maxhp: number } | null; pct?: boolean; status?: string | null; moves: string[]; vs: Fighter | null; foeAttacker?: Fighter | null; note?: string;
 }) {
   const chart = defenseChart(f);
   const types = liveTypes(f);
@@ -114,7 +136,7 @@ export function MonCard({ f, hp, status, moves, vs, foeAttacker, note }: {
     <div className="tipcard" style={{ '--t': TYPE_COLORS[types[0] ?? 'Normal'] } as CSSProperties}>
       <header><strong>{f.species}</strong>{types.map(t => <TypeBadge key={t} type={t} size="sm" />)}{f.tera && <span className="tipcard__tera">Tera</span>}</header>
       <dl className="tipcard__stats">
-        {hp && <div><dt>HP</dt><dd>{hp.hp}/{hp.maxhp}{status ? ` · ${status.toUpperCase()}` : ''}</dd></div>}
+        {hp && <div><dt>HP</dt><dd>{pct ? `${Math.round((hp.hp / hp.maxhp) * 100)}%` : `${hp.hp}/${hp.maxhp}`}{status ? ` · ${status.toUpperCase()}` : ''}</dd></div>}
         <div><dt>Ability</dt><dd>{f.ability || '?'}</dd></div>
         <div><dt>Item</dt><dd>{f.item ?? 'None'}</dd></div>
       </dl>
@@ -138,4 +160,3 @@ export function MonCard({ f, hp, status, moves, vs, foeAttacker, note }: {
     </div>
   );
 }
-

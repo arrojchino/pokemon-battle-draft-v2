@@ -1,53 +1,57 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { POOL } from '@shared';
 import { BOT, characterById } from '../characters/roster.js';
-import { settings, useReducedMotion, useSettings } from '../app/settings.js';
 import { useWorld } from '../app/WorldProvider.js';
-import { Modal, Segmented } from './primitives.js';
+import { Modal } from './primitives.js';
 
-export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const s = useSettings();
-  const reduced = useReducedMotion();
-  return (
-    <Modal open={open} onClose={onClose} title="Settings">
-      <div className="form">
-        <div className="field"><span>Graphics quality</span>
-          <Segmented label="Graphics quality" value={s.quality} onChange={v => settings.set({ quality: v })}
-            options={[{ value: 'auto', label: 'Auto' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]} />
-          <small>Auto measures real frame times and lowers resolution, then effects, to stay smooth.</small>
-        </div>
-        <div className="field"><span>Motion</span>
-          <Segmented label="Motion" value={s.motion} onChange={v => settings.set({ motion: v })}
-            options={[{ value: 'system', label: 'System' }, { value: 'reduced', label: 'Reduced' }, { value: 'full', label: 'Full' }]} />
-          <small>Currently {reduced ? 'reduced: camera cuts, calmer idles, no coin spin' : 'full motion'}.</small>
-        </div>
-        <label className="field range"><span>Volume <output>{Math.round(s.volume * 100)}</output></span>
-          <input type="range" min={0} max={1} step={0.05} value={s.volume} onChange={e => settings.set({ volume: Number(e.target.value) })} /></label>
-        <label className="field range"><span>Music <output>{Math.round(s.music * 100)}</output></span>
-          <input type="range" min={0} max={1} step={0.05} value={s.music} onChange={e => settings.set({ music: Number(e.target.value) })} /></label>
-        <label className="toggle"><input type="checkbox" checked={s.muted} onChange={e => settings.set({ muted: e.target.checked })} /><span>Mute all sound</span></label>
-        <label className="toggle"><input type="checkbox" checked={s.perf} onChange={e => settings.set({ perf: e.target.checked })} /><span>Show performance diagnostics</span></label>
-      </div>
-    </Modal>
-  );
+/** True once the stage can be shown: the first bot is ready, or the world settled on ready or fallback. */
+export function useStageReady(): boolean {
+  const { status, firstCharacter } = useWorld();
+  return firstCharacter || status.kind !== 'loading';
 }
+
+const FONTS = [
+  { name: 'Outfit', by: 'The Outfit Project Authors' },
+  { name: 'Manrope', by: 'The Manrope Project Authors' },
+  { name: 'Zen Kaku Gothic New', by: 'The Zen Kaku Gothic Project Authors' },
+];
+const SOFTWARE = [
+  { name: 'React', by: 'Facebook, Inc. and its affiliates' },
+  { name: 'three.js', by: 'three.js authors' },
+  { name: 'PeerJS', by: 'Michelle Bu and Eric Zhang' },
+  { name: 'Pokémon Showdown', by: 'Guangcong Luo and contributors · battle simulator on the game server' },
+  { name: 'ws', by: 'Einar Otto Stangvik, Arnout Kazemier and contributors' },
+];
 
 export function CreditsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Modal open={open} onClose={onClose} title="Credits & licenses" wide>
+    <Modal open={open} onClose={onClose} title="Credits & licenses">
       <div className="credits">
         <section>
           <h3>Battle bot</h3>
-          <ul><li><a href={BOT.credit.url} target="_blank" rel="noopener noreferrer">{BOT.credit.model}</a> by {BOT.credit.author}. License: {BOT.credit.license}. Paint jobs, names and grime are original to this project.</li></ul>
+          <ul className="credits__list">
+            <li><strong><a href={BOT.credit.url} target="_blank" rel="noopener noreferrer">{BOT.credit.model}</a></strong><span>{BOT.credit.author}</span><span className="badge">{BOT.credit.license}</span></li>
+          </ul>
+          <p className="credits__note">Paint jobs, names and quips are original to this project.</p>
+        </section>
+        <section>
+          <h3>Typefaces</h3>
+          <ul className="credits__list">
+            {FONTS.map(f => <li key={f.name}><strong>{f.name}</strong><span>{f.by}</span><span className="badge">SIL OFL 1.1</span></li>)}
+          </ul>
         </section>
         <section>
           <h3>Software</h3>
-          <ul>
-            <li>three.js (MIT), React (MIT), PeerJS (MIT).</li>
-            <li>Fonts: Chakra Petch, Manrope, Zen Kaku Gothic New (SIL Open Font License 1.1).</li>
-            <li>Pokémon artwork is loaded from the PokeAPI sprites repository. Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc. and GAME FREAK inc. This is an unofficial fan project.</li>
-            <li>Battles run on Pokémon Showdown (AGPL-3.0), opened in its own tab; this app does not bundle or modify it.</li>
+          <ul className="credits__list">
+            {SOFTWARE.map(s => <li key={s.name}><strong>{s.name}</strong><span>{s.by}</span><span className="badge">MIT</span></li>)}
           </ul>
         </section>
+        <section>
+          <h3>Pokémon</h3>
+          <p className="credits__note">Official artwork is loaded at runtime from the PokeAPI sprites repository and is not bundled. Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc. and GAME FREAK inc. This is an unofficial, non-commercial fan project.</p>
+          <p className="credits__note">Battles played on Showdown open play.pokemonshowdown.com in its own tab; this app does not bundle or modify the Showdown client.</p>
+        </section>
+        <p className="credits__note">Sound effects are synthesized in the browser; the alley, its textures and the partner badges are generated in code.</p>
       </div>
     </Modal>
   );
@@ -75,35 +79,51 @@ export function PerfOverlay() {
   return <pre className="perf" ref={ref} aria-hidden="true">measuring…</pre>;
 }
 
-/** First-load veil with real byte progress for the opening partner. */
+/** True facts about how a match runs, one shown per load. */
+const TIPS = [
+  'Call heads or tails. The toss winner picks one of the two dealt teams; the rival gets the other.',
+  `Every game deals twelve of the ${POOL.length} sets in the draft pool: two teams of six.`,
+  'Best of 3 or best of 5: the first to 2 or 3 wins takes the series.',
+  'A drawn battle is replayed from a fresh coin toss.',
+  'Battle right here in the alley, or take both teams to Pokémon Showdown.',
+];
+
+/**
+ * First-load veil: the capsule rolls inside a ring that fills with the real byte progress of the opening
+ * bot. When the stage is ready the ring closes, the capsule pops and the veil dissolves over the menu.
+ */
 export function LoadingVeil() {
-  const { status, firstCharacter } = useWorld();
-  const s = useSettings();
+  const { status } = useWorld();
+  const done = useStageReady();
   const [gone, setGone] = useState(false);
-  const done = firstCharacter || status.kind !== 'loading';
-  useEffect(() => { if (done) { const t = setTimeout(() => setGone(true), 900); return () => clearTimeout(t); } }, [done]);
+  const [tip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
+  useEffect(() => { if (done) { const t = setTimeout(() => setGone(true), 1100); return () => clearTimeout(t); } }, [done]);
   if (gone) return null;
-  const c = characterById(s.partner)!;
-  const p = status.kind === 'loading' ? status.progress : 1;
+  const p = done || status.kind !== 'loading' ? 1 : status.progress;
+  const label = done ? 'Ready' : status.kind === 'loading' && status.label ? status.label : 'Preparing the stage';
   return (
-    <div className={`veil ${done ? 'is-done' : ''}`} style={{ '--accent': c.accent, '--p': p } as CSSProperties} aria-live="polite">
+    <div className={`veil ${done ? 'is-done' : ''}`} style={{ '--p': p } as CSSProperties} role="status" aria-live="polite" aria-busy={!done}>
       <div className="veil__inner">
-        <span className="jp veil__jp">路地裏リーグ</span>
-        <strong className="veil__title">Battle Draft</strong>
+        <div className="veil__ball" aria-hidden="true">
+          <svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="37" pathLength={100} /><circle className="veil__ring" cx="40" cy="40" r="37" pathLength={100} /></svg>
+          <span className="spinner" />
+        </div>
+        <p className="veil__brand"><span className="veil__pre">Pokémon</span><strong className="veil__title">Battle Draft</strong><span className="jp veil__jp">路地裏リーグ</span></p>
         <div className="veil__bar"><i /></div>
-        <small>{status.kind === 'loading' ? `${status.label || 'Preparing the stage'} · ${Math.round(p * 100)}%` : 'Ready'}</small>
+        <small className="num">{label} · {Math.round(p * 100)}%</small>
+        <p className="veil__tip"><span className="eyebrow">Tip</span>{tip}</p>
       </div>
     </div>
   );
 }
 
-/** Without WebGL: a still composition using the pre-rendered portraits, so the game stays fully playable. */
+/** Without WebGL: a still composition using the generated badges, so the game stays fully playable. */
 export function FallbackBackdrop({ featured }: { featured: string[] }) {
   const { status } = useWorld();
   if (status.kind !== 'fallback') return null;
   return (
     <div className="fallback" aria-hidden="true">
-      {featured.map((id, i) => { const c = characterById(id as never); return c ? <img key={id + i} className={`fallback__img fallback__img--${i}`} src={c.portrait} alt="" style={{ '--accent': c.accent } as CSSProperties} /> : null; })}
+      {featured.map((id, i) => { const c = characterById(id as never); return c ? <img key={id + i} className={`fallback__img fallback__img--${i}`} src={c.portrait} alt="" /> : null; })}
       <p className="fallback__note">{status.reason}. Showing still portraits.</p>
     </div>
   );

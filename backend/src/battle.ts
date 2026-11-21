@@ -5,7 +5,11 @@ const { BattleStream, getPlayerStreams, Teams } = createRequire(import.meta.url)
 import { teamImport, type Pair, type Pokemon, type Seat } from '../../shared/src/index.js';
 
 /** Format used for every in-app battle: no tier bans, Team Preview on, Level 100 (see README). */
-export const BATTLE_FORMAT = 'gen9customgame';
+/**
+ * No tier bans or clauses (like Custom Game), but not a debug format: Custom Game's `debug` flag makes the
+ * simulator report exact HP to both players, which leaks the rival's HP stat. HP Percentage Mod applies here.
+ */
+export const BATTLE_FORMAT = 'gen9purehackmons';
 
 export type BattleHooks = {
   /** Lines for one seat. `reset` = this is the complete log so far (used on reconnect). */

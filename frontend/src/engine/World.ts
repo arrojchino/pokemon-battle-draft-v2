@@ -10,7 +10,7 @@ import { CameraDirector, type Shot } from './CameraDirector.js';
 import { BotRig } from './character/BotRig.js';
 import { loadBot } from './character/loadBot.js';
 import { Emitter, type WorldEvents } from './events.js';
-import { AdaptiveQuality, TIERS, initialTier, stepTier, type QualityPref, type QualityTier } from './quality.js';
+import { AdaptiveQuality, EFFECTS, TIERS, initialTier, stepTier, type EffectsLevel, type QualityPref, type QualityTier, type RenderScale } from './quality.js';
 import { GradeShader } from './post/GradeShader.js';
 import { createSky } from './world/Sky.js';
 import { createSkyline } from './world/Skyline.js';
@@ -24,6 +24,7 @@ import { ARENA, yawTo } from './battle/BattleCamera.js';
 
 const HEMI_BASE = new THREE.Color('#4a4238');
 const HEMI_FLASH = new THREE.Color('#b8c8ff');
+const BLOOM_STRENGTH = 0.6;
 
 export type DuoShot = 'room' | 'match' | 'draft' | 'battle';
 export type Layout =
@@ -36,7 +37,14 @@ export type Layout =
 
 type Slot = { key: string; x: number; z: number; facing: number; focus: boolean };
 
-export type WorldOptions = { quality: QualityPref; reducedMotion: boolean; preload: CharacterId[] };
+/**
+ * Display options the World honours (from Settings): quality preset, render scale, effects intensity,
+ * calm = Reduce flashing (no lightning or screen flashes), steady = the Steady camera style.
+ */
+export type WorldOptions = {
+  quality: QualityPref; renderScale: RenderScale; effects: EffectsLevel; calm: boolean; steady: boolean;
+  reducedMotion: boolean; preload: CharacterId[];
+};
 
 /**
  * The single owner of WebGL. One renderer, one scene, one animation loop for the whole app; React only
@@ -96,6 +104,11 @@ export class World {
   private disposed = false;
   private ro: ResizeObserver;
   private reducedMotion: boolean;
+  private renderScale: RenderScale;
+  private effects: EffectsLevel;
+  private fx: (typeof EFFECTS)[EffectsLevel];
+  private calm: boolean;
+  private steady: boolean;
   private envRT: THREE.WebGLRenderTarget | null = null;
   private progressBytes = new Map<string, [number, number]>();
   private removeListeners: Array<() => void> = [];
@@ -113,23 +126,26 @@ export class World {
     this.renderer.info.autoReset = false; // count the whole frame (all passes), reset manually
     this.reducedMotion = opts.reducedMotion;
     this.pref = opts.quality;
+    this.renderScale = opts.renderScale;
+    this.effects = opts.effects; this.fx = EFFECTS[opts.effects];
+    this.calm = opts.calm; this.steady = opts.steady;
     this.tier = opts.quality === 'auto' ? initialTier(this.renderer.getContext()) : opts.quality;
-    this.adaptive = new AdaptiveQuality(() => this.shiftTier(-1), () => this.shiftTier(1), opts.quality === 'auto');
+    this.adaptive = new AdaptiveQuality(() => this.shiftTier(-1), () => this.shiftTier(1), opts.quality === 'auto', opts.renderScale === 'auto');
     this.director = new CameraDirector(this.camera);
     this.director.reducedMotion = this.reducedMotion;
+    this.director.steady = this.steady;
 
     this.scene.fog = new THREE.FogExp2('#05030b', 0.0085);
     this.sky = createSky();
     this.scene.add(this.sky);
     this.alley = new Alley();
-    this.alley.reduced = this.reducedMotion;
     this.scene.add(this.alley.group);
     this.coin = new Coin(() => this.reducedMotion);
     this.coin.group.position.set(0, 1.08, 0.75);
     this.coin.onLand = () => { this.floor.pulse(); this.events.emit('sound', { cue: 'coinLand', pan: 0 }); };
     this.scene.add(this.coin.group);
     this.battle = new BattleStage(this.camera, () => this.reducedMotion);
-    this.battle.cam.enabled = !this.reducedMotion;
+    this.syncBattleCamera();
     this.battle.onImpact = color => this.floor.pulse(color);
     this.battle.onSound = (cue, pan, gain) => this.events.emit('sound', { cue, pan, gain });
     this.scene.add(this.battle.group);
@@ -205,25 +221,39 @@ export class World {
     const rt = new THREE.WebGLRenderTarget(Math.max(1, size.x), Math.max(1, size.y), { type: THREE.HalfFloatType, samples: q.msaa });
     this.composer = new EffectComposer(this.renderer, rt);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = q.bloom ? new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.5, 1.15) : null;
+    this.bloom = q.bloom ? new UnrealBloomPass(new THREE.Vector2(256, 256), BLOOM_STRENGTH, 0.5, 1.15) : null;
     if (this.bloom) this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass(GradeShader);
-    this.grade.uniforms.uGrain.value = this.reducedMotion ? 0.012 : 0.025;
     this.composer.addPass(this.grade);
+    this.applyEffects();
     this.resize();
-    this.events.emit('quality', { tier: this.tier, scale: this.adaptive.scale });
+    this.events.emit('quality', { tier: this.tier, scale: this.pixelScale() });
+  }
+
+  /**
+   * Effects intensity and Reduce flashing: bloom strength, post-processing grit (grain, scratches and
+   * colour fringe; grime and impact blur are scaled per frame), battle particles and light flashes, and
+   * the alley's flickering signs (flicker counts as flashing).
+   */
+  private applyEffects() {
+    const fx = this.fx, base = GradeShader.uniforms, g = this.grade.uniforms;
+    if (this.bloom) { this.bloom.enabled = fx.bloom > 0; this.bloom.strength = BLOOM_STRENGTH * fx.bloom; }
+    g.uGrain.value = base.uGrain.value * (this.reducedMotion ? 0.5 : 1) * fx.post;
+    g.uFringe.value = base.uFringe.value * fx.post;
+    this.battle.setEffects(fx.particles, fx.lights, this.calm);
+    this.alley.reduced = this.reducedMotion || this.calm;
   }
 
   /**
    * Distant lightning every 12 to 30 seconds: two or three quick flickers that light the clouds, the
    * rain and the wet ground, then thunder a moment later (the delay sells the distance). Skipped with
-   * reduced motion, since flashes are exactly what that setting is for.
+   * reduced motion or Reduce flashing, since flashes are exactly what those settings are for.
    */
   private stepLightning(dt: number) {
     const b = this.bolt;
     b.next -= dt;
-    if (b.next <= 0 && !this.reducedMotion) {
+    if (b.next <= 0 && !this.reducedMotion && !this.calm) {
       b.next = 12 + Math.random() * 18; b.t = 0;
       const n = 2 + Math.floor(Math.random() * 2);
       b.seq = []; let at = 0;
@@ -255,17 +285,41 @@ export class World {
 
   setQuality(pref: QualityPref) {
     this.pref = pref;
-    this.adaptive.enabled = pref === 'auto';
+    this.adaptive.tiers = pref === 'auto';
     const t = pref === 'auto' ? initialTier(this.renderer.getContext()) : pref;
     this.adaptive.scale = 1;
     if (t !== this.tier) { this.tier = t; this.buildTierDependent(); } else this.resize();
   }
-  setReducedMotion(v: boolean) {
-    this.reducedMotion = v; this.director.reducedMotion = v; this.battle.cam.enabled = !v;
-    this.rain.setSpeed(v ? 0.35 : 1); this.floor.uniforms.uRain.value = v ? 0.3 : 1; this.alley.reduced = v;
-    this.grade.uniforms.uGrain.value = v ? 0.012 : 0.025;
-    for (const r of this.rigs.values()) r.reducedMotion = v;
+  /** Fixed share of the tier's resolution, or 'auto' to let the adaptive controller trade resolution for frame time. */
+  setRenderScale(s: RenderScale) {
+    this.renderScale = s;
+    this.adaptive.resolution = s === 'auto';
+    this.adaptive.scale = 1;
+    this.resize();
+    this.events.emit('quality', { tier: this.tier, scale: this.pixelScale() });
   }
+  setEffects(level: EffectsLevel, calm: boolean) {
+    this.effects = level; this.fx = EFFECTS[level]; this.calm = calm;
+    this.applyEffects();
+  }
+  setCameraStyle(style: 'cinematic' | 'steady') {
+    this.steady = style === 'steady'; this.director.steady = this.steady;
+    this.syncBattleCamera();
+  }
+  setReducedMotion(v: boolean) {
+    this.reducedMotion = v; this.director.reducedMotion = v;
+    this.rain.setSpeed(v ? 0.35 : 1); this.floor.uniforms.uRain.value = v ? 0.3 : 1;
+    for (const r of this.rigs.values()) r.reducedMotion = v;
+    this.syncBattleCamera();
+    this.applyEffects();
+  }
+  /** Battle cinematography (cuts, sweeps, breathing) only runs with full motion and the cinematic camera. */
+  private syncBattleCamera() {
+    this.battle.cam.enabled = !this.reducedMotion && !this.steady;
+    if (!this.battle.cam.enabled) this.battle.cam.reset();
+  }
+  /** Multiplier on the tier's pixel ratio: the fixed render scale, or the adaptive one. */
+  private pixelScale() { return this.renderScale === 'auto' ? this.adaptive.scale : this.renderScale; }
 
   private buildEnvironmentMap() {
     // Reflections for metals (coin, platform rim) from a tiny neon-and-sky scene, prefiltered once.
@@ -347,7 +401,8 @@ export class World {
       const l = this.pendingLayout; this.pendingLayout = null;
       this.applyLayout(l, true);
       const shot = this.shotFor(l);
-      this.director.cut({ ...shot, pos: [shot.pos[0], shot.pos[1] + 0.12, shot.pos[2] + 0.7] });
+      // The cinematic camera pushes in on the new shot; the steady one simply lands on it.
+      this.director.cut(this.steady ? shot : { ...shot, pos: [shot.pos[0], shot.pos[1] + 0.12, shot.pos[2] + 0.7] });
       this.director.go(shot);
       this.fadeDir = -1;
     } else if (this.fade <= 0 && this.fadeDir < 0) this.fadeDir = 0;
@@ -524,10 +579,12 @@ export class World {
       if (this.battle.shake > 0) { this.director.kick(this.battle.shake); this.battle.shake = 0; }
       if (this.battle.fovPunch > 0) { this.director.punch(this.battle.fovPunch); this.battle.fovPunch = 0; }
     }
-    this.grade.uniforms.uPunch.value = arena && !this.reducedMotion ? this.battle.screenPunch : 0;
+    // Impact blur is a camera jolt (off with reduced motion or the steady camera) and post-processing (scaled by effects).
+    this.grade.uniforms.uPunch.value = arena && !this.reducedMotion && !this.steady ? this.battle.screenPunch * this.fx.post : 0;
     const bf = this.boltFlash * 0.07, sf = arena ? this.battle.screenFlash.amt : 0;
     this.grade.uniforms.uFlashAmt.value = Math.max(sf, bf);
-    this.grade.uniforms.uGrime.value += ((arena ? 1 : 0.55) * (this.reducedMotion ? 0.6 : 1) - this.grade.uniforms.uGrime.value) * Math.min(1, dt * 2);
+    const grime = (arena ? 1 : 0.55) * (this.reducedMotion ? 0.6 : 1) * this.fx.post;
+    this.grade.uniforms.uGrime.value += (grime - this.grade.uniforms.uGrime.value) * Math.min(1, dt * 2);
     this.grade.uniforms.uFlashColor.value.copy(sf >= bf ? this.battle.screenFlash.color : HEMI_FLASH);
     this.director.update(dt);
     this.floor.update(t, dt);
@@ -544,13 +601,13 @@ export class World {
     this.composer.render(dt);
     // CPU cost of this frame (simulation + draw submission), smoothed. GPU time is not observable here.
     this.cpuMs = this.cpuMs * 0.9 + (performance.now() - now) * 0.1;
-    if (this.adaptive.push(frameMs, dt)) { this.resize(); this.events.emit('quality', { tier: this.tier, scale: this.adaptive.scale }); }
+    if (this.adaptive.push(frameMs, dt)) { this.resize(); this.events.emit('quality', { tier: this.tier, scale: this.pixelScale() }); }
   }
 
   private resize() {
     const w = Math.max(1, this.host.clientWidth), h = Math.max(1, this.host.clientHeight);
     const q = TIERS[this.tier];
-    const dpr = Math.min(window.devicePixelRatio || 1, q.maxDpr) * this.adaptive.scale;
+    const dpr = Math.min(window.devicePixelRatio || 1, q.maxDpr) * this.pixelScale();
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.composer?.setPixelRatio(dpr);
@@ -564,12 +621,14 @@ export class World {
     this.battle?.setPixelScale(h * dpr / 900);
   }
 
-  /** Live numbers for the diagnostics overlay. */
+  /** Live numbers for the diagnostics overlay and the settings readout. */
   stats() {
     const info = this.renderer.info;
+    const buffer = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     return {
-      ...this.adaptive.stats(), cpuMs: this.cpuMs, tier: this.tier, pref: this.pref, scale: this.adaptive.scale,
-      dpr: this.renderer.getPixelRatio(), calls: info.render.calls, triangles: info.render.triangles,
+      ...this.adaptive.stats(), cpuMs: this.cpuMs, tier: this.tier, pref: this.pref, scale: this.pixelScale(),
+      dpr: this.renderer.getPixelRatio(), width: buffer.x, height: buffer.y, effects: this.effects,
+      calls: info.render.calls, triangles: info.render.triangles,
       geometries: info.memory.geometries, textures: info.memory.textures, programs: info.programs?.length ?? 0,
       characters: [...this.rigs.values()].filter(r => r.root.visible).length,
     };

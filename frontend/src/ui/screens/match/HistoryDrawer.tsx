@@ -6,7 +6,8 @@ import type { MatchModel } from './model.js';
 
 /** Round history plus the full Showdown archive of every game in the series. */
 export function HistoryDrawer({ room, m, open, onClose }: { room: PublicRoom; m: MatchModel; open: boolean; onClose: () => void }) {
-  const archive = seriesArchive(room.history, m.names, room.teams[0].length === 6 && room.phase === 'battle' ? room.teams : undefined);
+  // Finished games only: during a game the rival's sets are hidden.
+  const archive = seriesArchive(room.history, m.names);
   return (
     <aside className={`drawer ${open ? 'is-open' : ''}`} aria-hidden={!open} aria-label="Series history">
       <header className="drawer__head">

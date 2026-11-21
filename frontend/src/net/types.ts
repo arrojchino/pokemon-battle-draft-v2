@@ -1,19 +1,26 @@
-import type { BattleMode, CharacterId, GameAction, PublicRoom, Seat } from '@shared';
+import { LOBBIES_SINCE, type BattleMode, type CharacterId, type GameAction, type LobbySummary, type PublicRoom, type Seat, type Visibility } from '@shared';
 
 export type TransportKind = 'backend' | 'peer';
 export type BattleListener = (id: number, lines: string[], reset: boolean, deadline: number | null) => void;
 export type LinkStatus = 'connecting' | 'online' | 'offline';
+/** Open public lobbies plus the server clock they were read at (`createdAt` is on that clock). */
+export type LobbyList = { lobbies: LobbySummary[]; now: number };
 
 export type SessionSnapshot = {
   kind: TransportKind;
   link: LinkStatus;
   room: PublicRoom | null;
   seat: Seat | null;
+  /** Protocol announced by the dedicated server's `hello`; null before it arrives and in peer mode. */
+  serverProtocol: number | null;
   /** Last error from the authority or the link. Cleared by `clearError`. */
   error: string;
   /** Monotonic counter so UI effects can react to each new error, even repeated ones. */
   errorId: number;
 };
+
+/** Public lobbies (listing, quick join, public rooms) need a dedicated server that speaks protocol v4+. */
+export const hasLobbies = (s: SessionSnapshot) => s.kind === 'backend' && (s.serverProtocol ?? 0) >= LOBBIES_SINCE;
 
 /** One interface for both transports so the UI never branches on networking details. */
 export interface Transport {
@@ -22,8 +29,12 @@ export interface Transport {
   subscribe(listener: () => void): () => void;
   /** Whether this transport can host in-app battles (needs the dedicated server). */
   readonly supportsBattles: boolean;
-  create(name: string, bestOf: 3 | 5, avatar: CharacterId | null, mode: BattleMode): void;
+  create(name: string, bestOf: 3 | 5, avatar: CharacterId | null, mode: BattleMode, visibility: Visibility): void;
   join(code: string, name: string, avatar: CharacterId | null): void;
+  /** Take the longest-waiting public lobby, or open a public one with these settings (needs `hasLobbies`). */
+  quickJoin(name: string, avatar: CharacterId | null, bestOf: 3 | 5, mode: BattleMode): void;
+  /** Open public lobbies waiting for a rival (needs `hasLobbies`). Rejects when offline or unanswered. */
+  listLobbies(): Promise<LobbyList>;
   act(action: GameAction): void;
   choose(choice: string): void;
   forfeit(): void;

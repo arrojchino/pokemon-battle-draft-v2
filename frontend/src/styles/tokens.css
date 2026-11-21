@@ -1,0 +1,102 @@
+/* ============================================================
+   Battle Draft design tokens · classic Pokémon, modernized
+   Dark charcoal and navy surfaces, one blue-cyan interaction accent, gold for the moments
+   that matter, and Pokémon type colours only where they carry information.
+   Screens compose these tokens; they do not invent colours of their own.
+   ============================================================ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, darkest to most raised */
+  --bg-0: #0a0c11;
+  --bg-1: #0e121a;
+  --surface-1: #121826;
+  --surface-2: #182033;
+  --surface-3: #212b41;
+  --surface-well: #0b0f17;
+  --scrim: rgba(5, 7, 12, 0.74);
+  --panel-bg: rgba(18, 24, 38, 0.94);
+  --panel-bg-strong: rgba(21, 28, 44, 0.98);
+
+  /* Borders */
+  --border-1: rgba(160, 190, 255, 0.10);
+  --border-2: rgba(160, 190, 255, 0.18);
+  --border-3: rgba(160, 190, 255, 0.32);
+  --highlight: rgba(255, 255, 255, 0.06);
+
+  /* Text */
+  --text-1: #f3f6fc;
+  --text-2: #c3cbdc;
+  --text-3: #8d97ad;
+  --text-4: #5f6a82;
+
+  /* Accents: cyan/blue drive interaction, gold marks what matters */
+  --blue: #3d7bff;
+  --blue-2: #2a5fd9;
+  --cyan: #2fd4f0;
+  --cyan-2: #16b2d2;
+  --accent: var(--cyan);
+  --accent-2: var(--blue);
+  --accent-ink: #03121a;
+  --gold: #ffc53d;
+  --gold-2: #f2a516;
+  --gold-ink: #1f1500;
+
+  /* Status */
+  --ok: #3ddc97;
+  --warn: #ffb547;
+  --danger: #ff4d6a;
+  --hp-high: #3ddc97;
+  --hp-mid: #ffc53d;
+  --hp-low: #ff4d6a;
+
+  /* Pokémon types: mirror TYPE_COLORS in ui/pokemon.tsx */
+  --type-normal: #a8a77a; --type-fire: #f0802f; --type-water: #4f8ff7; --type-electric: #f7d02c;
+  --type-grass: #5fc35a; --type-ice: #7fd8e8; --type-fighting: #d0473f; --type-poison: #a849b0;
+  --type-ground: #d9b45a; --type-flying: #8fa8f5; --type-psychic: #f45b9a; --type-bug: #9bbb2a;
+  --type-rock: #b8a258; --type-ghost: #7b5bb5; --type-dragon: #6439e8; --type-dark: #4a4e5a;
+  --type-steel: #9aa7bd; --type-fairy: #ee90c4; --type-stellar: #40b5a5;
+
+  /* Typography */
+  --font-display: 'Outfit', 'Manrope', system-ui, sans-serif;
+  --font-body: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-jp: 'Zen Kaku JP', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Noto Sans JP', sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --fs-2xs: 10px; --fs-xs: 11px; --fs-sm: 13px; --fs-md: 15px; --fs-lg: 18px;
+  --fs-xl: 22px; --fs-2xl: 28px; --fs-3xl: 38px; --fs-hero: clamp(46px, 6.6vw, 96px);
+  --tracking-caps: 0.14em;
+
+  /* Space: 4px grid */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px;
+  --s-8: 32px; --s-10: 40px; --s-12: 48px; --s-16: 64px;
+  --screen-pad: clamp(16px, 3vw, 40px);
+
+  /* Shape */
+  --r-xs: 6px; --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 24px; --r-pill: 999px;
+
+  /* Elevation and focus */
+  --shadow-1: inset 0 1px 0 var(--highlight), 0 6px 18px -10px rgba(0, 0, 0, 0.7);
+  --shadow-2: inset 0 1px 0 var(--highlight), 0 16px 40px -18px rgba(0, 0, 0, 0.85);
+  --shadow-3: inset 0 1px 0 var(--highlight), 0 28px 70px -24px rgba(0, 0, 0, 0.92);
+  --ring: 0 0 0 2px var(--bg-0), 0 0 0 4px var(--accent);
+  --glow-accent: 0 0 26px -8px color-mix(in srgb, var(--accent) 75%, transparent);
+  --glow-gold: 0 0 26px -8px color-mix(in srgb, var(--gold) 75%, transparent);
+
+  /* Motion: short for feedback, longer for panels and screens */
+  --dur-1: 120ms; --dur-2: 200ms; --dur-3: 320ms; --dur-4: 520ms; --dur-5: 800ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Layers */
+  --z-stage: 0; --z-backdrop: 1; --z-ui: 2; --z-hud: 10; --z-drawer: 30; --z-perf: 40;
+  --z-toast: 50; --z-tip: 60; --z-veil: 70;
+
+  /* Legacy names used by pre-redesign sheets; new code uses the tokens above. */
+  --bg: var(--bg-0); --ink: var(--text-1); --ink-2: var(--text-2); --muted: var(--text-3);
+  --line: var(--border-1); --line-2: var(--border-3);
+  --glass: var(--panel-bg); --glass-2: var(--panel-bg-strong);
+  --accent2: var(--blue); --cut: 0px; --radius: var(--r-sm);
+  --display: var(--font-display); --body: var(--font-body); --jp: var(--font-jp); --mono: var(--font-mono);
+  --ease: var(--ease-out);
+}

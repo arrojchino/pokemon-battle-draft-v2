@@ -112,6 +112,8 @@ class Hologram {
   private dashT = 1; private dashDur = 0.75; private dashTo = new THREE.Vector3(); private spinning = false; private vanish = false;
   private trail: THREE.Vector3[] = Array.from({ length: 10 }, () => new THREE.Vector3());
   present = false;
+  /** Ceiling for the hit/heal/Tera flash on the projection (lowered by Reduce flashing). */
+  flashCap = 1;
 
   constructor(readonly side: 0 | 1) {
     this.uniforms.uFlip.value = side === 0 ? 1 : 0;
@@ -189,7 +191,7 @@ class Hologram {
     this.revealT = Math.min(1, this.revealT + dt / (reduced ? 0.2 : 0.75));
     this.uniforms.uReveal.value = easeOutCubic(this.revealT);
     this.uniforms.uGlitch.value *= Math.exp(-5 * dt);
-    this.uniforms.uFlash.value *= Math.exp(-7 * dt);
+    this.uniforms.uFlash.value = Math.min(this.flashCap, this.uniforms.uFlash.value * Math.exp(-7 * dt));
     if (this.dissolving) {
       this.dissolveT = Math.min(1, this.dissolveT + dt / (reduced ? 0.4 : 1.1));
       this.uniforms.uDissolve.value = this.dissolveT;
@@ -317,6 +319,9 @@ export class BattleStage {
   private time = 0;
   private impactAt: [number, number] = [0, 0];
   private freeze = 0;
+  /** Effects setting: point-light flash strength (0..1), and calm = no screen flashes, dimmer hologram flashes. */
+  private lightAmt = 1;
+  private calm = false;
   /** Camera impulse, zoom punch, screen punch and screen flash the World applies each frame. */
   shake = 0; fovPunch = 0; screenPunch = 0;
   readonly screenFlash = { color: new THREE.Color('#ffffff'), amt: 0 };
@@ -349,11 +354,19 @@ export class BattleStage {
   private foot(side: 0 | 1, out = new THREE.Vector3()) { const m = ARENA.mon[side]; return out.set(m.x, ARENA.floorY + 0.03, m.z); }
   private center(side: 0 | 1, out = new THREE.Vector3()) { return this.holos[side].center(out); }
   private orb() { return this.orbs.find(o => !o.busy) ?? this.orbs[0]; }
-  private light(at: THREE.Vector3, color: string, peak = 8, dur = 0.45, follow: (() => THREE.Vector3) | null = null) { if (!this.reduced()) this.flashes.fire(at, color, peak, dur, follow); }
+  private light(at: THREE.Vector3, color: string, peak = 8, dur = 0.45, follow: (() => THREE.Vector3) | null = null) { if (!this.reduced() && this.lightAmt > 0) this.flashes.fire(at, color, peak * this.lightAmt, dur, follow); }
   private ballistic(from: THREE.Vector3, to: THREE.Vector3, T: number, out = new THREE.Vector3()) { return out.subVectors(to, from).divideScalar(T).setY((to.y - from.y) / T + 4.9 * T); }
   private kickScreen(strength: number, color: string, flash = 0) {
     this.screenPunch = Math.max(this.screenPunch, strength);
-    if (flash > 0 && !this.reduced()) { this.screenFlash.color.set(color); this.screenFlash.amt = Math.max(this.screenFlash.amt, flash); }
+    if (flash > 0 && !this.reduced() && !this.calm) { this.screenFlash.color.set(color); this.screenFlash.amt = Math.max(this.screenFlash.amt, flash); }
+  }
+
+  /** Effects intensity (particle density and light-flash strength, 0..1) and Reduce flashing. */
+  setEffects(particles: number, lights: number, calm: boolean) {
+    this.particles.density = particles;
+    this.lightAmt = calm ? Math.min(lights, 0.35) : lights;
+    this.calm = calm;
+    for (const h of this.holos) h.flashCap = calm ? 0.3 : 1;
   }
 
   /* ---------------- events */

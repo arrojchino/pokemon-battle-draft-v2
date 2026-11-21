@@ -5,27 +5,26 @@ import { settings, useSettings } from '../../../app/settings.js';
 import { FORMATS, SHOWDOWN_URL, TEAMBUILDER_URL, challengeCommand, cleanShowdownName, copyText, openPokePaste, ouProblems } from '../../../showdown/handoff.js';
 import { CopyButton, Icon, Modal, toast } from '../../primitives.js';
 import { PokemonCard } from '../../pokemon.js';
-import { ResultReport, TeamStrip } from './Panels.js';
+import { ResultReport, RivalStrip, TeamStrip } from './Panels.js';
 import type { MatchModel } from './model.js';
 
 /**
- * Battle phase: both teams at a glance, then the most reliable path from this page to a real
- * Showdown battle. Each step is something the browser can actually do; nothing pretends to drive
- * the cross-origin Showdown client.
+ * Showdown battle phase: your six and the rival's species, then the most reliable path from this page
+ * to a real Showdown battle. Each step is something the browser can actually do; nothing pretends to
+ * drive the cross-origin Showdown client.
  */
 export function BattlePanel({ room, m, act }: { room: PublicRoom; m: MatchModel; act: (a: GameAction) => void }) {
   const s = useSettings();
   const [sets, setSets] = useState(false);
   const format = FORMATS.find(f => f.id === s.format) ?? FORMATS[0];
-  const problems = format.id === 'gen9ou' ? ouProblems([...m.myTeam, ...m.oppTeam]) : [];
-  const mineC = characterById(m.mine); const theirsC = characterById(m.theirs);
+  const problems = format.id === 'gen9ou' ? ouProblems(m.myTeam) : [];
 
   return (
     <section className="battle">
       <div className="battle__teams panel">
-        <TeamStrip label={`${m.myName} · You`} team={m.myTeam} accent={mineC?.accent} />
-        <TeamStrip label={m.oppName} team={m.oppTeam} accent={theirsC?.accent} />
-        <button className="btn btn--ghost btn--sm" onClick={() => setSets(true)}>View full sets</button>
+        <TeamStrip label={`${m.myName} · You`} team={m.myTeam} partner={characterById(m.mine)?.accent} />
+        <RivalStrip label={m.oppName} rival={m.rival} partner={characterById(m.theirs)?.accent} />
+        <button className="btn btn--ghost btn--sm" onClick={() => setSets(true)}>View my full sets</button>
       </div>
 
       <div className="battle__handoff panel">
@@ -59,16 +58,12 @@ export function BattlePanel({ room, m, act }: { room: PublicRoom; m: MatchModel;
           <CopyButton className="btn" label="Copy my team" getText={() => teamImport(m.myTeam)} />
           <a className="btn" href={SHOWDOWN_URL} target="_blank" rel="noopener noreferrer"><Icon name="external" />Open Showdown</a>
           <button className="btn" onClick={() => openPokePaste(m.myTeam, `Game ${m.gameNo} · ${m.myName}`, m.myName, format.id)} title="Publishes an open team sheet on pokepast.es in a new tab"><Icon name="link" />Open team sheet (PokePaste)</button>
-          <CopyButton className="btn btn--ghost" label="Copy rival's team" getText={() => teamImport(m.oppTeam)} />
         </div>
         <ResultReport room={room} m={m} act={act} />
       </div>
 
-      <Modal open={sets} onClose={() => setSets(false)} title={`Game ${m.gameNo} · full sets`} wide>
-        <div className="sets">
-          <h3>{m.myName}</h3><div className="sets__grid">{m.myTeam.map((p, i) => <PokemonCard key={p.name} p={p} index={i} />)}</div>
-          <h3>{m.oppName}</h3><div className="sets__grid">{m.oppTeam.map((p, i) => <PokemonCard key={p.name} p={p} index={i + 6} />)}</div>
-        </div>
+      <Modal open={sets} onClose={() => setSets(false)} title={`Game ${m.gameNo} · your sets`} wide>
+        <div className="sets"><div className="sets__grid">{m.myTeam.map((p, i) => <PokemonCard key={p.name} p={p} index={i} />)}</div></div>
       </Modal>
     </section>
   );

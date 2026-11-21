@@ -1,0 +1,82 @@
+/* ============================================================
+   Battle HUD details and callouts (ported from the retired grime pass onto tokens).
+   Owned by the battle HUD workstream.
+   ============================================================ */
+.arena__dock { position: relative; box-shadow: var(--shadow-2); }
+.plate2 { cursor: help; outline: none; box-shadow: inset 0 0 0 1px var(--border-2), inset 4px 0 0 var(--t1), var(--shadow-2); }
+.plate2:focus-visible { box-shadow: inset 0 0 0 1px var(--accent), inset 4px 0 0 var(--t1); }
+.plate2 header strong { font-weight: 700; letter-spacing: 0.02em; }
+.hp__track { height: 10px; overflow: hidden; background: var(--surface-well); border-radius: var(--r-pill); box-shadow: inset 0 0 0 1px var(--border-1); }
+.hp--ok .hp__fill { background: linear-gradient(180deg, #74f2bf, var(--hp-high)); }
+.hp--mid .hp__fill { background: linear-gradient(180deg, #ffdb7d, var(--hp-mid)); }
+.hp--low .hp__fill { background: linear-gradient(180deg, #ff8a9c, var(--hp-low)); }
+.hp__ghost { background: rgba(255, 255, 255, 0.7); }
+.hp__num { color: var(--text-1); }
+
+.move { overflow: hidden; background: linear-gradient(100deg, color-mix(in srgb, var(--t) 26%, var(--surface-1)), var(--surface-1) 72%); }
+.move:hover:not(:disabled) { transform: translateY(-2px); }
+.move__vs { position: absolute; top: 6px; right: 8px; display: flex; gap: 4px; }
+.move--immune strong, .move--blocked strong { text-decoration: line-through; text-decoration-color: var(--danger); text-decoration-thickness: 2px; }
+.move--x4 { box-shadow: inset 0 0 0 1px #ff4d4d, inset 4px 0 0 var(--t), 0 0 22px -8px #ff4d4d; }
+.tera.is-on { animation: tera-pulse 1.4s var(--ease-in-out) infinite; }
+@keyframes tera-pulse { 50% { box-shadow: inset 0 0 0 1px var(--t), 0 0 30px -6px var(--t); } }
+.swap, .lead { background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent), var(--surface-1); }
+.timer.is-low { color: var(--danger); background: color-mix(in srgb, var(--danger) 18%, var(--surface-1)); box-shadow: inset 0 0 0 1px var(--danger); }
+.arena__turn { color: var(--gold); }
+.arena__chip { background: var(--surface-2); }
+
+/* Showdown-style hover cards. */
+.tip { position: fixed; z-index: var(--z-tip); width: min(320px, calc(100vw - 16px)); pointer-events: none; animation: tip-in var(--dur-1) var(--ease-out) both; }
+@keyframes tip-in { from { opacity: 0; transform: translateY(4px); } }
+.tip--below { animation-name: tip-in-below; }
+@keyframes tip-in-below { from { opacity: 0; transform: translateY(-4px); } }
+.tipcard {
+  --t: #888;
+  display: grid; gap: 8px; padding: 12px 14px; font-size: 12.5px; color: var(--text-2);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--t) 16%, transparent), transparent 55%), var(--surface-1);
+  border: 1px solid var(--border-2); border-left: 3px solid var(--t); border-radius: var(--r-md); box-shadow: var(--shadow-3);
+}
+.tipcard header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tipcard header strong { margin-right: 4px; font: 700 15px var(--font-display); color: var(--text-1); }
+.tipcard__tera { font: 700 9px var(--font-display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); }
+.tipcard__stats { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; }
+.tipcard__stats div { display: flex; gap: 6px; align-items: baseline; }
+.tipcard__stats dt { font: 700 9px var(--font-display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); }
+.tipcard__stats dd { margin: 0; color: var(--text-1); font-weight: 700; }
+.tipcard__stats small { color: var(--gold); font-weight: 600; }
+.tipcard__desc { margin: 0; line-height: 1.45; }
+.tipcard__verdict { margin: 0; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; color: var(--text-1); font-weight: 600; }
+.tipcard__notes { margin: 0; padding-left: 16px; color: var(--text-2); }
+.tipcard__notes li::marker { color: var(--gold); }
+.tipcard__hint { margin: 0; color: var(--gold); font-size: 11.5px; }
+.tipcard__chart { display: grid; gap: 4px; margin: 0; }
+.chart { display: grid; grid-template-columns: 64px 1fr; gap: 6px; align-items: center; }
+.chart dt { font: 700 9px var(--font-display); letter-spacing: 0.14em; text-transform: uppercase; }
+.chart dd { margin: 0; display: flex; flex-wrap: wrap; gap: 3px; }
+.chart--x4 dt { color: #ff5a4a; } .chart--x2 dt { color: #ffb23d; } .chart--half dt { color: #8fd0ff; } .chart--immune dt { color: var(--text-3); }
+.tipcard__moves { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; color: var(--text-1); }
+.tipcard__moves li { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.tipcard__moves li i { width: 8px; height: 8px; flex: none; background: var(--t); transform: rotate(45deg); }
+.preview__foe { display: inline-block; outline: none; }
+.preview__foe:focus-visible { outline: 2px solid var(--accent); }
+@media (max-width: 900px) { .move__vs { top: 4px; right: 4px; } .move__vs .vchip--stab { display: none; } }
+
+/* Battle messages live in the command dock, like a classic message box; the field stays clear. */
+.msg { margin: 0; display: flex; align-items: stretch; gap: var(--s-3); font: 600 var(--fs-md)/1.45 var(--font-body); color: var(--text-1); text-align: left; }
+.msg::before { content: ''; flex: none; width: 4px; border-radius: 2px; background: var(--border-3); }
+.actions__wait.msg { animation: msg-in var(--dur-3) var(--ease-out) both; }
+.msg--last { margin-bottom: var(--s-3); padding-bottom: var(--s-3); border-bottom: 1px solid var(--border-1); color: var(--text-2); font-size: var(--fs-sm); }
+.msg--crit { color: var(--gold); } .msg--crit::before { background: var(--gold); }
+.msg--super::before { background: var(--warn); }
+.msg--resist::before, .msg--immune::before { background: var(--text-4); }
+.msg--miss::before { background: var(--cyan); }
+.msg--ko { color: var(--danger); } .msg--ko::before { background: var(--danger); }
+@keyframes msg-in { from { opacity: 0; transform: translateY(4px); } }
+
+/* Damage and healing numbers rise from the HP plate they belong to. */
+.plate2--mine { position: relative; }
+.pops { position: absolute; top: -4px; right: 16px; pointer-events: none; }
+.pop { position: absolute; top: 0; right: 0; white-space: nowrap; font: 800 22px/1 var(--font-display); color: var(--danger); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.65), 0 0 18px rgba(0, 0, 0, 0.5); animation: pop-up 1.25s var(--ease-out) forwards; }
+.pop--heal { color: var(--ok); }
+@keyframes pop-up { 0% { opacity: 0; transform: translateY(8px) scale(0.85); } 14% { opacity: 1; transform: translateY(-4px) scale(1.06); } 72% { opacity: 1; } 100% { opacity: 0; transform: translateY(-30px); } }
+:root[data-calm='on'] .hp--low .hp__fill { animation: none; }

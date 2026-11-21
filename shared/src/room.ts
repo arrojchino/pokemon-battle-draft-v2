@@ -13,6 +13,8 @@ export type RoundRecord = { game: number; winner: Seat; teams: Pair<Pokemon[]>; 
 
 /** 'app': battles run on the server's simulator inside this app. 'showdown': players battle on Pokémon Showdown and report the winner. */
 export type BattleMode = 'app' | 'showdown';
+/** 'public' rooms are listed in the dedicated server's lobby browser while they wait for a rival; 'private' rooms are invite-only. */
+export type Visibility = 'public' | 'private';
 export type BattleStatus = { id: number; status: 'preview' | 'active' | 'ended'; turn: number };
 
 export type RoomState = {
@@ -20,6 +22,11 @@ export type RoomState = {
   players: Pair<SeatRecord | null>;
   bestOf: 3 | 5;
   phase: Phase;
+  /**
+   * Who calls this game's coin: picked at random when the rival sits down (and for each new series),
+   * then the winner of the previous game. Calling flips the coin at once.
+   */
+  caller: Seat | null;
   calls: Pair<CoinSide | null>;
   result: CoinSide | null;
   tossWinner: Seat | null;
@@ -30,14 +37,19 @@ export type RoomState = {
   history: RoundRecord[];
   mode: BattleMode;
   battle: BattleStatus | null;
+  visibility: Visibility;
 };
+
+/** What a rival may know about a set before it is revealed in battle: species and types (Team Preview). */
+export type RivalPreview = Pick<Pokemon, 'name' | 'id' | 'artId' | 'types'>;
 
 /** What clients receive. Same field names as protocol v1 so older clients keep working. */
 export type PublicPlayer = { name: string; avatar: CharacterId | null; connected: boolean };
-export type PublicRoom = Omit<RoomState, 'players'> & { players: Pair<PublicPlayer | null>; protocol: number };
+export type PublicRoom = Omit<RoomState, 'players'> & { players: Pair<PublicPlayer | null>; protocol: number; rival: RivalPreview[] | null };
 
 export type GameAction =
   | { type: 'call'; side: CoinSide }
+  /** Retired in protocol v4 (the call flips the coin); still parsed so older clients get a clear error. */
   | { type: 'flip' }
   | { type: 'spin' }
   | { type: 'pick'; team: 0 | 1 }
@@ -58,11 +70,12 @@ export type Rng = { coin(): CoinSide; float(): number };
 export type ReduceResult = { ok: true; room: RoomState } | { ok: false; error: string };
 
 export const normalizeBestOf = (v: unknown): 3 | 5 => (Number(v) === 5 ? 5 : 3);
+const randomSeat = (rng: Rng): Seat => (rng.float() < 0.5 ? 0 : 1);
 
-export function createRoom(code: string, host: SeatRecord, bestOf: 3 | 5, mode: BattleMode = 'showdown'): RoomState {
+export function createRoom(code: string, host: SeatRecord, bestOf: 3 | 5, mode: BattleMode = 'showdown', visibility: Visibility = 'private'): RoomState {
   return {
-    code, players: [host, null], bestOf, phase: 'calls', calls: [null, null], result: null, tossWinner: null,
-    candidates: null, teams: [[], []], wins: [0, 0], games: 0, history: [], mode, battle: null,
+    code, players: [host, null], bestOf, phase: 'calls', caller: null, calls: [null, null], result: null, tossWinner: null,
+    candidates: null, teams: [[], []], wins: [0, 0], games: 0, history: [], mode, battle: null, visibility,
   };
 }
 
@@ -85,8 +98,9 @@ const recordWin = (s: RoomState, w: Seat, turns?: number) => {
  */
 export function reduce(room: RoomState, seat: Seat, action: GameAction | ServerAction, rng: Rng): ReduceResult {
   const s = clone(room);
-  // Rooms persisted by v2 hosts have no mode/battle fields.
-  s.mode ??= 'showdown'; s.battle ??= null;
+  // Rooms persisted by older hosts lack mode/battle (v2), visibility (v3) or the caller (v3).
+  s.mode ??= 'showdown'; s.battle ??= null; s.visibility ??= 'private';
+  if (s.caller === undefined) s.caller = s.players[1] ? randomSeat(rng) : null;
   const fail = (error: string): ReduceResult => ({ ok: false, error });
   switch (action.type) {
     case 'avatar': {
@@ -96,22 +110,19 @@ export function reduce(room: RoomState, seat: Seat, action: GameAction | ServerA
       return { ok: true, room: s };
     }
     case 'call': {
-      if (s.phase !== 'calls') return fail('Calls are closed');
-      if (s.calls[1 - seat] === action.side) return fail('Calls must be opposite');
-      s.calls[seat] = action.side;
-      return { ok: true, room: s };
-    }
-    case 'flip': {
-      if (s.phase !== 'calls') return fail('Not time to flip');
-      if (!s.players[1]) return fail('Waiting for an opponent');
-      if (!s.calls[0] || !s.calls[1]) return fail('Both players must call');
+      if (s.phase !== 'calls') return fail('The coin has already been called');
+      if (!s.players[1] || s.caller === null) return fail('Waiting for an opponent');
+      if (seat !== s.caller) return fail(`${s.players[s.caller]?.name ?? 'Your rival'} calls this coin`);
+      const other: CoinSide = action.side === 'heads' ? 'tails' : 'heads';
+      s.calls = seat === 0 ? [action.side, other] : [other, action.side];
       s.result = rng.coin();
-      s.tossWinner = coinWinner(s.calls, s.result) as Seat | null;
-      if (s.tossWinner === null) return fail('Calls must be opposite');
+      s.tossWinner = coinWinner(s.calls, s.result) as Seat;
       s.phase = 'spin';
       return { ok: true, room: s };
     }
+    case 'flip': return fail('The coin flips as soon as it is called');
     case 'spin': {
+      if (s.phase === 'pick') return { ok: true, room: s }; // both clients may deal after the reveal; the first one wins
       if (s.phase !== 'spin') return fail('Not time to deal');
       s.candidates = generateTeams(() => rng.float());
       s.phase = 'pick';
@@ -123,6 +134,7 @@ export function reduce(room: RoomState, seat: Seat, action: GameAction | ServerA
       const t = action.team;
       s.teams[seat] = s.candidates[t].slice();
       s.teams[1 - seat] = s.candidates[1 - t].slice();
+      s.candidates = null;
       s.phase = 'battle';
       s.battle = s.mode === 'app' ? { id: s.games + 1, status: 'preview', turn: 0 } : null;
       return { ok: true, room: s };
@@ -140,7 +152,7 @@ export function reduce(room: RoomState, seat: Seat, action: GameAction | ServerA
     }
     case 'battleEnd': {
       if (s.phase !== 'battle') return fail('No battle in progress');
-      if (action.winner === null) { clearRound(s); return { ok: true, room: s }; } // draw: replay the game from a new toss
+      if (action.winner === null) { clearRound(s); return { ok: true, room: s }; } // draw: replay the game from a new toss, same caller
       recordWin(s, action.winner, action.turns);
       return { ok: true, room: s };
     }
@@ -152,21 +164,25 @@ export function reduce(room: RoomState, seat: Seat, action: GameAction | ServerA
     case 'next': {
       if (s.phase !== 'between') return fail('Not between games');
       clearRound(s);
+      s.caller = s.history[s.history.length - 1]?.winner ?? s.caller; // the winner of the last game calls
       return { ok: true, room: s };
     }
     case 'reset': {
       clearRound(s);
       s.wins = [0, 0]; s.games = 0; s.history = []; s.bestOf = action.bestOf;
+      s.caller = s.players[1] ? randomSeat(rng) : null; // a new series opens with a random caller
       return { ok: true, room: s };
     }
   }
 }
 
-/** Seat a joining player. Returns the seat or an error; the caller owns token generation. */
-export function seatGuest(room: RoomState, guest: SeatRecord): { ok: true; room: RoomState; seat: Seat } | { ok: false; error: string } {
+/** Seat a joining player and draw the first caller at random. The caller owns token generation. */
+export function seatGuest(room: RoomState, guest: SeatRecord, rng: Rng): { ok: true; room: RoomState; seat: Seat } | { ok: false; error: string } {
   if (room.players[1]) return { ok: false, error: 'Room is full' };
   const s = clone(room);
   s.players[1] = guest;
+  if (s.phase === 'calls' && s.games === 0) s.caller = randomSeat(rng);
+  else s.caller ??= randomSeat(rng);
   return { ok: true, room: s, seat: 1 };
 }
 
@@ -176,8 +192,20 @@ export function seatForToken(room: RoomState, token: unknown): Seat | null {
   return i === 0 || i === 1 ? i : null;
 }
 
-/** Strip bearer tokens before anything leaves the authority. (v1 broadcast every player's token.) */
-export function publicView(room: RoomState, connected: Pair<boolean>, protocol: number): PublicRoom {
+/**
+ * What one seat receives. Bearer tokens never leave the authority, and nothing the viewer has not earned
+ * is sent: the two dealt teams go only to the toss winner while they choose, and during a game each player
+ * gets their own six in full but only the rival's species and types (Team Preview). Finished games are
+ * revealed in `history`.
+ */
+export function publicView(room: RoomState, connected: Pair<boolean>, protocol: number, viewer: Seat): PublicRoom {
   const players = room.players.map((p, i) => (p ? { name: p.name, avatar: p.avatar, connected: connected[i] } : null)) as Pair<PublicPlayer | null>;
-  return { ...clone(room), players, protocol };
+  const view: PublicRoom = { ...clone(room), players, protocol, rival: null };
+  if (room.phase === 'pick' && room.tossWinner !== viewer) view.candidates = null;
+  if (room.phase === 'battle') {
+    const opp = (1 - viewer) as Seat;
+    view.rival = room.teams[opp].map(({ name, id, artId, types }) => ({ name, id, ...(artId === undefined ? {} : { artId }), types }));
+    view.teams[opp] = [];
+  }
+  return view;
 }

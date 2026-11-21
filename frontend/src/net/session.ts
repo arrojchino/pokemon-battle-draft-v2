@@ -13,6 +13,15 @@ export function backendUrl(): string {
   return /^wss?:\/\//.test(v) ? v : '';
 }
 
+/** Shareable link into a room. It carries `?ws=` unless the backend is baked into the build, so the rival reaches the same server. */
+export function inviteLink(code: string): string {
+  const u = new URL(location.pathname, location.origin);
+  u.searchParams.set('room', code);
+  const ws = backendUrl();
+  if (ws && !(import.meta.env.VITE_BACKEND_URL || '').trim()) u.searchParams.set('ws', ws);
+  return u.toString();
+}
+
 let transport: Transport | null = null;
 /** Exactly one transport per page. v1 started both the WebSocket and the PeerJS client unconditionally. */
 export function getTransport(): Transport {

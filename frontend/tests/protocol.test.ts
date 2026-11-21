@@ -3,8 +3,8 @@ import { parseClientMessage, parseServerMessage, cleanName, isRoomCode } from '.
 
 describe('protocol validation', () => {
   it('accepts every v1 client message shape', () => {
-    expect(parseClientMessage({ type: 'create', name: 'Ana', bestOf: 5 })).toEqual({ type: 'create', name: 'Ana', bestOf: 5, avatar: null, mode: 'showdown' });
-    expect(parseClientMessage({ type: 'create', name: 'Ana', bestOf: 3, mode: 'app' })).toEqual({ type: 'create', name: 'Ana', bestOf: 3, avatar: null, mode: 'app' });
+    expect(parseClientMessage({ type: 'create', name: 'Ana', bestOf: 5 })).toEqual({ type: 'create', name: 'Ana', bestOf: 5, avatar: null, mode: 'showdown', visibility: 'private' });
+    expect(parseClientMessage({ type: 'create', name: 'Ana', bestOf: 3, mode: 'app' })).toEqual({ type: 'create', name: 'Ana', bestOf: 3, avatar: null, mode: 'app', visibility: 'private' });
     expect(parseClientMessage({ type: 'choose', choice: 'move 2 terastallize' })).toEqual({ type: 'choose', choice: 'move 2 terastallize' });
     expect(parseClientMessage({ type: 'choose', choice: 'team 213456' })).toEqual({ type: 'choose', choice: 'team 213456' });
     expect(parseClientMessage({ type: 'join', code: 'ABC123', name: 'Beto' })).toEqual({ type: 'join', code: 'ABC123', name: 'Beto', avatar: null });

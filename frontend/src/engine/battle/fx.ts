@@ -50,6 +50,8 @@ export class Particles {
   private next = 0;
   private emitters: { t: number; dur: number; acc: number; rate: number; spawn: (u: number) => void }[] = [];
   private live = 0;
+  /** Share of spawned particles that are kept (the Effects setting): 1 all, 0.5 every other on average, 0 none. */
+  density = 1;
 
   constructor() {
     const g = new THREE.BufferGeometry();
@@ -92,8 +94,9 @@ export class Particles {
     this.mesh.frustumCulled = false; this.mesh.renderOrder = 8;
   }
 
-  /** Spawn one particle. */
+  /** Spawn one particle (thinned by `density`, so every burst, stream and swirl scales with it). */
   emit(p: THREE.Vector3, v: THREE.Vector3, o: ParticleOpts) {
+    if (this.density < 1 && Math.random() >= this.density) return;
     const i = this.next; this.next = (this.next + 1) % MAXP;
     this.pos.set([p.x, p.y, p.z], i * 3); this.vel.set([v.x, v.y, v.z], i * 3);
     const c = tmpColor.set(o.color); this.col.set([c.r, c.g, c.b], i * 3);

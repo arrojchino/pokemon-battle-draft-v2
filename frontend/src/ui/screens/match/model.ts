@@ -17,7 +17,9 @@ export function matchModel(room: PublicRoom, seat: Seat, localPartner: Character
     target: winsNeeded(room.bestOf),
     gameNo: Math.min(room.games + (room.phase === 'between' || room.phase === 'complete' ? 0 : 1), room.bestOf),
     iWonToss: room.tossWinner === me,
-    myTeam: room.teams[me], oppTeam: room.teams[opp],
+    iCall: room.caller === me,
+    /** Our six in full; the rival's six only as species and types while a game is on (see publicView). */
+    myTeam: room.teams[me], rival: room.rival ?? room.teams[opp],
     seriesWinner: room.phase === 'complete' ? ((room.wins[0] > room.wins[1] ? 0 : 1) as Seat) : null,
   };
 }
