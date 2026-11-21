@@ -35,6 +35,8 @@ export type Character = {
   model: string;
   portrait: string;
   personality: Personality;
+  /** Figure tuning applied at load by scaling the model's own chest bones (clothes are skinned to them). 1 = as authored. */
+  figure: { bust: number };
   credit: { model: string; author: string; license: string; url: string };
 };
 
@@ -60,6 +62,7 @@ export const ROSTER: Character[] = [
       idle: 'hipHand', energy: 0.8, tempo: 0.95, headTilt: -0.03, smile: 0.08, blink: [2.8, 6.0],
       on: { select: 'nod', hover: 'nod', tossWin: 'excited', tossLose: 'thinking', gameWin: 'victory', gameLose: 'sad', seriesWin: 'victory' },
     },
+    figure: { bust: 1.5 },
     credit: { model: 'Vita (VRoid Studio sample)', author: 'VRoid Project / pixiv Inc.', license: 'CC0 1.0', url: 'https://vroid.pixiv.help/hc/en-us/articles/4402614652569' },
   },
   {
@@ -79,6 +82,7 @@ export const ROSTER: Character[] = [
       idle: 'clasped', energy: 1.0, tempo: 0.85, headTilt: 0.07, smile: 0.32, blink: [2.2, 5.0],
       on: { select: 'greet', hover: 'greet', tossWin: 'excited', tossLose: 'surprised', gameWin: 'victory', gameLose: 'sad', seriesWin: 'victory' },
     },
+    figure: { bust: 1.5 },
     credit: { model: 'VRM1_Constraint_Twist_Sample', author: 'pixiv Inc.', license: 'VRM Public License 1.0 (commercial use by corporations allowed, credit not required)', url: 'https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample' },
   },
   {
@@ -98,6 +102,7 @@ export const ROSTER: Character[] = [
       idle: 'behindBack', energy: 0.9, tempo: 0.75, headTilt: -0.06, smile: 0.18, blink: [3.0, 7.0],
       on: { select: 'bow', hover: 'nod', tossWin: 'twirl', tossLose: 'thinking', gameWin: 'twirl', gameLose: 'sad', seriesWin: 'twirl' },
     },
+    figure: { bust: 1.5 },
     credit: { model: 'Darkness Shibu (VRoid Studio sample)', author: 'VRoid Project / pixiv Inc.', license: 'CC0 1.0', url: 'https://vroid.pixiv.help/hc/en-us/articles/4402614652569' },
   },
 ];

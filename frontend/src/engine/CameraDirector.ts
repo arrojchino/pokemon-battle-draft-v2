@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SmoothVec3, smoothDamp, wobble } from './math.js';
 
-export type Shot = { pos: [number, number, number]; target: [number, number, number]; fov: number; time?: number };
+export type Shot = { pos: [number, number, number]; target: [number, number, number]; fov: number; time?: number; /** Dutch angle, radians */ roll?: number };
 
 /**
  * Spring-driven camera. Shots blend with critically damped springs (no overshoot, no linear tweens),
@@ -18,14 +18,19 @@ export class CameraDirector {
   private par = new THREE.Vector2();
   reducedMotion = false;
   private shakeAmt = 0;
+  private roll = 0; private rollTarget = 0; private rollV = { v: 0 };
+  private punchAmt = 0;
+  /** Momentary zoom punch in degrees of FOV (impacts); decays on its own. */
+  punch(deg: number) { if (!this.reducedMotion) this.punchAmt = Math.max(this.punchAmt, deg); }
   /** Short camera impulse for big impacts (ignored with reduced motion). */
   kick(amount: number) { if (!this.reducedMotion) this.shakeAmt = Math.max(this.shakeAmt, amount); }
 
   constructor(private camera: THREE.PerspectiveCamera) {}
 
-  cut(shot: Shot) { this.go(shot); this.pos.snap(); this.target.snap(); this.fov = shot.fov; this.fovV.v = 0; }
+  cut(shot: Shot) { this.go(shot); this.pos.snap(); this.target.snap(); this.fov = shot.fov; this.fovV.v = 0; this.roll = this.rollTarget; this.rollV.v = 0; }
   go(shot: Shot) {
     this.pos.target.set(...shot.pos); this.target.target.set(...shot.target); this.fovTarget = shot.fov;
+    this.rollTarget = this.reducedMotion ? 0 : shot.roll ?? 0;
     this.smooth = shot.time ?? 1.1;
     if (this.reducedMotion) { this.pos.snap(); this.target.snap(); this.fov = shot.fov; }
   }
@@ -46,6 +51,10 @@ export class CameraDirector {
       p.z,
     );
     this.camera.lookAt(tg.x + this.par.x * 0.03 * drift, tg.y + this.par.y * 0.02 * drift, tg.z);
-    if (Math.abs(this.camera.fov - this.fov) > 1e-3) { this.camera.fov = this.fov; this.camera.updateProjectionMatrix(); }
+    this.roll = smoothDamp(this.roll, this.rollTarget, this.rollV, this.smooth * 0.5, dt);
+    if (this.roll !== 0) this.camera.rotateZ(this.roll);
+    this.punchAmt = Math.max(0, this.punchAmt - dt * 18);
+    const fov = this.fov - this.punchAmt;
+    if (Math.abs(this.camera.fov - fov) > 1e-3) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
   }
 }

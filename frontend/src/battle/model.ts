@@ -1,4 +1,5 @@
 import { POOL, TYPE_NAMES, moveInfo, type Pokemon, type TypeName } from '@shared';
+import { impactDelay, recipeFor } from '../engine/battle/moveFx.js';
 
 /**
  * Client-side battle model. Pure: feed it simulator protocol lines (one player's stream, see
@@ -262,10 +263,16 @@ export class BattleModel {
 export function lineDuration(line: string): number {
   const cmd = line.slice(1).split('|', 1)[0];
   switch (cmd) {
-    case 'switch': case 'drag': case 'replace': return 950;
-    case 'move': return 800;
+    case 'switch': case 'drag': case 'replace': return 1100;
+    case 'move': {
+      // Hold until the animation's hit lands, so the damage line plays on impact.
+      const name = line.split('|')[3] ?? '';
+      const info = moveInfo(name);
+      const r = recipeFor(name, info?.type ?? 'Normal', info?.category ?? 'Status');
+      return r.kind === 'self' ? 1050 : Math.round(260 + impactDelay(r) * 1000);
+    }
     case '-damage': return 700;
-    case 'faint': return 1100;
+    case 'faint': return 1500;
     case '-terastallize': return 1300;
     case '-heal': case '-status': case '-boost': case '-unboost': case '-setboost': return 550;
     case 'turn': return 450;

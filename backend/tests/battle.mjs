@@ -63,7 +63,7 @@ let forfeited = 0, reconnected = false, timerChecked = false, g1Winner = -1;
 let bRef = b;
 for (let game = 1; a.state.phase !== 'complete'; game++) {
   assert.ok(game <= 6, 'series must finish');
-  // Wait for the fresh round: stale calls from the previous game must not unblock the flip.
+  // Wait for a fresh round so stale calls cannot unblock the flip.
   await until(() => a.state.phase === 'calls' && a.state.calls.every(c => !c), 'fresh round');
   a.send({ type: 'call', side: 'heads' }); bRef.send({ type: 'call', side: 'tails' });
   await until(() => a.state.calls.every(Boolean), 'calls');

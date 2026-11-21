@@ -52,9 +52,13 @@ backend syncBattle(): new BattleSession(p1 team, p2 team)  [pokemon-showdown Bat
   p1 stream --lines--> seat 0 socket          p2 stream --lines--> seat 1 socket
   omniscient stream: |teampreview| |turn| -> battleStatus ; |win| |tie| -> battleEnd -> recordWin / replay
 client: WsTransport.onBattle -> BattleController (queue + per-line pacing) -> BattleModel (state, log, fx)
-        fx -> stageBridge -> World.battle (holograms, bolts, bursts, camera kick, floor pulse) + partner emotes
+        fx -> stageBridge -> World.battle (BattleStage: holograms, move recipes, fx pools, lights, hit-stop)
+                             World.battle.cam (BattleCamera beats -> CameraDirector springs, roll, FOV punch)
+                             + partner emotes
         snapshot -> BattleArena (plates, HP, move grid, Tera, switches, preview, log, timer)
 ```
+
+`engine/battle/moveFx.ts` maps every pool move to a recipe and an impact delay. The model uses the same delay to pace `|move|` lines, and the stage defers the hit reaction until the animation lands, so damage numbers, HP drain and the impact always coincide. `BattleCamera.ts` also holds the field geometry (`ARENA`) shared by the stage, the partners' slots and the shots.
 
 The client never learns a result before the server records it: the end banner's Continue button waits for the room state, and series scoring always comes from `reduce()`.
 

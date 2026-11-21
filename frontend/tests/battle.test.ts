@@ -94,3 +94,16 @@ describe('battle controller', () => {
     expect(sent.length).toBe(decisions);
   });
 });
+
+describe('move choreography', () => {
+  it('every move in the pool has a hand-picked animation recipe with a sane impact time', async () => {
+    const { MOVES } = await import('@shared');
+    const { RECIPES, impactDelay, recipeFor } = await import('../src/engine/battle/moveFx.js');
+    const missing = Object.keys(MOVES).filter(id => !RECIPES[id]);
+    expect(missing).toEqual([]);
+    for (const m of Object.values(MOVES)) {
+      const d = impactDelay(recipeFor(m.name, m.type, m.category));
+      expect(d > 0 && d < 1).toBe(true);
+    }
+  });
+});

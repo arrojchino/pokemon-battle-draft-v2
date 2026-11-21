@@ -12,6 +12,8 @@ Each license below was read from the license metadata embedded in the VRM file i
 
 Credit is shown in the in-game Credits dialog even where it is not required.
 
+**Figure tuning.** `ROSTER[].figure.bust` scales each model's own secondary chest bones (`J_Sec_L/R_Bust1`) at load (clamped 0.8 to 1.5; spring-bone rest state is re-captured). Body and outfit are skinned to those bones, so clothing follows and nothing is exposed. Both licenses allow modification (CC0; VRM Public License 1.0 `modification: allowModificationRedistribution`). The select-screen portraits are pre-rendered and were not regenerated.
+
 Candidates rejected and why: Sendagaya Shino and Sakurada Fumiriya (school uniforms read as students), Vivi (child proportions), Seed-san (youthful), AvatarSample A to C (non-CC0 conditions; usable but kept the set consistent).
 
 ## Model pipeline

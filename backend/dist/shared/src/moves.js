@@ -6,6 +6,9 @@ export const MOVES = {
         "power": 55,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Power doubles if the user has no held item."
     },
     "aquajet": {
@@ -15,6 +18,9 @@ export const MOVES = {
         "power": 40,
         "accuracy": 100,
         "priority": 1,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Usually goes first."
     },
     "aquastep": {
@@ -24,6 +30,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "100% chance to raise the user's Speed by 1."
     },
     "banefulbunker": {
@@ -33,6 +42,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 4,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Protects from moves. Contact: poison."
     },
     "bellydrum": {
@@ -42,6 +54,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "User loses 50% max HP. Maximizes Attack."
     },
     "bodypress": {
@@ -51,6 +66,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Uses user's Def stat as Atk in damage calculation."
     },
     "bravebird": {
@@ -60,6 +78,9 @@ export const MOVES = {
         "power": 120,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Has 33% recoil."
     },
     "bugbuzz": {
@@ -69,6 +90,9 @@ export const MOVES = {
         "power": 90,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "10% chance to lower the target's Sp. Def by 1."
     },
     "bulkup": {
@@ -78,6 +102,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Raises the user's Attack and Defense by 1."
     },
     "bulletpunch": {
@@ -87,6 +114,9 @@ export const MOVES = {
         "power": 40,
         "accuracy": 100,
         "priority": 1,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Usually goes first."
     },
     "bulletseed": {
@@ -96,6 +126,9 @@ export const MOVES = {
         "power": 25,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Hits 2-5 times in one turn."
     },
     "calmmind": {
@@ -105,6 +138,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Raises the user's Sp. Atk and Sp. Def by 1."
     },
     "closecombat": {
@@ -114,6 +150,9 @@ export const MOVES = {
         "power": 120,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Lowers the user's Defense and Sp. Def by 1."
     },
     "darkpulse": {
@@ -123,6 +162,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "20% chance to make the target flinch."
     },
     "defog": {
@@ -132,6 +174,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "-1 evasion; ends user and target hazards/terrain."
     },
     "destinybond": {
@@ -141,6 +186,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "If an opponent knocks out the user, it also faints."
     },
     "direclaw": {
@@ -150,6 +198,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "50% chance to sleep, poison, or paralyze target."
     },
     "doubleshock": {
@@ -159,6 +210,9 @@ export const MOVES = {
         "power": 120,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "User's Electric type: typeless; must be Electric."
     },
     "dracometeor": {
@@ -168,6 +222,9 @@ export const MOVES = {
         "power": 130,
         "accuracy": 90,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Lowers the user's Sp. Atk by 2."
     },
     "dragonclaw": {
@@ -177,6 +234,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "No additional effect."
     },
     "dragondance": {
@@ -186,6 +246,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Raises the user's Attack and Speed by 1."
     },
     "dragondarts": {
@@ -195,6 +258,9 @@ export const MOVES = {
         "power": 50,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Hits twice. Doubles: Tries to hit each foe once."
     },
     "drainpunch": {
@@ -204,6 +270,9 @@ export const MOVES = {
         "power": 75,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "User recovers 50% of the damage dealt."
     },
     "drainingkiss": {
@@ -213,6 +282,9 @@ export const MOVES = {
         "power": 50,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "User recovers 75% of the damage dealt."
     },
     "earthquake": {
@@ -222,6 +294,9 @@ export const MOVES = {
         "power": 100,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": true,
+        "self": false,
         "desc": "Hits adjacent Pokemon. Double damage on Dig."
     },
     "encore": {
@@ -231,6 +306,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Target repeats its last move for its next 3 turns."
     },
     "fierydance": {
@@ -240,6 +318,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "50% chance to raise the user's Sp. Atk by 1."
     },
     "firefang": {
@@ -249,6 +330,9 @@ export const MOVES = {
         "power": 65,
         "accuracy": 95,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "10% chance to burn. 10% chance to flinch."
     },
     "flamethrower": {
@@ -258,6 +342,9 @@ export const MOVES = {
         "power": 90,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "10% chance to burn the target."
     },
     "flowertrick": {
@@ -267,6 +354,9 @@ export const MOVES = {
         "power": 70,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Always results in a critical hit; no accuracy check."
     },
     "focusblast": {
@@ -276,6 +366,9 @@ export const MOVES = {
         "power": 120,
         "accuracy": 70,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "10% chance to lower the target's Sp. Def by 1."
     },
     "gigadrain": {
@@ -285,6 +378,9 @@ export const MOVES = {
         "power": 75,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "User recovers 50% of the damage dealt."
     },
     "gigatonhammer": {
@@ -294,6 +390,9 @@ export const MOVES = {
         "power": 160,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Cannot be selected the turn after it's used."
     },
     "glaiverush": {
@@ -303,6 +402,9 @@ export const MOVES = {
         "power": 120,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "User takes sure-hit 2× damage until its next turn."
     },
     "glare": {
@@ -312,6 +414,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Paralyzes the target."
     },
     "haze": {
@@ -321,6 +426,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": true,
+        "self": false,
         "desc": "Eliminates all stat changes."
     },
     "headlongrush": {
@@ -330,6 +438,9 @@ export const MOVES = {
         "power": 120,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Lowers the user's Defense and Sp. Def by 1."
     },
     "hurricane": {
@@ -339,6 +450,9 @@ export const MOVES = {
         "power": 110,
         "accuracy": 70,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "30% chance to confuse target. Can't miss in rain."
     },
     "hydropump": {
@@ -348,6 +462,9 @@ export const MOVES = {
         "power": 110,
         "accuracy": 80,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "No additional effect."
     },
     "icebeam": {
@@ -357,6 +474,9 @@ export const MOVES = {
         "power": 90,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "10% chance to freeze the target."
     },
     "icepunch": {
@@ -366,6 +486,9 @@ export const MOVES = {
         "power": 75,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "10% chance to freeze the target."
     },
     "icespinner": {
@@ -375,6 +498,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Ends the effects of terrain."
     },
     "iciclespear": {
@@ -384,6 +510,9 @@ export const MOVES = {
         "power": 25,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Hits 2-5 times in one turn."
     },
     "ironhead": {
@@ -393,6 +522,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "30% chance to make the target flinch."
     },
     "knockoff": {
@@ -402,6 +534,9 @@ export const MOVES = {
         "power": 65,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "1.5× damage if foe holds an item. Removes item."
     },
     "kowtowcleave": {
@@ -411,6 +546,9 @@ export const MOVES = {
         "power": 85,
         "accuracy": 0,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "This move does not check accuracy."
     },
     "leafstorm": {
@@ -420,6 +558,9 @@ export const MOVES = {
         "power": 130,
         "accuracy": 90,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Lowers the user's Sp. Atk by 2."
     },
     "leechseed": {
@@ -429,6 +570,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 90,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "1/8 of target's HP is restored to user every turn."
     },
     "lightscreen": {
@@ -438,6 +582,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": true,
+        "self": true,
         "desc": "For 5 turns, special damage to allies is halved."
     },
     "liquidation": {
@@ -447,6 +594,9 @@ export const MOVES = {
         "power": 85,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "20% chance to lower the target's Defense by 1."
     },
     "lowkick": {
@@ -456,6 +606,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "More power the heavier the target."
     },
     "machpunch": {
@@ -465,6 +618,9 @@ export const MOVES = {
         "power": 40,
         "accuracy": 100,
         "priority": 1,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Usually goes first."
     },
     "makeitrain": {
@@ -474,6 +630,9 @@ export const MOVES = {
         "power": 120,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": true,
+        "self": false,
         "desc": "Lowers the user's Sp. Atk by 1. Hits foe(s)."
     },
     "matchagotcha": {
@@ -483,6 +642,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 90,
         "priority": 0,
+        "contact": false,
+        "spread": true,
+        "self": false,
         "desc": "20% burn. Recovers 50% dmg dealt. Thaws foe(s)."
     },
     "moonblast": {
@@ -492,6 +654,9 @@ export const MOVES = {
         "power": 95,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "30% chance to lower the target's Sp. Atk by 1."
     },
     "mysticalfire": {
@@ -501,6 +666,9 @@ export const MOVES = {
         "power": 75,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "100% chance to lower the target's Sp. Atk by 1."
     },
     "nastyplot": {
@@ -510,6 +678,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Raises the user's Sp. Atk by 2."
     },
     "painsplit": {
@@ -519,6 +690,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Shares HP of user and target equally."
     },
     "partingshot": {
@@ -528,6 +702,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Lowers target's Atk, Sp. Atk by 1. User switches."
     },
     "phantomforce": {
@@ -537,6 +714,9 @@ export const MOVES = {
         "power": 90,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Disappears turn 1. Hits turn 2. Breaks protection."
     },
     "playrough": {
@@ -546,6 +726,9 @@ export const MOVES = {
         "power": 90,
         "accuracy": 90,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "10% chance to lower the target's Attack by 1."
     },
     "populationbomb": {
@@ -555,6 +738,9 @@ export const MOVES = {
         "power": 20,
         "accuracy": 90,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Hits 10 times. Each hit can miss."
     },
     "protect": {
@@ -564,6 +750,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 4,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Prevents moves from affecting the user this turn."
     },
     "psychic": {
@@ -573,6 +762,9 @@ export const MOVES = {
         "power": 90,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "10% chance to lower the target's Sp. Def by 1."
     },
     "quiverdance": {
@@ -582,6 +774,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Raises the user's Sp. Atk, Sp. Def, Speed by 1."
     },
     "ragefist": {
@@ -591,6 +786,9 @@ export const MOVES = {
         "power": 50,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "+50 power for each time user was hit. Max 6 hits."
     },
     "rapidspin": {
@@ -600,6 +798,9 @@ export const MOVES = {
         "power": 50,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Free user from hazards/bind/Leech Seed; +1 Spe."
     },
     "recover": {
@@ -609,6 +810,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Heals the user by 50% of its max HP."
     },
     "reflect": {
@@ -618,6 +822,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": true,
+        "self": true,
         "desc": "For 5 turns, physical damage to allies is halved."
     },
     "rest": {
@@ -627,6 +834,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "User sleeps 2 turns and restores HP and status."
     },
     "revivalblessing": {
@@ -636,6 +846,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Revives a fainted Pokemon to 50% HP."
     },
     "roost": {
@@ -645,6 +858,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Heals 50% HP. Flying-type removed 'til turn ends."
     },
     "saltcure": {
@@ -654,6 +870,9 @@ export const MOVES = {
         "power": 40,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Deals 1/8 max HP each turn; 1/4 on Steel, Water."
     },
     "shadowball": {
@@ -663,6 +882,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "20% chance to lower the target's Sp. Def by 1."
     },
     "shadowsneak": {
@@ -672,6 +894,9 @@ export const MOVES = {
         "power": 40,
         "accuracy": 100,
         "priority": 1,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Usually goes first."
     },
     "slackoff": {
@@ -681,6 +906,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Heals the user by 50% of its max HP."
     },
     "sleeptalk": {
@@ -690,6 +918,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "User must be asleep. Uses another known move."
     },
     "sludgebomb": {
@@ -699,6 +930,9 @@ export const MOVES = {
         "power": 90,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "30% chance to poison the target."
     },
     "softboiled": {
@@ -708,6 +942,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Heals the user by 50% of its max HP."
     },
     "spikes": {
@@ -717,6 +954,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": true,
+        "self": false,
         "desc": "Hurts grounded foes on switch-in. Max 3 layers."
     },
     "spiritbreak": {
@@ -726,6 +966,9 @@ export const MOVES = {
         "power": 75,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "100% chance to lower the target's Sp. Atk by 1."
     },
     "spore": {
@@ -735,6 +978,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Causes the target to fall asleep."
     },
     "stealthrock": {
@@ -744,6 +990,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": true,
+        "self": false,
         "desc": "Hurts foes on switch-in. Factors Rock weakness."
     },
     "strengthsap": {
@@ -753,6 +1002,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "User heals HP=target's Atk stat. Lowers Atk by 1."
     },
     "struggle": {
@@ -762,6 +1014,9 @@ export const MOVES = {
         "power": 50,
         "accuracy": 0,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "User loses 1/4 of its max HP."
     },
     "substitute": {
@@ -771,6 +1026,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "User takes 1/4 its max HP to put in a substitute."
     },
     "suckerpunch": {
@@ -780,6 +1038,9 @@ export const MOVES = {
         "power": 70,
         "accuracy": 100,
         "priority": 1,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Usually goes first. Fails if target is not attacking."
     },
     "swordsdance": {
@@ -789,6 +1050,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "Raises the user's Attack by 2."
     },
     "taunt": {
@@ -798,6 +1062,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Target can't use status moves its next 3 turns."
     },
     "thunderwave": {
@@ -807,6 +1074,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 90,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Paralyzes the target."
     },
     "thunderbolt": {
@@ -816,6 +1086,9 @@ export const MOVES = {
         "power": 90,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "10% chance to paralyze the target."
     },
     "tidyup": {
@@ -825,6 +1098,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": true,
         "desc": "User +1 Atk, Spe. Clears all substitutes/hazards."
     },
     "torchsong": {
@@ -834,6 +1110,9 @@ export const MOVES = {
         "power": 80,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "100% chance to raise the user's Sp. Atk by 1."
     },
     "toxic": {
@@ -843,6 +1122,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 90,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Badly poisons the target. Poison types can't miss."
     },
     "toxicspikes": {
@@ -852,6 +1134,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": true,
+        "self": false,
         "desc": "Poisons grounded foes on switch-in. Max 2 layers."
     },
     "transform": {
@@ -861,6 +1146,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 0,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Copies target's stats, moves, types, and Ability."
     },
     "uturn": {
@@ -870,6 +1158,9 @@ export const MOVES = {
         "power": 70,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "User switches out after damaging the target."
     },
     "voltswitch": {
@@ -879,6 +1170,9 @@ export const MOVES = {
         "power": 70,
         "accuracy": 100,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "User switches out after damaging the target."
     },
     "wavecrash": {
@@ -888,6 +1182,9 @@ export const MOVES = {
         "power": 120,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Has 33% recoil."
     },
     "wildcharge": {
@@ -897,6 +1194,9 @@ export const MOVES = {
         "power": 90,
         "accuracy": 100,
         "priority": 0,
+        "contact": true,
+        "spread": false,
+        "self": false,
         "desc": "Has 1/4 recoil."
     },
     "willowisp": {
@@ -906,6 +1206,9 @@ export const MOVES = {
         "power": 0,
         "accuracy": 85,
         "priority": 0,
+        "contact": false,
+        "spread": false,
+        "self": false,
         "desc": "Burns the target."
     }
 };

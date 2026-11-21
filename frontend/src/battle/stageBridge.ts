@@ -22,7 +22,7 @@ export function createStageBridge(world: World, mySide: SideId, mine: Character,
     const set = mon.set;
     const tint = mon.tera ? TYPE_HEX[mon.tera] : set ? TYPE_HEX[set.types[0]] : '#7fe9ff';
     world.battle.switchIn(s, set?.artId ?? set?.id ?? 0, mon.species, tint, instant);
-    if (mon.tera) world.battle.tera(s, mon.tera);
+    if (mon.tera) world.battle.tera(s, mon.tera, true);
     world.battle.status(s, mon.status);
   };
 
@@ -34,7 +34,7 @@ export function createStageBridge(world: World, mySide: SideId, mine: Character,
       case 'move': {
         const s = stageSide(fx.side);
         lastMoveColor = TYPE_HEX[fx.type];
-        world.battle.move(s, fx.type, fx.category, fx.target === null ? null : stageSide(fx.target));
+        world.battle.move(s, fx.move, fx.type, fx.category, fx.target === null ? null : stageSide(fx.target));
         if (fx.category !== 'Status' && Math.random() < 0.35) react(s, 'nod');
         break;
       }

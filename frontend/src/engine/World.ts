@@ -20,6 +20,7 @@ import { Petals } from './world/Petals.js';
 import { Atmosphere } from './world/Atmosphere.js';
 import { Coin } from './world/Coin.js';
 import { BattleStage } from './battle/BattleStage.js';
+import { ARENA, yawTo } from './battle/BattleCamera.js';
 import { rand } from './math.js';
 
 export type DuoShot = 'room' | 'match' | 'draft' | 'battle';
@@ -120,6 +121,7 @@ export class World {
     this.coin.onLand = () => this.floor.pulse();
     this.scene.add(this.coin.group);
     this.battle = new BattleStage(this.camera, () => this.reducedMotion);
+    this.battle.cam.enabled = !this.reducedMotion;
     this.battle.onImpact = color => this.floor.pulse(color);
     this.scene.add(this.battle.group);
 
@@ -214,7 +216,7 @@ export class World {
     if (t !== this.tier) { this.tier = t; this.buildTierDependent(); } else this.resize();
   }
   setReducedMotion(v: boolean) {
-    this.reducedMotion = v; this.director.reducedMotion = v;
+    this.reducedMotion = v; this.director.reducedMotion = v; this.battle.cam.enabled = !v;
     this.petals.setSpeed(v ? 0.25 : 1);
     this.grade.uniforms.uGrain.value = v ? 0.012 : 0.025;
     for (const r of this.rigs.values()) r.reducedMotion = v;
@@ -255,7 +257,7 @@ export class World {
     const id = key.split('#')[0] as CharacterId;
     const c = characterById(id);
     if (!c) return Promise.resolve(null);
-    p = loadVrm(c.model, (l, t) => this.reportProgress(key, l, t, c.name)).then(vrm => {
+    p = loadVrm(c.model, (l, t) => this.reportProgress(key, l, t, c.name), c.figure).then(vrm => {
       if (this.disposed) { disposeTree(vrm.scene); return null; }
       const rig = new CharacterRig(vrm, c, rand(key.length + this.rigs.size * 7.1) * 10);
       rig.reducedMotion = this.reducedMotion;
@@ -320,7 +322,7 @@ export class World {
         if (l.shot === 'battle') return { pos: [0, 1.5, 5.3], target: [0, 1.25, 0], fov: 33, time: 1.3 };
         return { pos: [0, 1.25, 4.7], target: [0, 1.05, 0], fov: 34, time: 1.3 };
       case 'victory': return { pos: [0.25, 1.0, 2.75], target: [0, 1.25, 0.25], fov: 33, time: 1.6 };
-      case 'arena': return { pos: [0, 1.6, 5.6], target: [0, 1.0, 0], fov: 36, time: 1.4 };
+      case 'arena': return this.battle.cam.neutral();
     }
   }
 
@@ -341,9 +343,12 @@ export class World {
       this.coin.visibleTarget = l.coin ? 1 : 0;
     } else this.coin.visibleTarget = 0;
     if (l.mode === 'arena') {
-      slots.push({ key: l.mine, x: -2.15, z: -0.95, facing: 0.55, focus: false });
-      slots.push({ key: l.theirs === l.mine ? `${l.theirs}#2` : l.theirs, x: 2.15, z: -1.15, facing: -0.55, focus: false });
+      // Pokémon-style field: each partner behind their Pokémon, squared up to the other partner.
+      const [a, b] = ARENA.trainer;
+      slots.push({ key: l.mine, x: a.x, z: a.z, facing: yawTo(a, b), focus: false });
+      slots.push({ key: l.theirs === l.mine ? `${l.theirs}#2` : l.theirs, x: b.x, z: b.z, facing: yawTo(b, a), focus: false });
       accent = l.mine;
+      if (modeChanged && !this.reducedMotion) this.battle.cam.intro();
     } else this.battle.clear();
     if (l.mode === 'victory') {
       slots.push({ key: l.winner, x: 0, z: 0.35, facing: 0, focus: true });
@@ -446,7 +451,10 @@ export class World {
       if (!rig.root.visible) continue;
       if (toCamera || !this.gazeValid) this.lookPoint.copy(this.camera.position);
       else this.lookPoint.copy(this.gaze);
-      if (this.layout?.mode === 'duo' && this.pointerIdle > 1.5) {
+      if (this.layout?.mode === 'arena') {
+        // Partners stare each other down across the field.
+        for (const [k, r] of this.rigs) if (k !== key && r.root.visible) { this.lookPoint.set(r.root.position.x, 1.45, r.root.position.z); break; }
+      } else if (this.layout?.mode === 'duo' && this.pointerIdle > 1.5) {
         // Partners glance at each other now and then during a match.
         if (Math.sin(t * 0.21 + key.length) > 0.55) {
           for (const [k, r] of this.rigs) if (k !== key && r.root.visible) { this.lookPoint.set(r.root.position.x, 1.45, r.root.position.z); break; }
@@ -455,13 +463,24 @@ export class World {
       rig.lookAt(this.lookPoint);
       rig.update(dt);
     }
+    const arena = this.layout?.mode === 'arena';
+    if (arena) {
+      this.battle.update(dt);
+      // The battle camera steers the director once the cut into the arena has finished.
+      const c = this.battle.cam.update(dt);
+      if (!this.pendingLayout && !this.reducedMotion) { if (c.cut) this.director.cut(c.shot); else this.director.go(c.shot); }
+      if (this.battle.shake > 0) { this.director.kick(this.battle.shake); this.battle.shake = 0; }
+      if (this.battle.fovPunch > 0) { this.director.punch(this.battle.fovPunch); this.battle.fovPunch = 0; }
+    }
+    this.grade.uniforms.uPunch.value = arena && !this.reducedMotion ? this.battle.screenPunch : 0;
+    this.grade.uniforms.uFlashAmt.value = arena ? this.battle.screenFlash.amt : 0;
+    this.grade.uniforms.uFlashColor.value.copy(this.battle.screenFlash.color);
     this.director.update(dt);
     this.floor.update(t, dt);
     this.shrine.update(t);
     this.petals.update(t);
     this.atmosphere.update(t, dt);
     this.coin.update(dt);
-    if (this.layout?.mode === 'arena') { this.battle.update(dt); if (this.battle.shake > 0) { this.director.kick(this.battle.shake); this.battle.shake = 0; } }
     this.sky.material.uniforms.uTime.value = t;
     (this.skyline.material as THREE.ShaderMaterial).uniforms.uTime.value = t;
     this.grade.uniforms.uTime.value = t;

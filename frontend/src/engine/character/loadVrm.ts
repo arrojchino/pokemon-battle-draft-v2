@@ -31,7 +31,7 @@ export function fetchModel(url: string, onProgress?: (loaded: number, total: num
 }
 
 /** Parse a VRM (0.x or 1.0) into a ready, upright, optimized instance. */
-export async function loadVrm(url: string, onProgress?: (loaded: number, total: number) => void): Promise<VRM> {
+export async function loadVrm(url: string, onProgress?: (loaded: number, total: number) => void, figure?: { bust: number }): Promise<VRM> {
   const data = await fetchModel(url, onProgress);
   const loader = new GLTFLoader();
   loader.register(parser => new VRMLoaderPlugin(parser));
@@ -42,6 +42,7 @@ export async function loadVrm(url: string, onProgress?: (loaded: number, total: 
   VRMUtils.combineSkeletons(gltf.scene);
   VRMUtils.rotateVRM0(vrm);
   mergeSkinnedMeshes(vrm.scene);
+  if (figure) applyFigure(vrm, figure);
   // MToon reads lights; make sure textures get mipmaps/anisotropy for close-ups.
   vrm.scene.traverse(o => {
     const m = o as THREE.Mesh;
@@ -52,6 +53,21 @@ export async function loadVrm(url: string, onProgress?: (loaded: number, total: 
     }
   });
   return vrm;
+}
+
+/**
+ * Reshape with the model's own secondary chest bones (VRoid `J_Sec_*_Bust1`). Body and outfit are
+ * skinned to them, so clothing follows. Spring-bone rest state is re-captured so physics settles on the
+ * new shape. Clamped so the mesh never tears through the outfit.
+ */
+function applyFigure(vrm: VRM, figure: { bust: number }) {
+  const s = THREE.MathUtils.clamp(figure.bust, 0.8, 1.5);
+  if (s === 1) return;
+  let found = 0;
+  vrm.scene.traverse(o => {
+    if (/^J_Sec_[LR]_Bust1$/.test(o.name)) { o.scale.setScalar(s); found++; }
+  });
+  if (found) { vrm.scene.updateMatrixWorld(true); vrm.springBoneManager?.setInitState(); }
 }
 
 /**

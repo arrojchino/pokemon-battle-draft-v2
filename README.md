@@ -31,7 +31,10 @@ When the room uses a backend (`VITE_BACKEND_URL` or `?ws=`), **Battle here** is 
 - The server decides the winner and records it; manual result reporting is disabled for these games. Forfeit is available, and a tie replays the game.
 - Decision timer: 150 s per turn, 90 s for Team Preview (`BATTLE_DECISION_SECONDS`, `BATTLE_PREVIEW_SECONDS`). When it runs out the simulator plays the default choice, so an idle player cannot stall the room.
 - Refreshing or reconnecting mid-battle replays the log and restores the exact position.
-- The partners react on stage: they cheer big hits and Terastallization, wince when their side takes damage, and celebrate or slump at the end. Pokémon appear as holographic cards projected from the arena floor, with type-colored projectiles, impact bursts, camera kicks and a Tera crystal effect.
+- **Staging:** a Pokémon-style diagonal field. Your partner stands behind your Pokémon near the lens, the opponent's across the field, and the two partners face each other. Pokémon appear as holographic projections from floor emitters; your side is mirrored so both face each other.
+- **Every move is animated.** All 101 moves in the pool have a hand-picked recipe (`frontend/src/engine/battle/moveFx.ts`): physical rushes with afterimages (slashes, punch shockwaves, bites, flurries, spins), flamethrower and hydro streams, lightning, beams, shadow balls and seeds, psychic pulses, tornadoes, leaf storms, falling meteors, coins and salt, Earthquake with erupting spikes, shields, screens, buffs, heals and hazards. Effects light the scene with real point lights.
+- **Cinematic camera:** over-the-shoulder windups, low hero angles for the opponent, side-on tracking for rushes, impact close-ups with a dutch angle, wide shots for field moves, orbits for Tera and self moves, slow push-ins on faints, and a breathing establishing shot between turns. Heavy hits add hit-stop, a zoom punch, radial blur and a screen flash. Reduced motion keeps a steady camera and skips punches.
+- The partners react: they cheer big hits and Terastallization, wince when their side takes damage, and celebrate or slump at the end.
 - The PeerJS fallback (no backend) cannot run the simulator, so those rooms keep the Showdown flow.
 
 `?fast` speeds up battle playback (useful for testing).
