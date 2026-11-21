@@ -4,10 +4,7 @@ on:
     branches: [main]
     paths: ['frontend/**', 'shared/**', 'backend/**', '.github/workflows/deploy.yml']
   pull_request:
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: { contents: read, pages: write, id-token: write }
 concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
@@ -17,30 +14,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+        with: { node-version: 22 }
+      # frontend/package-lock.json must be regenerated after the v2 dependency change (see README).
+      # Until it is committed, `npm ci` would fail, so fall back to `npm install`.
       - run: npm ci || npm install --no-audit --no-fund
         working-directory: frontend
       - run: npm test
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-        env:
-          VITE_BASE_PATH: /pokemon-battle-draft-v2/
-      - run: npm ci || npm install --no-audit --no-fund
-        working-directory: backend
-      - run: npm run build
+        env: { VITE_BASE_PATH: /pokemon-battle-draft-v2/ }
+      # backend/package-lock.json must be regenerated after adding pokemon-showdown (see README).
+      - run: (npm ci || npm install --no-audit --no-fund) && npm run build
         working-directory: backend
       - name: Backend flow + in-app battle tests
         working-directory: backend
         run: |
-          BATTLE_DECISION_SECONDS=3 PORT=8787 npm start &
-          sleep 3
+          BATTLE_DECISION_SECONDS=3 PORT=8787 npm start & sleep 3
           npm test
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name == 'push'
-        with:
-          path: frontend/dist
+        with: { path: frontend/dist }
   deploy:
     if: github.event_name == 'push'
     needs: test

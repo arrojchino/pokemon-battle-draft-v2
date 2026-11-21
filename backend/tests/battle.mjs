@@ -7,6 +7,10 @@ import assert from 'node:assert/strict';
 const URL = process.env.TEST_URL || 'ws://127.0.0.1:8787';
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const until = async (fn, label, ms = 8000) => { const t = Date.now(); while (Date.now() - t < ms) { if (fn()) return; await wait(10); } throw new Error('timeout: ' + label); };
+const sendSure = async (c, msg, ok, label) => {
+  for (let k = 0; k < 12 && !ok(); k++) { c.send(msg); try { await until(ok, label, 700); } catch { /* resend */ } }
+  if (!ok()) throw new Error(`${label} never confirmed; last errors: ${c.errors.slice(-3).join(' | ')}`);
+};
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 function client(label) {
@@ -52,24 +56,24 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 
 const a = client('a'), b = client('b');
 await connect(a); await connect(b);
-a.send({ type: 'create', name: 'Ana', bestOf: 3, avatar: 'rei', mode: 'app' });
+a.send({ type: 'create', name: 'Ana', bestOf: 3, avatar: 'rust', mode: 'app' });
 await until(() => a.state, 'create');
 assert.equal(a.state.mode, 'app');
 const code = a.state.code;
-b.send({ type: 'join', code, name: 'Beto', avatar: 'mirei' });
+b.send({ type: 'join', code, name: 'Beto', avatar: 'toxic' });
 await until(() => a.state.players[1], 'join');
 
 let forfeited = 0, reconnected = false, timerChecked = false, g1Winner = -1;
 let bRef = b;
 for (let game = 1; a.state.phase !== 'complete'; game++) {
   assert.ok(game <= 6, 'series must finish');
-  // Wait for a fresh round so stale calls cannot unblock the flip.
-  await until(() => a.state.phase === 'calls' && a.state.calls.every(c => !c), 'fresh round');
-  a.send({ type: 'call', side: 'heads' }); bRef.send({ type: 'call', side: 'tails' });
-  await until(() => a.state.calls.every(Boolean), 'calls');
-  a.send({ type: 'flip' }); await until(() => a.state.phase === 'spin', 'flip');
-  a.send({ type: 'spin' }); await until(() => a.state.phase === 'pick', 'deal');
-  (a.state.tossWinner === 0 ? a : bRef).send({ type: 'pick', team: 0 });
+  // The bots spam choices and can trip the per-socket rate limit ("Slow down"), so control
+  // messages are re-sent until the server state confirms them.
+  await sendSure(a, { type: 'call', side: 'heads' }, () => a.state.calls[0], 'call A');
+  await sendSure(bRef, { type: 'call', side: 'tails' }, () => a.state.calls[1], 'call B');
+  await sendSure(a, { type: 'flip' }, () => a.state.phase === 'spin', 'flip');
+  await sendSure(a, { type: 'spin' }, () => a.state.phase === 'pick', 'deal');
+  await sendSure(a.state.tossWinner === 0 ? a : bRef, { type: 'pick', team: 0 }, () => a.state.phase === 'battle', 'pick');
   await until(() => a.state.phase === 'battle' && a.state.battle, 'battle starts');
   const id = a.state.battle.id;
   await until(() => a.battle.id === id && bRef.battle.id === id && a.request && bRef.request, 'requests arrive');
@@ -117,7 +121,7 @@ for (let game = 1; a.state.phase !== 'complete'; game++) {
   if (game === 2) assert.equal(last.winner, 1 - g1Winner, 'forfeit gives the game to the other seat');
   if (game === 3) assert.equal(last.winner, 0, 'B forfeited the decider');
   console.log(`game ${game}: ${a.state.phase} winner=${last ? ['Ana', 'Beto'][last.winner] : 'draw'} turns=${last?.turns} choices a=${a.choices} b=${bRef.choices}`);
-  if (a.state.phase === 'between') { a.send({ type: 'next' }); await until(() => a.state.phase === 'calls' && a.state.calls.every(c => !c), 'next'); }
+  if (a.state.phase === 'between') await sendSure(a, { type: 'next' }, () => a.state.phase === 'calls', 'next');
   a.request = null; bRef.request = null;
 }
 assert.equal(a.state.phase, 'complete');

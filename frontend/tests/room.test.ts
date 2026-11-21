@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createRoom, reduce, seatGuest, seatForToken, publicView, type RoomState, type Rng, type GameAction, type ServerAction, type Seat } from '../../shared/src/room.js';
 
 const rng = (side: 'heads' | 'tails' = 'heads'): Rng => { let x = 0.123; return { coin: () => side, float: () => (x = (x * 9301 + 49297) % 233280 / 233280) }; };
-const host = { name: 'Ana', token: 'tok-a', avatar: 'rei' as const };
+const host = { name: 'Ana', token: 'tok-a', avatar: 'rust' as const };
 const guest = { name: 'Beto', token: 'tok-b', avatar: null };
 
 function seated(): RoomState {
@@ -78,7 +78,7 @@ describe('room reducer', () => {
     const s = seated();
     const before = JSON.stringify(s);
     apply(s, 0, { type: 'call', side: 'heads' });
-    apply(s, 0, { type: 'avatar', avatar: 'mirei' });
+    apply(s, 0, { type: 'avatar', avatar: 'toxic' });
     expect(JSON.stringify(s)).toBe(before);
   });
 
@@ -96,7 +96,7 @@ describe('room reducer', () => {
     const v = publicView(seated(), [true, false], 2);
     const text = JSON.stringify(v);
     expect(text.includes('tok-a') || text.includes('tok-b')).toBe(false);
-    expect(v.players[0]).toEqual({ name: 'Ana', avatar: 'rei', connected: true });
+    expect(v.players[0]).toEqual({ name: 'Ana', avatar: 'rust', connected: true });
     expect(v.players[1]!.connected).toBe(false);
     expect(v.protocol).toBe(2);
   });

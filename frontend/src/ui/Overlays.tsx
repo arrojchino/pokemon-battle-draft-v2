@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { ROSTER, characterById } from '../characters/roster.js';
+import { BOT, characterById } from '../characters/roster.js';
 import { settings, useReducedMotion, useSettings } from '../app/settings.js';
 import { useWorld } from '../app/WorldProvider.js';
 import { Modal, Segmented } from './primitives.js';
@@ -20,6 +20,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             options={[{ value: 'system', label: 'System' }, { value: 'reduced', label: 'Reduced' }, { value: 'full', label: 'Full' }]} />
           <small>Currently {reduced ? 'reduced: camera cuts, calmer idles, no coin spin' : 'full motion'}.</small>
         </div>
+        <label className="field range"><span>Volume <output>{Math.round(s.volume * 100)}</output></span>
+          <input type="range" min={0} max={1} step={0.05} value={s.volume} onChange={e => settings.set({ volume: Number(e.target.value) })} /></label>
+        <label className="field range"><span>Music <output>{Math.round(s.music * 100)}</output></span>
+          <input type="range" min={0} max={1} step={0.05} value={s.music} onChange={e => settings.set({ music: Number(e.target.value) })} /></label>
+        <label className="toggle"><input type="checkbox" checked={s.muted} onChange={e => settings.set({ muted: e.target.checked })} /><span>Mute all sound</span></label>
         <label className="toggle"><input type="checkbox" checked={s.perf} onChange={e => settings.set({ perf: e.target.checked })} /><span>Show performance diagnostics</span></label>
       </div>
     </Modal>
@@ -31,13 +36,13 @@ export function CreditsDialog({ open, onClose }: { open: boolean; onClose: () =>
     <Modal open={open} onClose={onClose} title="Credits & licenses" wide>
       <div className="credits">
         <section>
-          <h3>Partner models</h3>
-          <ul>{ROSTER.map(c => <li key={c.id}><strong>{c.name}</strong> uses <a href={c.credit.url} target="_blank" rel="noopener noreferrer">{c.credit.model}</a> by {c.credit.author}. License: {c.credit.license}. Character names, ages and personalities are original to this project.</li>)}</ul>
+          <h3>Battle bot</h3>
+          <ul><li><a href={BOT.credit.url} target="_blank" rel="noopener noreferrer">{BOT.credit.model}</a> by {BOT.credit.author}. License: {BOT.credit.license}. Paint jobs, names and grime are original to this project.</li></ul>
         </section>
         <section>
           <h3>Software</h3>
           <ul>
-            <li>three.js (MIT), @pixiv/three-vrm (MIT), React (MIT), PeerJS (MIT).</li>
+            <li>three.js (MIT), React (MIT), PeerJS (MIT).</li>
             <li>Fonts: Chakra Petch, Manrope, Zen Kaku Gothic New (SIL Open Font License 1.1).</li>
             <li>Pokémon artwork is loaded from the PokeAPI sprites repository. Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc. and GAME FREAK inc. This is an unofficial fan project.</li>
             <li>Battles run on Pokémon Showdown (AGPL-3.0), opened in its own tab; this app does not bundle or modify it.</li>
@@ -83,7 +88,7 @@ export function LoadingVeil() {
   return (
     <div className={`veil ${done ? 'is-done' : ''}`} style={{ '--accent': c.accent, '--p': p } as CSSProperties} aria-live="polite">
       <div className="veil__inner">
-        <span className="jp veil__jp">夜桜リーグ</span>
+        <span className="jp veil__jp">路地裏リーグ</span>
         <strong className="veil__title">Battle Draft</strong>
         <div className="veil__bar"><i /></div>
         <small>{status.kind === 'loading' ? `${status.label || 'Preparing the stage'} · ${Math.round(p * 100)}%` : 'Ready'}</small>

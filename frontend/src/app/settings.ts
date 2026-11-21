@@ -13,6 +13,10 @@ export type Settings = {
   showdownName: string;
   format: string;
   battleMode: 'app' | 'showdown';
+  /** Audio: master and music levels 0..1, plus a mute switch. */
+  volume: number;
+  music: number;
+  muted: boolean;
 };
 
 const KEY = 'pab-settings';
@@ -31,6 +35,9 @@ function load(): Settings {
     showdownName: typeof s.showdownName === 'string' ? s.showdownName.slice(0, 18) : '',
     format: typeof s.format === 'string' ? s.format : 'gen9customgame',
     battleMode: s.battleMode === 'showdown' ? 'showdown' : 'app',
+    volume: typeof s.volume === 'number' ? Math.min(1, Math.max(0, s.volume)) : 0.8,
+    music: typeof s.music === 'number' ? Math.min(1, Math.max(0, s.music)) : 0.5,
+    muted: query.has('mute') || s.muted === true,
   };
 }
 

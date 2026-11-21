@@ -1,5 +1,6 @@
 import type { CharacterId } from '@shared';
 import type { QualityTier } from './quality.js';
+import type { Cue } from '../audio/sound.js';
 
 /** Every event the engine can emit, with its payload type. */
 export type WorldEvents = {
@@ -12,6 +13,8 @@ export type WorldEvents = {
   contextLost: void;
   contextRestored: void;
   error: { message: string };
+  /** Something on stage made a noise; the app routes it to the sound engine. pan is -1..1. */
+  sound: { cue: Cue; pan: number; gain?: number };
 };
 
 type Handler<T> = (payload: T) => void;

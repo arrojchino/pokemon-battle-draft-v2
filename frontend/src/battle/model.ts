@@ -18,6 +18,8 @@ export type MonView = {
   boosts: Record<string, number>;
   tera: TypeName | null;  // terastallized type, once used
   transformed: string | null;
+  /** Held item as far as the log shows (starts as the drafted item; null once consumed or knocked off). */
+  item: string | null;
 };
 export type SideView = { name: string; mons: MonView[]; active: string | null; conditions: string[] };
 
@@ -119,7 +121,7 @@ export class BattleModel {
     }
     if (!m) {
       const species = details ? speciesOf(details) : key.split(': ')[1];
-      m = { key, species, set: setFor(species), hp: 100, maxhp: 100, status: null, fainted: false, boosts: {}, tera: null, transformed: null };
+      { const set = setFor(species); m = { key, species, set, hp: 100, maxhp: 100, status: null, fainted: false, boosts: {}, tera: null, transformed: null, item: set?.item ?? null }; }
       side.mons.push(m);
       if (fromPreview) this.provisional.add(m);
     }
@@ -232,8 +234,8 @@ export class BattleModel {
       case '-fieldend': { const f = clean(args[0]); s.field = s.field.filter(x => x !== f); this.log(`${f} ended.`); break; }
       case '-sidestart': { const side = sideOf(args[0]); const c = clean(args[1]); if (!s.sides[side].conditions.includes(c)) s.sides[side].conditions.push(c); this.log(`${c} was set on ${side === s.mySide ? 'your' : "the opponent's"} side.`); break; }
       case '-sideend': { const side = sideOf(args[0]); const c = clean(args[1]); s.sides[side].conditions = s.sides[side].conditions.filter(x => x !== c); this.log(`${c} ended on ${side === s.mySide ? 'your' : "the opponent's"} side.`); break; }
-      case '-enditem': { const m = this.mon(args[0]); this.log(kw.eat !== undefined ? `${this.cap(this.name(m))} ate its ${args[1]}.` : `${this.cap(this.name(m))}'s ${args[1]} ${from === 'Knock Off' || kw.from?.includes('Knock Off') ? 'was knocked off' : 'was used up'}.`); break; }
-      case '-item': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))} has ${args[1]}${from ? ` (${from})` : ''}.`); break; }
+      case '-enditem': { const m = this.mon(args[0]); m.item = null; this.log(kw.eat !== undefined ? `${this.cap(this.name(m))} ate its ${args[1]}.` : `${this.cap(this.name(m))}'s ${args[1]} ${from === 'Knock Off' || kw.from?.includes('Knock Off') ? 'was knocked off' : 'was used up'}.`); break; }
+      case '-item': { const m = this.mon(args[0]); m.item = args[1] ?? m.item; this.log(`${this.cap(this.name(m))} has ${args[1]}${from ? ` (${from})` : ''}.`); break; }
       case '-ability': { const m = this.mon(args[0]); this.log(`[${this.cap(this.name(m))}'s ${args[1]}]`); break; }
       case '-start': { const m = this.mon(args[0]); const e = clean(args[1]); if (!/typechange|typeadd/.test(e)) this.log(`${this.cap(this.name(m))}: ${e}${kw.silent !== undefined ? '' : '!'}`); break; }
       case '-end': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))}'s ${clean(args[1])} ended.`); break; }

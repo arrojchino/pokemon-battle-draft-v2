@@ -9,15 +9,16 @@ export type QualitySettings = {
   reflections: boolean;
   shadows: boolean;
   shadowMap: number;
-  petals: number;
+  /** Rain streaks (instanced quads, GPU-animated). */
+  rain: number;
   buildings: number;
   shafts: boolean;
 };
 
 export const TIERS: Record<QualityTier, QualitySettings> = {
-  high: { tier: 'high', maxDpr: 2, msaa: 4, bloom: true, reflections: true, shadows: true, shadowMap: 2048, petals: 900, buildings: 340, shafts: true },
-  medium: { tier: 'medium', maxDpr: 1.5, msaa: 2, bloom: true, reflections: false, shadows: true, shadowMap: 1024, petals: 520, buildings: 220, shafts: true },
-  low: { tier: 'low', maxDpr: 1, msaa: 0, bloom: false, reflections: false, shadows: false, shadowMap: 512, petals: 180, buildings: 120, shafts: false },
+  high: { tier: 'high', maxDpr: 2, msaa: 4, bloom: true, reflections: true, shadows: true, shadowMap: 2048, rain: 2600, buildings: 340, shafts: true },
+  medium: { tier: 'medium', maxDpr: 1.5, msaa: 2, bloom: true, reflections: false, shadows: true, shadowMap: 1024, rain: 1600, buildings: 220, shafts: true },
+  low: { tier: 'low', maxDpr: 1, msaa: 0, bloom: false, reflections: false, shadows: false, shadowMap: 512, rain: 600, buildings: 120, shafts: false },
 };
 
 const ORDER: QualityTier[] = ['low', 'medium', 'high'];

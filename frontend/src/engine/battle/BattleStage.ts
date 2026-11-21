@@ -6,6 +6,7 @@ import { easeOutCubic, rand } from '../math.js';
 import { ARENA, BattleCamera } from './BattleCamera.js';
 import { Barrier, Beam, Debris, Flashes, Particles, Rings, Shape, Slashes, type DebrisKind } from './fx.js';
 import { impactDelay, recipeFor, type Aura, type Recipe } from './moveFx.js';
+import type { Cue } from '../../audio/sound.js';
 
 /** Conventional type colours, used for move trails, impacts and Tera crystals. */
 export const TYPE_HEX: Record<TypeName, string> = {
@@ -320,6 +321,8 @@ export class BattleStage {
   shake = 0; fovPunch = 0; screenPunch = 0;
   readonly screenFlash = { color: new THREE.Color('#ffffff'), amt: 0 };
   onImpact: ((color: string) => void) | null = null;
+  /** Sound cue requests (cue, stereo pan, gain); the World forwards them to the app's sound engine. */
+  onSound: ((cue: Cue, pan: number, gain?: number) => void) | null = null;
 
   constructor(private camera: THREE.Camera, private reduced: () => boolean) {
     this.holos = [new Hologram(0), new Hologram(1)];
@@ -340,6 +343,7 @@ export class BattleStage {
   }
 
   /* ---------------- helpers */
+  private snd(cue: Cue, side: 0 | 1 | null = null, gain = 1) { this.onSound?.(cue, side === null ? 0 : side === 0 ? -0.45 : 0.45, gain); }
   private later(delay: number, fn: () => void) { if (delay <= 0) fn(); else this.jobs.push({ at: this.time + delay, fn }); }
   private home(side: 0 | 1, out = new THREE.Vector3()) { const m = ARENA.mon[side]; return out.set(m.x, ARENA.cardY, m.z); }
   private foot(side: 0 | 1, out = new THREE.Vector3()) { const m = ARENA.mon[side]; return out.set(m.x, ARENA.floorY + 0.03, m.z); }
@@ -357,6 +361,7 @@ export class BattleStage {
     const reduced = this.reduced();
     void this.holos[side].show(artId, name, tint, instant || reduced);
     if (instant) return;
+    this.snd('switchIn', side);
     const f = this.foot(side);
     this.particles.burst(f, 40, 2.2, { color: tint, size: 0.06, ttl: 0.9, rise: 1.2, drag: 2 });
     this.rings.fire(f, tint, { flat: true, s0: 0.2, s1: 1.4, dur: 0.6 });
@@ -383,6 +388,7 @@ export class BattleStage {
     switch (r.kind) {
       case 'dash': {
         this.holos[s].dash(B, { fast: r.fast, spin: r.impact === 'spin', vanish: r.vanish });
+        this.snd('dash', s);
         const delay = impactDelay(r);
         if (r.aura && r.aura !== 'none') {
           const ac = AURA_HEX[r.aura];
@@ -393,7 +399,7 @@ export class BattleStage {
           if (r.aura === 'electric') this.later(delay * 0.5, () => P.lightning(this.center(s), B, 0.15, ac, 0.2, 40));
         }
         this.later(delay, () => this.contact(r, t, color));
-        if (r.drain) this.later(delay + 0.2, () => { P.stream(B, A, 0.45, { color: '#7dffb0', size: 0.05, rate: 140, speed: 3.2, spread: 0.2 }); this.later(0.5, () => this.holos[s].heal()); });
+        if (r.drain) this.later(delay + 0.2, () => { this.snd('heal', s, 0.7); P.stream(B, A, 0.45, { color: '#7dffb0', size: 0.05, rate: 140, speed: 3.2, spread: 0.2 }); this.later(0.5, () => this.holos[s].heal()); });
         break;
       }
       case 'orb': {
@@ -401,13 +407,16 @@ export class BattleStage {
         for (let k = 0; k < n; k++) this.later(k * 0.09, () => {
           const to = tmp.copy(B).add(tmp2.set((Math.random() - 0.5) * 0.4 * (n > 1 ? 1 : 0), (Math.random() - 0.5) * 0.3 * (n > 1 ? 1 : 0), 0)).clone();
           if (r.shards) {
+            this.snd('slash', s, 0.6);
             const from = A.clone();
             this.debris.throw('shard', from, this.ballistic(from, to, 0.5), 0.09, { ttl: 0.5, groundY: -5 });
             this.later(0.5, () => this.impactBurst(to, color, 0.6));
             return;
           }
           const o = this.orb();
+          this.snd('orb', s, n > 1 ? 0.5 : 1);
           o.fire(A, to, r.seeds ? '#9cff6a' : color, { dur: 0.55, arc: r.arc ?? 0.3, size: r.size ?? 1 }, () => {
+            this.snd('orbHit', t, n > 1 ? 0.5 : 1);
             this.impactBurst(to, color, Math.min(1.4, 0.5 + (r.size ?? 1) * 0.4));
             if (r.splash) P.burst(to, 30, 2.5, { color, size: 0.08, ttl: 0.8, gravity: 6, rise: 0.8 });
             if (r.star) this.rings.fire(to, color, { s0: 0.2, s1: 1.2, dur: 0.45 });
@@ -426,6 +435,7 @@ export class BattleStage {
           : { color, size: 0.08, sizeEnd: 0.12, shape: Shape.Glow, spread: 0.1 };
         if (r.swirlSelf) P.swirl(A, 0.6, { color: '#ffb347', radius: 0.6, height: 1.6, rate: 160, size: 0.07, ttl: 0.7 });
         this.later(r.swirlSelf ? 0.2 : 0, () => {
+          this.snd(r.shape === 'fire' ? 'fire' : r.shape === 'leaf' ? 'leaves' : 'water', s);
           P.stream(from, to, 0.6, { ...look, rate: r.big ? 460 : 300, speed: r.reverse ? 3.6 : 6, arc: r.arc, ttl: 0.6 });
           if (r.shape === 'fire') P.stream(from, to, 0.6, { color: '#fff2a8', size: 0.06, sizeEnd: 0.16, rate: 140, speed: 6.5, spread: 0.05 });
           if (r.shape === 'water') P.stream(from, to, 0.6, { color: '#e8f6ff', size: 0.04, sizeEnd: 0.08, rate: 160, speed: 7, spread: 0.03 });
@@ -439,7 +449,9 @@ export class BattleStage {
       }
       case 'beam': {
         this.rings.fire(A, color, { s0: 1.1, s1: 0.1, dur: 0.22 });
+        this.snd('beamCharge', s);
         this.later(0.12, () => {
+          this.snd('beam', s);
           this.beams[s].fire(A, B, color, 0.75, r.width ?? 0.12);
           this.light(A, color, 10, 0.8); this.light(B, color, 14, 0.8);
           this.kickScreen(0.25, color, 0.05);
@@ -456,6 +468,7 @@ export class BattleStage {
         P.lightning(r.small ? from : sky, B, r.small ? 0.25 : 0.45, '#fff5b0', r.small ? 0.18 : 0.32, r.small ? 70 : 150);
         if (!r.small) P.lightning(from, B, 0.3, '#ffe45a', 0.25, 90);
         this.light(B, '#ffe45a', 22, 0.5);
+        this.snd('zap', t, r.small ? 0.6 : 1);
         this.kickScreen(0.2, '#fff4b0', r.small ? 0.04 : 0.12);
         this.later(impactDelay(r), () => this.impactBurst(B, '#ffe45a', 0.9));
         break;
@@ -464,12 +477,14 @@ export class BattleStage {
         if (r.travel) for (let k = 0; k < 4; k++) this.rings.fire(A, color, { to: B, s0: 0.2, s1: 0.95, dur: 0.55, delay: k * 0.08 });
         else if (r.both) { for (const x of [A, B]) for (let k = 0; k < 2; k++) this.rings.fire(x, color, { s0: 0.1, s1: 1.1, dur: 0.5, delay: k * 0.12 }); }
         else for (let k = 0; k < 3; k++) this.rings.fire(B, color, { s0: 1.4, s1: 0.2, dur: 0.4, delay: k * 0.1 });
+        this.snd('rings', r.travel ? s : t);
         if (r.distort) { this.later(0.15, () => this.holos[t].distort(1)); this.kickScreen(0.35, color, 0.05); }
         this.light(r.travel ? A : B, color, 9, 0.7);
         if (r.travel) this.later(impactDelay(r), () => this.impactBurst(B, color, 0.7));
         break;
       }
       case 'swirl': {
+        this.snd(r.shape === 'wind' ? 'wind' : r.shape === 'spore' ? 'status' : r.shape === 'wisp' ? 'orb' : 'leaves', t);
         if (r.shape === 'leaf') {
           P.stream(A, B, 0.7, { color: '#7dff8a', size: 0.1, sizeEnd: 0.07, shape: Shape.Leaf, spin: 10, rate: 220, speed: 4.5, spread: 0.3 });
           this.later(0.45, () => P.swirl(B, 0.5, { color: '#a8ff7a', shape: Shape.Leaf, size: 0.09, radius: 0.6, height: 1.6, rate: 200, w: 7, spin: 8, ttl: 0.6 }));
@@ -493,6 +508,7 @@ export class BattleStage {
       case 'rain': {
         const n = r.count ?? 5;
         if (r.debris === 'coin') {
+          this.snd('coins', t);
           P.emitter(0.8, 70, () => {
             const p = tmp.set(B.x + (Math.random() - 0.5) * 1.4, 2.4 + Math.random() * 0.8, B.z + (Math.random() - 0.5) * 1.0);
             P.emit(p, tmp2.set(0, -2.2, 0), { color: '#ffd04a', shape: Shape.Coin, size: 0.14, sizeEnd: 0.13, ttl: 1.1, gravity: 2.2, spin: 12 });
@@ -503,6 +519,7 @@ export class BattleStage {
         const kind: DebrisKind = r.debris === 'hammer' ? 'meteor' : r.debris;
         const scale = r.debris === 'hammer' ? 0.6 : r.debris === 'meteor' ? 0.32 : r.debris === 'salt' ? 0.08 : 0.18;
         for (let k = 0; k < n; k++) this.later(k * (r.debris === 'salt' ? 0.04 : 0.12), () => {
+          if (r.debris !== 'salt' || k === 0) this.snd('meteor', t, r.debris === 'meteor' || r.debris === 'hammer' ? 1 : 0.5);
           const land = this.foot(t).add(tmp2.set((Math.random() - 0.5) * (n > 1 ? 1.1 : 0), 0, (Math.random() - 0.5) * (n > 1 ? 0.8 : 0)));
           // From the sky behind the target, so nothing falls past the lens.
           const start = land.clone().add(tmp2.set(0.5 + Math.random() * 0.6, 4.8 + Math.random(), -2.6 - Math.random()));
@@ -511,6 +528,7 @@ export class BattleStage {
             ttl: 2,
             onFly: trail ? p => { for (let i = 0; i < 2; i++) this.particles.emit(p, tmp2.randomDirection().multiplyScalar(0.25), { color: trail, size: Math.min(0.14, scale * 0.45), sizeEnd: 0.01, ttl: 0.4 }); } : undefined,
             onLand: p => {
+              this.snd(r.debris === 'salt' ? 'hazard' : 'meteorHit', t, r.debris === 'meteor' ? 0.8 : r.debris === 'hammer' ? 1.2 : 0.5);
               const at = p.clone();
               this.particles.burst(at.setY(0.2), r.debris === 'salt' ? 6 : 26, 2.6, { color: r.debris === 'meteor' ? '#b48cff' : '#e8d29a', size: 0.07, ttl: 0.7, gravity: 4, rise: 0.8 });
               if (r.debris !== 'salt') this.rings.fire(at.setY(ARENA.floorY + 0.03), color, { flat: true, s0: 0.1, s1: r.debris === 'hammer' ? 2.6 : 1, dur: 0.5 });
@@ -522,9 +540,10 @@ export class BattleStage {
         if (r.debris === 'hammer') this.later(0.75, () => this.quakeAt(t, color, 0.9));
         break;
       }
-      case 'quake': this.quakeAt(t, color, 1, A); break;
+      case 'quake': this.snd('quake', null); this.quakeAt(t, color, 1, A); break;
       case 'self': this.selfFx(r.effect, s, color); break;
       case 'hazard': {
+        this.snd('hazard', t);
         const f = this.foot(t);
         for (let k = 0; k < 5; k++) this.later(k * 0.07, () => {
           const land = f.clone().add(tmp2.set((Math.random() - 0.5) * 1.6, 0, (Math.random() - 0.5) * 1.1));
@@ -534,6 +553,7 @@ export class BattleStage {
         break;
       }
       case 'field': {
+        this.snd('wind', null);
         const c = r.color ?? color;
         P.emitter(0.9, 260, () => {
           const p = tmp.set(-4 + Math.random() * 0.5, ARENA.floorY + Math.random() * 2, -2.5 + Math.random() * 5);
@@ -549,6 +569,8 @@ export class BattleStage {
   private contact(r: Extract<Recipe, { kind: 'dash' }>, t: 0 | 1, color: string) {
     const B = this.center(t);
     const big = !!r.big;
+    this.snd(r.impact === 'slash' || r.impact === 'spin' ? 'slash' : r.impact === 'bite' ? 'bite' : r.impact === 'quake' ? 'meteorHit' : 'punch', t, big ? 1.2 : 1);
+    if (r.aura === 'fire') this.snd('fire', t, 0.5); else if (r.aura === 'water') this.snd('water', t, 0.5); else if (r.aura === 'electric') this.snd('zap', t, 0.6);
     switch (r.impact) {
       case 'slash': this.slashes.fire(B, color, big ? 3 : 2, big ? 1 : 0.8); break;
       case 'bite': this.slashes.fire(B, color, 2, 0.6); break;
@@ -557,6 +579,7 @@ export class BattleStage {
       case 'quake': this.quakeAt(t, color, big ? 0.8 : 0.5); break;
       case 'flurry':
         for (let k = 0; k < 5; k++) this.later(k * 0.075, () => {
+          if (k) this.snd('punch', t, 0.6);
           const at = tmp.copy(B).add(tmp2.set((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.5, 0.1)).clone();
           this.rings.fire(at, k % 2 ? '#ffffff' : color, { s0: 0.05, s1: 0.55, dur: 0.22 });
           this.particles.burst(at, 8, 2, { color, size: 0.05, ttl: 0.35 });
@@ -589,6 +612,7 @@ export class BattleStage {
 
   private selfFx(effect: Extract<Recipe, { kind: 'self' }>['effect'], s: 0 | 1, color: string) {
     const A = this.home(s), f = this.foot(s), P = this.particles, h = this.holos[s];
+    this.snd(effect === 'heal' || effect === 'revive' ? 'heal' : effect === 'protect' || effect === 'screen' ? 'shield' : effect === 'curse' ? 'debuff' : effect === 'sleep' ? 'chirpSad' : effect === 'sub' || effect === 'transform' ? 'rings' : effect === 'drum' ? 'punch' : 'buff', s);
     switch (effect) {
       case 'buff': P.swirl(A, 0.8, { color, size: 0.06, radius: 0.65, height: 1.8, rate: 150, w: 5, ttl: 0.8 }); this.rings.fire(f, color, { flat: true, s0: 1.4, s1: 0.2, dur: 0.6 }); this.later(0.6, () => h.pulse(color)); break;
       case 'blades': P.swirl(A, 0.9, { color: '#e8f0ff', shape: Shape.Star, size: 0.16, radius: 0.75, height: 0.4, rate: 60, w: 9, ttl: 0.9, spin: 5 }); this.later(0.6, () => { this.slashes.fire(A, '#ffffff', 2, 0.8); h.pulse('#ffffff'); }); break;
@@ -614,11 +638,13 @@ export class BattleStage {
   hit(side: 0 | 1, lost: number, crit: boolean, effect: 'super' | 'resist' | 'immune' | 'normal', color: string) {
     const play = () => {
       const h = this.holos[side];
-      if (effect === 'immune') { h.dodge(); return; }
+      if (effect === 'immune') { h.dodge(); this.snd('miss', side); return; }
       const strength = Math.min(1, lost * 1.6 + (crit ? 0.3 : 0) + (effect === 'super' ? 0.3 : 0));
       h.hit(strength, effect === 'super' ? color : crit ? '#ffffff' : '#ff4d6d');
       this.particles.burst(this.center(side), Math.round(12 + strength * 30), 1.4 + strength * 2, { color: effect === 'super' ? color : '#ffd1dc', size: 0.06, ttl: 0.5, drag: 2 });
       const heavy = crit || effect === 'super' || lost > 0.45;
+      this.snd(heavy || lost > 0.3 ? 'hitBig' : 'hit', side, effect === 'resist' ? 0.6 : 1);
+      if (crit) this.snd('crit', side); else if (effect === 'super') this.snd('super', side); else if (effect === 'resist') this.snd('resist', side);
       if (heavy) {
         this.shake = Math.max(this.shake, 0.4 + strength * 0.6); this.onImpact?.(color);
         if (!this.reduced()) { this.freeze = crit ? 0.12 : 0.08; this.fovPunch = Math.max(this.fovPunch, 2 + strength * 4); }
@@ -630,13 +656,15 @@ export class BattleStage {
   }
   heal(side: 0 | 1) {
     this.holos[side].heal();
+    this.snd('heal', side, 0.6);
     this.particles.swirl(this.home(side), 0.6, { color: '#7dffb0', shape: Shape.Star, size: 0.08, radius: 0.6, height: 1.4, rate: 70, w: 2, ttl: 0.8, spin: 3 });
   }
-  miss(side: 0 | 1) { const wait = this.impactAt[side] - this.time; this.later(Math.max(0, wait - 0.12), () => this.holos[side].dodge()); }
+  miss(side: 0 | 1) { const wait = this.impactAt[side] - this.time; this.later(Math.max(0, wait - 0.12), () => { this.holos[side].dodge(); this.snd('miss', side); }); }
   faint(side: 0 | 1) {
     const wait = Math.max(0, this.impactAt[side] - this.time);
     this.later(wait, () => {
       this.holos[side].faint();
+      this.snd('faint', side);
       this.particles.burst(this.center(side), 60, 1.4, { color: '#cfd6ff', size: 0.06, ttl: 1.4, rise: 1.2, drag: 1.5 });
       if (!this.reduced()) this.cam.faint(side);
     });
@@ -645,6 +673,7 @@ export class BattleStage {
     const c = TYPE_HEX[type];
     this.holos[side].tera(c);
     if (instant) return;
+    this.snd('tera', side);
     const A = this.home(side);
     this.particles.burst(A, 90, 3.2, { color: c, shape: Shape.Star, size: 0.12, ttl: 1, drag: 2.5, spin: 5 });
     this.rings.fire(A, c, { s0: 0.2, s1: 2.2, dur: 0.7 });
@@ -654,8 +683,9 @@ export class BattleStage {
     this.kickScreen(0.6, c, 0.12);
     if (!this.reduced()) this.cam.tera(side);
   }
-  status(side: 0 | 1, s: string | null) { this.holos[side].status(s ? STATUS_HEX[s] ?? null : null); }
+  status(side: 0 | 1, s: string | null) { this.holos[side].status(s ? STATUS_HEX[s] ?? null : null); if (s) this.snd('status', side); }
   boost(side: 0 | 1, up: boolean) {
+    this.snd(up ? 'buff' : 'debuff', side, 0.7);
     const at = this.home(side).setY(up ? 0.4 : 1.7);
     this.particles.burst(at, 26, 1.2, { color: up ? '#7fe9ff' : '#ff7a7a', size: 0.06, ttl: 0.8, rise: up ? 1.4 : -1.4, drag: 1 });
   }

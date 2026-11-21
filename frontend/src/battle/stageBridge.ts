@@ -35,7 +35,8 @@ export function createStageBridge(world: World, mySide: SideId, mine: Character,
         const s = stageSide(fx.side);
         lastMoveColor = TYPE_HEX[fx.type];
         world.battle.move(s, fx.move, fx.type, fx.category, fx.target === null ? null : stageSide(fx.target));
-        if (fx.category !== 'Status' && Math.random() < 0.35) react(s, 'nod');
+        // Bots throw shadow punches with their Pokémon's attacks and give a thumbs up to their own buffs.
+        if (fx.category !== 'Status') { if (Math.random() < 0.55) react(s, charOf(s)?.personality.on.attack ?? 'punch'); } else if (Math.random() < 0.5) react(s, 'thumbs');
         break;
       }
       case 'hit': {

@@ -40,7 +40,7 @@ export async function copyText(value: string): Promise<boolean> {
 export function openPokePaste(team: readonly Pokemon[], title: string, author: string, format: string) {
   const form = document.createElement('form');
   form.method = 'POST'; form.action = POKEPASTE_CREATE; form.target = '_blank'; form.rel = 'noopener';
-  const fields: Record<string, string> = { paste: teamImport(team), title: title.slice(0, 100), author: author.slice(0, 50), notes: `Format: ${format}\nDealt by Pokémon Battle Draft · Yozakura League` };
+  const fields: Record<string, string> = { paste: teamImport(team), title: title.slice(0, 100), author: author.slice(0, 50), notes: `Format: ${format}\nDealt by Pokémon Battle Draft · Back Alley League` };
   for (const [name, value] of Object.entries(fields)) {
     const input = document.createElement('textarea'); input.name = name; input.value = value; form.appendChild(input);
   }

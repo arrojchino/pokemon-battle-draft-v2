@@ -1,111 +1,60 @@
 import type { CharacterId } from '@shared';
 import { assetUrl } from '../assets.js';
 
-export type IdleStyle = 'clasped' | 'hipHand' | 'behindBack';
-export type Emote = 'idle' | 'greet' | 'excited' | 'surprised' | 'victory' | 'sad' | 'thinking' | 'bow' | 'twirl' | 'nod';
-
-export type Personality = {
-  idle: IdleStyle;
-  /** Amplitude multiplier for sway and breathing. */
-  energy: number;
-  /** Playback speed multiplier for idle motion. */
-  tempo: number;
-  /** Resting head tilt (radians, + = toward her left shoulder). */
-  headTilt: number;
-  /** Baseline smile weight. */
-  smile: number;
-  /** Seconds between blinks (min, max). */
-  blink: [number, number];
-  /** Which emote each game moment triggers. */
-  on: { select: Emote; hover: Emote; tossWin: Emote; tossLose: Emote; gameWin: Emote; gameLose: Emote; seriesWin: Emote };
-};
+export type Emote = 'idle' | 'greet' | 'excited' | 'surprised' | 'victory' | 'sad' | 'thinking' | 'bow' | 'twirl' | 'nod' | 'punch' | 'thumbs' | 'faceplant';
 
 export type Character = {
   id: CharacterId;
+  /** Paint job name. */
   name: string;
-  nameJp: string;
-  age: number;
-  title: string;
-  tagline: string;
-  bio: string;
-  traits: string[];
-  draftStyle: { label: string; value: number }[];
+  /** One short line of attitude. */
+  quip: string;
+  /** Body paint (model colour) and the UI accent derived from it. */
+  paint: string;
   accent: string;
   accent2: string;
-  model: string;
+  /** Small generated badge (SVG data URI) used wherever a portrait is shown. */
   portrait: string;
-  personality: Personality;
-  /** Figure tuning applied at load by scaling the model's own chest bones (clothes are skinned to them). 1 = as authored. */
-  figure: { bust: number };
-  credit: { model: string; author: string; license: string; url: string };
+  /** Which reaction each game moment triggers. */
+  personality: { on: { select: Emote; hover: Emote; tossWin: Emote; tossLose: Emote; gameWin: Emote; gameLose: Emote; seriesWin: Emote; attack: Emote } };
 };
 
-/**
- * Three partners, each built on a permissively licensed VRM model (see ASSETS.md). Names, ages and
- * personalities are original to this project. All partners are adults.
- */
+/** The one partner model everybody gets (see docs/ASSETS.md). */
+export const BOT = {
+  model: assetUrl('models/bot.glb'),
+  credit: { model: 'RobotExpressive', author: 'Tomás Laulhé (Quaternius), modified by Don McCurdy', license: 'CC0 1.0', url: 'https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf/RobotExpressive' },
+};
+
+/** A tiny head-and-visor badge in the bot's paint, drawn as SVG so it costs no download. */
+function badge(paint: string, eye: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+<rect width="96" height="96" fill="#0b0a0d"/>
+<rect x="40" y="70" width="16" height="16" fill="#4a4740"/>
+<rect x="12" y="34" width="8" height="22" rx="3" fill="#4a4740"/><rect x="76" y="34" width="8" height="22" rx="3" fill="#4a4740"/>
+<rect x="18" y="16" width="60" height="58" rx="16" fill="${paint}"/>
+<path d="M22 60 q8 6 18 2 M56 24 l10 4 M30 66 l6 -3" stroke="#000" stroke-opacity=".28" stroke-width="3" fill="none"/>
+<rect x="26" y="30" width="44" height="28" rx="10" fill="#0c0c0e"/>
+<circle cx="38" cy="44" r="5" fill="${eye}"/><circle cx="58" cy="44" r="5" fill="${eye}"/>
+</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+const paint = (id: CharacterId, name: string, quip: string, p: string, accent: string, accent2: string, on: Partial<Character['personality']['on']> = {}): Character => ({
+  id, name, quip, paint: p, accent, accent2, portrait: badge(p, accent),
+  personality: { on: { select: 'greet', hover: 'nod', tossWin: 'excited', tossLose: 'surprised', gameWin: 'victory', gameLose: 'sad', seriesWin: 'victory', attack: 'punch', ...on } },
+});
+
+/** Eight paint jobs. Same bot, different attitude. */
 export const ROSTER: Character[] = [
-  {
-    id: 'rei',
-    name: 'Rei Amatsuka',
-    nameJp: '天塚 レイ',
-    age: 25,
-    title: 'Tera Systems Engineer',
-    tagline: 'Calculated. Then calculated again.',
-    bio: 'Rei tunes the arena\'s Tera relays by day and reads opponents like telemetry by night. Quiet, exact and quietly competitive, she trusts momentum and fast pivots over brute force.',
-    traits: ['Analytical', 'Composed', 'Dry humor'],
-    draftStyle: [{ label: 'Tempo', value: 0.9 }, { label: 'Risk', value: 0.45 }, { label: 'Synergy', value: 0.75 }],
-    accent: '#3ee6ff', accent2: '#7a5cff',
-    model: assetUrl('models/rei.vrm'),
-    portrait: assetUrl('portraits/rei.webp'),
-    personality: {
-      idle: 'hipHand', energy: 0.8, tempo: 0.95, headTilt: -0.03, smile: 0.08, blink: [2.8, 6.0],
-      on: { select: 'nod', hover: 'nod', tossWin: 'excited', tossLose: 'thinking', gameWin: 'victory', gameLose: 'sad', seriesWin: 'victory' },
-    },
-    figure: { bust: 1.5 },
-    credit: { model: 'Vita (VRoid Studio sample)', author: 'VRoid Project / pixiv Inc.', license: 'CC0 1.0', url: 'https://vroid.pixiv.help/hc/en-us/articles/4402614652569' },
-  },
-  {
-    id: 'kanade',
-    name: 'Kanade Shiomi',
-    nameJp: '汐見 かなで',
-    age: 27,
-    title: 'League Strategist',
-    tagline: 'Every team has a story. Let\'s write a good one.',
-    bio: 'A former league analyst who coaches rookies on weekends. Kanade is warm, patient and annoyingly good at reading the toss winner\'s nerves. She favors bulky cores and long games.',
-    traits: ['Warm', 'Patient', 'Perceptive'],
-    draftStyle: [{ label: 'Tempo', value: 0.5 }, { label: 'Risk', value: 0.3 }, { label: 'Synergy', value: 0.95 }],
-    accent: '#ffb35c', accent2: '#ff6f91',
-    model: assetUrl('models/kanade.vrm'),
-    portrait: assetUrl('portraits/kanade.webp'),
-    personality: {
-      idle: 'clasped', energy: 1.0, tempo: 0.85, headTilt: 0.07, smile: 0.32, blink: [2.2, 5.0],
-      on: { select: 'greet', hover: 'greet', tossWin: 'excited', tossLose: 'surprised', gameWin: 'victory', gameLose: 'sad', seriesWin: 'victory' },
-    },
-    figure: { bust: 1.5 },
-    credit: { model: 'VRM1_Constraint_Twist_Sample', author: 'pixiv Inc.', license: 'VRM Public License 1.0 (commercial use by corporations allowed, credit not required)', url: 'https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample' },
-  },
-  {
-    id: 'mirei',
-    name: 'Mirei Kurogane',
-    nameJp: '黒鉄 ミレイ',
-    age: 29,
-    title: 'Night Archivist',
-    tagline: 'Fate is a coin. I simply know which way it leans.',
-    bio: 'Curator of the shrine\'s midnight archive and an unapologetic showoff. Mirei treats every series as theatre, loves setup sweepers and never misses a chance for a dramatic bow.',
-    traits: ['Theatrical', 'Mischievous', 'Elegant'],
-    draftStyle: [{ label: 'Tempo', value: 0.65 }, { label: 'Risk', value: 0.95 }, { label: 'Synergy', value: 0.55 }],
-    accent: '#ff3d6e', accent2: '#9b5cff',
-    model: assetUrl('models/mirei.vrm'),
-    portrait: assetUrl('portraits/mirei.webp'),
-    personality: {
-      idle: 'behindBack', energy: 0.9, tempo: 0.75, headTilt: -0.06, smile: 0.18, blink: [3.0, 7.0],
-      on: { select: 'bow', hover: 'nod', tossWin: 'twirl', tossLose: 'thinking', gameWin: 'twirl', gameLose: 'sad', seriesWin: 'twirl' },
-    },
-    figure: { bust: 1.5 },
-    credit: { model: 'Darkness Shibu (VRoid Studio sample)', author: 'VRoid Project / pixiv Inc.', license: 'CC0 1.0', url: 'https://vroid.pixiv.help/hc/en-us/articles/4402614652569' },
-  },
+  paint('rust', 'Rust Bucket', 'Held together by spite and duct tape.', '#b4521f', '#ff7a3d', '#7a2a10'),
+  paint('toxic', 'Toxic Waste', 'Do not lick. Seriously.', '#7fae1c', '#b6ff3a', '#3d5a08', { tossWin: 'thumbs', gameLose: 'faceplant' }),
+  paint('caution', 'Caution Tape', 'Wet floor. Dry humor.', '#d9a90c', '#ffd23a', '#6e5203', { select: 'thumbs', tossWin: 'twirl' }),
+  paint('hotrod', 'Hot Rod', 'Zero to KO in six turns.', '#a3142a', '#ff3355', '#4f0712', { tossWin: 'punch', gameWin: 'punch' }),
+  paint('bruiser', 'Bruiser', 'Has never once read the manual.', '#5b3394', '#a46bff', '#2a1347', { select: 'punch', tossLose: 'faceplant' }),
+  paint('coolant', 'Coolant Leak', 'Chill. Mostly leaking.', '#1f86a8', '#3fd8ff', '#0b3e50', { gameWin: 'thumbs' }),
+  paint('oilslick', 'Oil Slick', 'Slippery when losing.', '#2a2c33', '#8f9bb8', '#121318', { tossLose: 'thinking', gameLose: 'faceplant' }),
+  paint('bonedry', 'Bone Dry', 'Retired from a scrapyard. Unretired for this.', '#cfc3a1', '#fff0c8', '#6f6650', { select: 'bow', gameWin: 'bow' }),
 ];
 
 export const characterById = (id: CharacterId | null | undefined) => ROSTER.find(c => c.id === id) ?? null;
-export const DEFAULT_CHARACTER: CharacterId = 'rei';
+export const DEFAULT_CHARACTER: CharacterId = 'rust';

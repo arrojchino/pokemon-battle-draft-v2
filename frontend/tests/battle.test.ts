@@ -107,3 +107,35 @@ describe('move choreography', () => {
     }
   });
 });
+
+describe('matchup hints', () => {
+  it('match the type chart, abilities and items the way the simulator applies them', async () => {
+    const { POOL } = await import('@shared');
+    const { moveVerdict, defenseChart } = await import('../src/battle/matchup.js');
+    const f = (name: string, tera: string | null = null) => {
+      const s = POOL.find(p => p.name === name)!;
+      return { species: s.name, types: s.types, tera: tera as never, ability: s.ability, item: s.item };
+    };
+    const gambit = f('Kingambit');
+    expect(moveVerdict('Close Combat', f('Great Tusk'), gambit)!.mult).toBe(4);
+    expect(moveVerdict('Earthquake', f('Clodsire'), gambit)!.mult).toBe(2);
+    // Air Balloon and Levitate stop Ground moves; Mold Breaker gets through Levitate but not a balloon.
+    expect(moveVerdict('Earthquake', f('Clodsire'), f('Gholdengo'))!.notes.join()).toMatch(/Air Balloon/);
+    expect(moveVerdict('Earthquake', f('Clodsire'), f('Rotom-Wash'))!.mult).toBe(0);
+    expect(moveVerdict('Earthquake', { ...f('Clodsire'), ability: 'Mold Breaker' }, f('Rotom-Wash'))!.mult).toBe(2);
+    // Terastallized defenders use their Tera type.
+    expect(moveVerdict('Close Combat', f('Great Tusk'), f('Kingambit', 'Fairy'))!.mult).toBe(0.5);
+    // Status immunities.
+    expect(moveVerdict('Will-O-Wisp', f('Skeledirge'), f('Skeledirge'))!.tone).toBe('blocked');
+    expect(moveVerdict('Toxic', f('Clodsire'), f('Gholdengo'))!.notes.join()).toMatch(/Good as Gold/);
+    expect(moveVerdict('Spore', f('Clodsire'), f('Meowscarada'))!.tone).toBe('blocked');
+    // STAB, including Protean and a Tera preview.
+    expect(moveVerdict('Kowtow Cleave', gambit, f('Clodsire'))!.stab).toBe(true);
+    expect(moveVerdict('Play Rough', f('Meowscarada'), gambit)!.stab).toBe(true);
+    expect(moveVerdict('Body Press', f('Dondozo'), gambit)!.stab).toBe(false);
+    expect(moveVerdict('Body Press', f('Dondozo'), gambit, 'Fighting')!.stab).toBe(true);
+    const chart = defenseChart(gambit);
+    expect(chart.x4).toEqual(['Fighting']);
+    expect(chart.immune).toEqual(['Poison', 'Psychic']);
+  });
+});

@@ -7,9 +7,10 @@ Target: 60 fps on reasonably modern desktop GPUs, smooth on high-refresh display
 - One renderer, one animation loop, one canvas for the whole app (v1 ran three WebGL contexts and three loops).
 - The loop stops when the tab is hidden; WebGL context loss is handled.
 - No per-frame React renders, no per-frame allocations in the rig, no CPU geometry updates (v1 recomputed vertex normals on the CPU every frame).
-- Environment animation is shader-driven: petals, lantern sway, window flicker, mist, shafts.
+- Environment animation is shader-driven: rain, ripples, flames, embers, steam, bulb sway, window flicker, smog, shafts.
 - Characters that are not on screen are hidden and skip all work.
-- three.js + three-vrm load as a lazy chunk; the UI paints first.
+- three.js loads as a lazy chunk; the UI paints first.
+- The partner model is one 464 KB glTF shared by every paint job (the three VRM partners it replaced were about 14 MB). Audio is synthesized, so it adds no downloads.
 
 ## Quality tiers
 
@@ -39,7 +40,7 @@ Measured in headless Chromium on SwiftShader (software rendering), so wall-clock
 | Match, 2 characters + coin | medium | 167 | 187k | 0.27 ms |
 | Title, 1 character | medium | 106 | 111k | 0.22 ms |
 
-Rig simulation covers procedural animation, expressions, look-at and VRM spring bones for all visible characters (300-frame average).
+These numbers were measured with the earlier VRM partners. The bots are far lighter (3 materials, no spring bones, no textures), so character cost is now lower; re-measure with `?perf` on your target devices.
 
 Triangle counts include the shadow pass and, on high, the planar reflection pass, which re-render the characters. Medium removes the reflection pass: about 35% fewer calls.
 
@@ -58,3 +59,4 @@ Resource hygiene (scripted checks):
 - Real-GPU profiling (Chrome Performance panel with GPU, or `EXT_disjoint_timer_query_webgl2`) should be run on target hardware; this environment had no GPU.
 - KTX2 textures and meshopt geometry would cut download size further (see ASSETS.md).
 - In-app battle stage (`engine/battle/`): everything is allocated once when the arena is built and recycled. One CPU-simulated particle field (2,600 particles, one draw call) serves streams, sparks, swirls, lightning, coins and leaves; rings, slashes, beams, orbs and barriers are small fixed pools; rocks, meteors, shards, spikes and salt are instanced meshes (one draw call per kind, only while visible). Three point lights stay in the scene at zero intensity between flashes, because toggling their visibility would change the light count and force every lit material to recompile mid-battle. Pokémon art textures are cached per species (bounded by the 38-set pool) and disposed with the stage. Battle playback is paced by a timer queue, and each move line holds until its animation's hit lands, so a dropped frame never desyncs the log from the 3D effects.
+- The back alley (sandbox measurement, match screen with two bots, SwiftShader): 192 draw calls / 52k triangles on high, 122 / 26k on medium, 68 / 16k on low. Rain is one instanced draw (2,600 / 1,600 / 600 streaks by tier); embers, steam and bulbs are one draw each. The two alley point lights and the lightning light exist from the start (lightning sits at zero intensity), so nothing recompiles when they flicker.

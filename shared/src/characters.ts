@@ -1,8 +1,9 @@
 /**
- * Partner ids accepted by the server. Presentation data (names, models, colors) lives in the
- * frontend roster; the server only needs the whitelist so it can validate `avatar` messages.
+ * Partner bot paint jobs accepted by the server. Every player brings the same comic battle bot and
+ * picks its paint; presentation data (names, colours, reactions) lives in the frontend roster. The
+ * server only needs the whitelist so it can validate `avatar` messages.
  */
-export const CHARACTER_IDS = ['rei', 'kanade', 'mirei'] as const;
+export const CHARACTER_IDS = ['rust', 'toxic', 'caution', 'hotrod', 'bruiser', 'coolant', 'oilslick', 'bonedry'] as const;
 export type CharacterId = typeof CHARACTER_IDS[number];
 
 export const isCharacterId = (v: unknown): v is CharacterId =>

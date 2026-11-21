@@ -13,7 +13,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {
-        manualChunks: { three: ['three'], vrm: ['@pixiv/three-vrm'], react: ['react', 'react-dom'] },
+        manualChunks: { three: ['three'], react: ['react', 'react-dom'] },
       },
     },
   },

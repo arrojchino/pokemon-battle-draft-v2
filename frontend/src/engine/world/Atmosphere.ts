@@ -1,20 +1,19 @@
 import * as THREE from 'three';
 
 /**
- * Volumetric-style light shafts (additive, noise-scrolled cones), low ground mist and floating sigil rings.
+* Volumetric-style light shafts (additive, noise-scrolled cones) from the street lamps and low smog.
  * All cheap: a handful of transparent quads/cones with analytic falloff, no raymarching.
  */
 export class Atmosphere {
   readonly group = new THREE.Group();
   private shaftMat: THREE.ShaderMaterial;
   private mistMat: THREE.ShaderMaterial;
-  private sigils: THREE.Mesh[] = [];
   readonly accent = new THREE.Color('#40e0ff');
 
   constructor(shafts: boolean) {
     this.shaftMat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color('#5b5fc4') }, uIntensity: { value: 0.045 } },
+      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color('#d27a32') }, uIntensity: { value: 0.06 } },
       vertexShader: /* glsl */`varying vec2 vUv; varying vec3 vN; varying vec3 vV;
         void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
       fragmentShader: /* glsl */`uniform float uTime, uIntensity; uniform vec3 uColor; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
@@ -31,7 +30,8 @@ export class Atmosphere {
     if (shafts) {
       const geo = new THREE.CylinderGeometry(0.25, 1.9, 9, 32, 1, true);
       geo.translate(0, -4.5, 0);
-      for (const [x, z, rz, s] of [[-2.2, -1.5, 0.22, 1], [2.4, -1.8, -0.2, 0.9], [0, -3.8, 0.04, 1.2]] as const) {
+      // Sodium street lamps mounted high on the walls, raking down through the rain.
+      for (const [x, z, rz, s] of [[-6.2, -4.5, 0.42, 1], [6.6, -5.5, -0.36, 0.9]] as const) {
         const m = new THREE.Mesh(geo, this.shaftMat);
         m.position.set(x, 9.2, z); m.rotation.z = rz; m.scale.setScalar(s); m.renderOrder = 4;
         this.group.add(m);
@@ -40,7 +40,7 @@ export class Atmosphere {
 
     this.mistMat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false,
-      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color('#2e2370') } },
+      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color('#3b3a30') } },
       vertexShader: /* glsl */`varying vec3 vW; void main() { vW = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.0); }`,
       fragmentShader: /* glsl */`uniform float uTime; uniform vec3 uColor; varying vec3 vW;
         float n(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -61,45 +61,11 @@ export class Atmosphere {
       this.group.add(mist);
     }
 
-    // Sigil rings: canvas-drawn glyph bands orbiting high behind the stage.
-    const tex = this.sigilTexture();
-    for (const [r, y, tilt, speed] of [[7.5, 8.2, 0.12, 0.03]] as const) {
-      const ring = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.42, 96, 1, true), new THREE.MeshBasicMaterial({
-        map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, color: new THREE.Color('#7fe9ff'), opacity: 0.28, toneMapped: false,
-      }));
-      ring.position.set(0, y, -9); ring.rotation.x = tilt; ring.userData.speed = speed; ring.renderOrder = 4;
-      this.sigils.push(ring); this.group.add(ring);
-    }
-  }
-
-  private sigilTexture() {
-    const c = document.createElement('canvas'); c.width = 2048; c.height = 64;
-    const x = c.getContext('2d')!;
-    x.clearRect(0, 0, c.width, c.height);
-    x.strokeStyle = 'rgba(255,255,255,0.9)'; x.fillStyle = 'rgba(255,255,255,0.95)'; x.lineWidth = 2;
-    x.beginPath(); x.moveTo(0, 6); x.lineTo(2048, 6); x.moveTo(0, 58); x.lineTo(2048, 58); x.stroke();
-    // Abstract glyphs: hexagons, ticks and short runes. Deliberately not any real script or logo.
-    for (let i = 0; i < 64; i++) {
-      const cx = 16 + i * 32; const k = (i * 7) % 5;
-      x.beginPath();
-      if (k === 0) { for (let j = 0; j <= 6; j++) { const a = j / 6 * Math.PI * 2; x.lineTo(cx + Math.cos(a) * 9, 32 + Math.sin(a) * 9); } }
-      else if (k === 1) { x.moveTo(cx - 8, 22); x.lineTo(cx + 8, 22); x.moveTo(cx, 22); x.lineTo(cx, 44); }
-      else if (k === 2) { x.arc(cx, 32, 7, 0, Math.PI * 1.5); }
-      else if (k === 3) { x.moveTo(cx - 8, 42); x.lineTo(cx, 20); x.lineTo(cx + 8, 42); x.moveTo(cx - 4, 34); x.lineTo(cx + 4, 34); }
-      else { x.fillRect(cx - 2, 18, 4, 28); }
-      x.stroke();
-    }
-    const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.repeat.set(2, 1); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-    return t;
   }
 
   setAccent(c: THREE.Color) { this.accent.copy(c); }
-  update(t: number, dt: number) {
+  update(t: number, _dt: number) {
     this.shaftMat.uniforms.uTime.value = t;
     this.mistMat.uniforms.uTime.value = t;
-    for (const s of this.sigils) {
-      s.rotation.y += (s.userData.speed as number) * dt;
-      ((s.material as THREE.MeshBasicMaterial).color).lerp(this.accent, 1 - Math.exp(-2 * dt));
-    }
   }
 }

@@ -14,6 +14,7 @@ import { BattlePanel } from './match/BattlePanel.js';
 import { HistoryDrawer } from './match/HistoryDrawer.js';
 import { BattleArena } from './match/BattleArena.js';
 import { BattleController } from '../../battle/controller.js';
+import { sound } from '../../audio/sound.js';
 import type { BattleFx } from '../../battle/model.js';
 import { createStageBridge } from '../../battle/stageBridge.js';
 import { useReducedMotion } from '../../app/settings.js';
@@ -62,6 +63,7 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
   // Keep the arena up after the server records the result until local playback has shown the ending
   // (a slower client may still be animating the last turn) and the player continues or it auto-dismisses.
   const showArena = !!arena && !arena.dismissed && (room.phase === 'battle' || (!!arenaSnap && arenaSnap.state.phase !== 'idle'));
+  useEffect(() => { sound.setMusic(showArena ? 'battle' : 'alley'); }, [showArena]);
   const dismissArena = () => setArena(a => (a ? { ...a, dismissed: true } : a));
   useEffect(() => {
     if (!arena || arena.reacted || !battleOver || !world || !arenaSnap) return;
@@ -69,6 +71,7 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
     const w = arenaSnap.state.winnerSide;
     if (w === null) return;
     const mineWon = w === seat;
+    sound.play(mineWon ? 'win' : 'lose');
     const mineC = characterById(m.mine); const theirsC = characterById(m.theirs);
     world.emote('mine', mineWon ? mineC?.personality.on.gameWin ?? 'victory' : mineC?.personality.on.gameLose ?? 'sad');
     world.emote('theirs', mineWon ? theirsC?.personality.on.gameLose ?? 'sad' : theirsC?.personality.on.gameWin ?? 'victory');
@@ -126,6 +129,7 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
       const winner = room.tossWinner as Seat;
       const react = () => {
         setRevealed(true); setFlipping(false);
+        sound.play(winner === seat ? 'tossWin' : 'tossLose');
         world.emote(who(winner), charOf(winner)?.personality.on.tossWin ?? 'excited');
         world.emote(who((1 - winner) as Seat), charOf((1 - winner) as Seat)?.personality.on.tossLose ?? 'surprised');
       };
@@ -141,10 +145,13 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
     if (room.phase !== 'spin' && room.phase !== 'calls') setRevealed(true);
     if (p && room.games > p.games && room.history.length && room.mode !== 'app') {
       const w = room.history[room.history.length - 1].winner;
-      if (room.phase === 'complete') setTimeout(() => world.emote(who(w), charOf(w)?.personality.on.seriesWin ?? 'victory'), 1400);
+      if (room.phase === 'complete') setTimeout(() => { world.emote(who(w), charOf(w)?.personality.on.seriesWin ?? 'victory'); world.emote(who((1 - w) as Seat), 'faceplant'); }, 1400);
       else { world.emote(who(w), charOf(w)?.personality.on.gameWin ?? 'victory'); world.emote(who((1 - w) as Seat), charOf((1 - w) as Seat)?.personality.on.gameLose ?? 'sad'); }
     }
-    if (p && p.phase === 'pick' && room.phase === 'battle') world.emote(who(room.tossWinner as Seat), 'nod');
+    if (p && p.phase === 'pick' && room.phase === 'battle') { world.emote(who(room.tossWinner as Seat), 'nod'); sound.play('pick'); }
+    if (p && p.phase !== 'pick' && room.phase === 'pick') sound.play('deal');
+    if (p && !p.players[m.opp] && room.players[m.opp]) sound.play('join');
+    if (p && room.games > p.games && room.history.length && room.mode !== 'app') sound.play(room.history[room.history.length - 1].winner === seat ? 'win' : 'lose');
   }, [room, world, m]);
 
   useEffect(() => { if (status.kind === 'fallback') { setRevealed(true); setFlipping(false); } }, [status.kind]);

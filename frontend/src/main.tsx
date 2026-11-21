@@ -6,5 +6,6 @@ import './styles/base.css';
 import './styles/screens.css';
 import './styles/match.css';
 import './styles/battle.css';
+import './styles/grime.css';
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

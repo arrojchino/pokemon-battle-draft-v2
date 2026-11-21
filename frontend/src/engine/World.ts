@@ -5,23 +5,25 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import type { CharacterId, CoinSide } from '@shared';
-import { ROSTER, characterById, type Emote } from '../characters/roster.js';
+import { BOT, DEFAULT_CHARACTER, characterById, type Emote } from '../characters/roster.js';
 import { CameraDirector, type Shot } from './CameraDirector.js';
-import { CharacterRig } from './character/CharacterRig.js';
-import { loadVrm } from './character/loadVrm.js';
+import { BotRig } from './character/BotRig.js';
+import { loadBot } from './character/loadBot.js';
 import { Emitter, type WorldEvents } from './events.js';
 import { AdaptiveQuality, TIERS, initialTier, stepTier, type QualityPref, type QualityTier } from './quality.js';
 import { GradeShader } from './post/GradeShader.js';
 import { createSky } from './world/Sky.js';
 import { createSkyline } from './world/Skyline.js';
 import { StageFloor, MAX_SLOTS } from './world/Floor.js';
-import { Shrine } from './world/Shrine.js';
-import { Petals } from './world/Petals.js';
+import { Alley } from './world/Alley.js';
+import { Rain } from './world/Rain.js';
 import { Atmosphere } from './world/Atmosphere.js';
 import { Coin } from './world/Coin.js';
 import { BattleStage } from './battle/BattleStage.js';
 import { ARENA, yawTo } from './battle/BattleCamera.js';
-import { rand } from './math.js';
+
+const HEMI_BASE = new THREE.Color('#4a4238');
+const HEMI_FLASH = new THREE.Color('#b8c8ff');
 
 export type DuoShot = 'room' | 'match' | 'draft' | 'battle';
 export type Layout =
@@ -55,9 +57,14 @@ export class World {
   private adaptive: AdaptiveQuality;
   private floor!: StageFloor;
   private skyline!: THREE.InstancedMesh;
-  private petals!: Petals;
+  private rain!: Rain;
+  private hemi!: THREE.HemisphereLight;
+  private boltLight!: THREE.DirectionalLight;
+  /** Lightning: seconds until the next strike, the flash level, and the scheduled flicker sequence. */
+  private bolt = { next: 9, flash: 0, seq: [] as number[], t: 0 };
+  private boltFlash = 0;
   private atmosphere!: Atmosphere;
-  private shrine: Shrine;
+  private alley: Alley;
   private sky: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
   private coin: Coin;
   readonly battle: BattleStage;
@@ -66,8 +73,8 @@ export class World {
   private rimB: THREE.DirectionalLight;
   private accent = new THREE.Color('#3ee6ff');
   private accentTarget = new THREE.Color('#3ee6ff');
-  private rigs = new Map<string, CharacterRig>();
-  private loading = new Map<string, Promise<CharacterRig | null>>();
+  private rigs = new Map<string, BotRig>();
+  private loading = new Map<string, Promise<BotRig | null>>();
   private hitboxes = new Map<string, THREE.Mesh>();
   private layout: Layout | null = null;
   private slots: Slot[] = [];
@@ -114,20 +121,27 @@ export class World {
     this.scene.fog = new THREE.FogExp2('#05030b', 0.0085);
     this.sky = createSky();
     this.scene.add(this.sky);
-    this.shrine = new Shrine();
-    this.scene.add(this.shrine.group);
+    this.alley = new Alley();
+    this.alley.reduced = this.reducedMotion;
+    this.scene.add(this.alley.group);
     this.coin = new Coin(() => this.reducedMotion);
     this.coin.group.position.set(0, 1.08, 0.75);
-    this.coin.onLand = () => this.floor.pulse();
+    this.coin.onLand = () => { this.floor.pulse(); this.events.emit('sound', { cue: 'coinLand', pan: 0 }); };
     this.scene.add(this.coin.group);
     this.battle = new BattleStage(this.camera, () => this.reducedMotion);
     this.battle.cam.enabled = !this.reducedMotion;
     this.battle.onImpact = color => this.floor.pulse(color);
+    this.battle.onSound = (cue, pan, gain) => this.events.emit('sound', { cue, pan, gain });
     this.scene.add(this.battle.group);
 
-    // Lighting: cool moon key with shadows, two accent rims for the anime silhouette, warm lantern bounce.
-    this.scene.add(new THREE.HemisphereLight('#3b3f7a', '#0a050c', 0.3));
-    this.key = new THREE.DirectionalLight('#d6deff', 1.75);
+    // Lighting: a sodium street-lamp key with shadows, neon rims (cyan and pink) for silhouettes; the
+    // barrel fire and the pink sign are real point lights inside the alley.
+    this.hemi = new THREE.HemisphereLight('#4a4238', '#0a0706', 0.32);
+    this.scene.add(this.hemi);
+    // Lightning: a cold light from high behind the walls, dark until a strike.
+    this.boltLight = new THREE.DirectionalLight('#c8d6ff', 0); this.boltLight.position.set(-3, 14, -12);
+    this.scene.add(this.boltLight);
+    this.key = new THREE.DirectionalLight('#ffd2a0', 1.65);
     this.key.position.set(2.4, 6.5, 5.5); this.key.target.position.set(0, 1, 0);
     this.key.shadow.camera.left = -3.2; this.key.shadow.camera.right = 3.2; this.key.shadow.camera.top = 3.2; this.key.shadow.camera.bottom = -1.5;
     this.key.shadow.camera.near = 2; this.key.shadow.camera.far = 16; this.key.shadow.bias = -0.0004; this.key.shadow.normalBias = 0.025;
@@ -135,8 +149,6 @@ export class World {
     this.rimA = new THREE.DirectionalLight('#3ee6ff', 2.2); this.rimA.position.set(-4, 3, -4);
     this.rimB = new THREE.DirectionalLight('#ff3d7a', 1.6); this.rimB.position.set(4, 2.5, -3.5);
     this.scene.add(this.rimA, this.rimB);
-    const warm = new THREE.PointLight('#ff7a3d', 4, 14, 1.6); warm.position.set(0, 4.2, -6.4);
-    this.scene.add(warm);
 
     this.buildTierDependent();
     this.buildEnvironmentMap();
@@ -149,7 +161,7 @@ export class World {
     this.listen(document, 'visibilitychange', () => (document.hidden ? this.stop() : this.start()));
     this.listen(canvas, 'webglcontextlost', e => { e.preventDefault(); this.stop(); this.events.emit('contextLost'); });
     this.listen(canvas, 'webglcontextrestored', () => { this.start(); this.events.emit('contextRestored'); });
-    this.director.cut(this.shotFor({ mode: 'title', featured: opts.preload[0] ?? 'rei' }));
+    this.director.cut(this.shotFor({ mode: 'title', featured: opts.preload[0] ?? DEFAULT_CHARACTER }));
     this.start();
     void this.preload(opts.preload);
   }
@@ -170,10 +182,11 @@ export class World {
     if (this.skyline) { this.scene.remove(this.skyline); this.skyline.geometry.dispose(); (this.skyline.material as THREE.Material).dispose(); this.skyline.dispose(); }
     this.skyline = createSkyline(q.buildings);
     this.scene.add(this.skyline);
-    if (this.petals) { this.scene.remove(this.petals.mesh); this.petals.dispose(); }
-    this.petals = new Petals(q.petals);
-    this.petals.setSpeed(this.reducedMotion ? 0.25 : 1);
-    this.scene.add(this.petals.mesh);
+    if (this.rain) { this.scene.remove(this.rain.mesh); this.rain.dispose(); }
+    this.rain = new Rain(q.rain);
+    this.rain.setSpeed(this.reducedMotion ? 0.35 : 1);
+    this.scene.add(this.rain.mesh);
+    this.floor.uniforms.uRain.value = this.reducedMotion ? 0.3 : 1;
     if (this.atmosphere) { this.scene.remove(this.atmosphere.group); disposeTree(this.atmosphere.group); }
     this.atmosphere = new Atmosphere(q.shafts);
     this.atmosphere.setAccent(this.accent);
@@ -202,6 +215,38 @@ export class World {
     this.events.emit('quality', { tier: this.tier, scale: this.adaptive.scale });
   }
 
+  /**
+   * Distant lightning every 12 to 30 seconds: two or three quick flickers that light the clouds, the
+   * rain and the wet ground, then thunder a moment later (the delay sells the distance). Skipped with
+   * reduced motion, since flashes are exactly what that setting is for.
+   */
+  private stepLightning(dt: number) {
+    const b = this.bolt;
+    b.next -= dt;
+    if (b.next <= 0 && !this.reducedMotion) {
+      b.next = 12 + Math.random() * 18; b.t = 0;
+      const n = 2 + Math.floor(Math.random() * 2);
+      b.seq = []; let at = 0;
+      for (let i = 0; i < n; i++) { b.seq.push(at, 0.05 + Math.random() * 0.06); at += 0.09 + Math.random() * 0.14; }
+      const dist = 0.6 + Math.random() * 1.6;
+      window.setTimeout(() => this.events.emit('sound', { cue: 'thunder', pan: Math.random() * 1.2 - 0.6, gain: 1.4 - dist * 0.35 }), dist * 1000);
+    }
+    let f = 0;
+    if (b.seq.length) {
+      b.t += dt;
+      for (let i = 0; i < b.seq.length; i += 2) { const s0 = b.seq[i], d = b.seq[i + 1]; if (b.t >= s0 && b.t < s0 + d) f = Math.max(f, 1 - i * 0.15); }
+      if (b.t > b.seq[b.seq.length - 2] + 0.4) b.seq = [];
+    }
+    b.flash += (f - b.flash) * Math.min(1, dt * (f > b.flash ? 60 : 9));
+    this.sky.material.uniforms.uFlash.value = b.flash;
+    this.rain.setFlash(b.flash);
+    this.alley.setFlash(b.flash);
+    this.hemi.intensity = 0.32 + b.flash * 2.2;
+    this.hemi.color.lerpColors(HEMI_BASE, HEMI_FLASH, Math.min(1, b.flash));
+    this.boltLight.intensity = b.flash * 4.5;
+    this.boltFlash = b.flash;
+  }
+
   private shiftTier(dir: -1 | 1): boolean {
     const next = stepTier(this.tier, dir);
     if (!next) return false;
@@ -217,7 +262,7 @@ export class World {
   }
   setReducedMotion(v: boolean) {
     this.reducedMotion = v; this.director.reducedMotion = v; this.battle.cam.enabled = !v;
-    this.petals.setSpeed(v ? 0.25 : 1);
+    this.rain.setSpeed(v ? 0.35 : 1); this.floor.uniforms.uRain.value = v ? 0.3 : 1; this.alley.reduced = v;
     this.grade.uniforms.uGrain.value = v ? 0.012 : 0.025;
     for (const r of this.rigs.values()) r.reducedMotion = v;
   }
@@ -227,7 +272,7 @@ export class World {
     const envScene = new THREE.Scene();
     envScene.add(createSky());
     const panel = (c: string, x: number, y: number, z: number, s: number) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(s, s * 0.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(4), side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 1, 0); envScene.add(m); };
-    panel('#3ee6ff', -8, 4, -6, 6); panel('#ff4f9a', 8, 3, -6, 6); panel('#ffb36b', 0, 6, -9, 8); panel('#dfe6ff', 3, 9, 6, 6);
+    panel('#2fe6ff', 8, 4, -6, 5); panel('#ff2f8a', -6, 5, -9, 6); panel('#ffa040', -7, 3, -2, 4); panel('#ffd2a0', 3, 9, 6, 6);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.envRT = pmrem.fromScene(envScene, 0.02);
     this.scene.environment = this.envRT.texture;
@@ -237,8 +282,8 @@ export class World {
 
   // ---------------------------------------------------------------- characters
   private async preload(ids: CharacterId[]) {
-    const order = [...ids, ...ROSTER.map(c => c.id).filter(id => !ids.includes(id))];
-    for (const id of order) { await this.ensureRig(id); if (this.disposed) return; }
+    // One model serves every paint job, so only the paints actually on screen need instances.
+    for (const id of ids.length ? ids : [DEFAULT_CHARACTER]) { await this.ensureRig(id); if (this.disposed) return; }
     this.events.emit('ready');
   }
 
@@ -249,7 +294,7 @@ export class World {
   }
 
   /** Get (or lazily create) a rig. `#2` keys are second instances used when both players pick the same partner. */
-  private ensureRig(key: string): Promise<CharacterRig | null> {
+  private ensureRig(key: string): Promise<BotRig | null> {
     const existing = this.rigs.get(key);
     if (existing) return Promise.resolve(existing);
     let p = this.loading.get(key);
@@ -257,9 +302,9 @@ export class World {
     const id = key.split('#')[0] as CharacterId;
     const c = characterById(id);
     if (!c) return Promise.resolve(null);
-    p = loadVrm(c.model, (l, t) => this.reportProgress(key, l, t, c.name), c.figure).then(vrm => {
-      if (this.disposed) { disposeTree(vrm.scene); return null; }
-      const rig = new CharacterRig(vrm, c, rand(key.length + this.rigs.size * 7.1) * 10);
+    p = loadBot(BOT.model, c.paint, (l, t) => this.reportProgress('bot', l, t, 'battle bot')).then(bot => {
+      if (this.disposed) { disposeTree(bot.scene); return null; }
+      const rig = new BotRig(bot, c);
       rig.reducedMotion = this.reducedMotion;
       rig.setVisible(false, true); rig.root.visible = false;
       this.scene.add(rig.root);
@@ -311,11 +356,11 @@ export class World {
 
   private shotFor(l: Layout): Shot {
     switch (l.mode) {
-      case 'title': return { pos: [-0.15, 1.38, 3.7], target: [0.55, 1.18, 0], fov: 30, time: 1.4 };
+      case 'title': return { pos: [-0.15, 1.12, 3.5], target: [0.55, 0.86, 0], fov: 30, time: 1.4 };
       case 'select': {
-        if (!l.focus) return { pos: [0, 1.32, 6.0], target: [0, 1.0, 0], fov: 31, time: 1.2 };
+        if (!l.focus) return { pos: [0, 1.1, 5.0], target: [0, 0.8, 0], fov: 31, time: 1.2 };
         const s = this.selectSlots(l.focus).find(x => x.focus)!;
-        return { pos: [s.x - 0.75, 1.42, s.z + 3.15], target: [s.x - 0.3, 1.14, s.z], fov: 29, time: 1.0 };
+        return { pos: [s.x - 0.8, 1.4, s.z + 4.3], target: [s.x - 0.6, 0.95, s.z], fov: 31, time: 1.0 };
       }
       case 'duo':
         if (l.shot === 'draft') return { pos: [0, 1.95, 6.6], target: [0, 1.45, 0], fov: 33, time: 1.3 };
@@ -327,8 +372,8 @@ export class World {
   }
 
   private selectSlots(focus: CharacterId | null): Slot[] {
-    const xs = [-1.55, 0, 1.55];
-    return ROSTER.map((c, i) => ({ key: c.id, x: xs[i], z: (c.id === focus ? 0.55 : i === 1 ? 0 : -0.3), facing: c.id === focus ? -0.12 : -xs[i] * 0.1, focus: c.id === focus }));
+    // The paint shop: just your bot, centre stage.
+    return focus ? [{ key: focus, x: 0, z: 0.35, facing: 0, focus: true }] : [];
   }
 
   private applyLayout(l: Layout, modeChanged: boolean) {
@@ -383,7 +428,13 @@ export class World {
       if (l?.mode !== 'duo' && l?.mode !== 'arena') return;
       key = who === 'mine' ? l.mine : l.theirs === l.mine && l.theirs ? `${l.theirs}#2` : l.theirs;
     }
-    if (key) this.rigs.get(key)?.play(e);
+    const rig = key ? this.rigs.get(key) : undefined;
+    if (!rig) return;
+    rig.play(e);
+    // Every reaction comes with a little robot gibberish, panned to where the bot stands.
+    const cue = e === 'excited' || e === 'victory' || e === 'twirl' || e === 'thumbs' || e === 'greet' ? 'chirpHappy'
+      : e === 'sad' || e === 'faceplant' ? 'chirpSad' : e === 'punch' || e === 'thinking' ? 'chirpAngry' : 'chirp';
+    if (rig.root.visible) this.events.emit('sound', { cue, pan: Math.max(-1, Math.min(1, rig.root.position.x / 3)), gain: 0.8 });
   }
 
   hover(id: CharacterId | null) {
@@ -391,6 +442,7 @@ export class World {
   }
 
   flipCoin(result: CoinSide): Promise<void> {
+    this.events.emit('sound', { cue: 'coinFlip', pan: 0 });
     this.coin.visibleTarget = 1;
     return this.coin.flip(result, performance.now() / 1000);
   }
@@ -473,12 +525,15 @@ export class World {
       if (this.battle.fovPunch > 0) { this.director.punch(this.battle.fovPunch); this.battle.fovPunch = 0; }
     }
     this.grade.uniforms.uPunch.value = arena && !this.reducedMotion ? this.battle.screenPunch : 0;
-    this.grade.uniforms.uFlashAmt.value = arena ? this.battle.screenFlash.amt : 0;
-    this.grade.uniforms.uFlashColor.value.copy(this.battle.screenFlash.color);
+    const bf = this.boltFlash * 0.07, sf = arena ? this.battle.screenFlash.amt : 0;
+    this.grade.uniforms.uFlashAmt.value = Math.max(sf, bf);
+    this.grade.uniforms.uGrime.value += ((arena ? 1 : 0.55) * (this.reducedMotion ? 0.6 : 1) - this.grade.uniforms.uGrime.value) * Math.min(1, dt * 2);
+    this.grade.uniforms.uFlashColor.value.copy(sf >= bf ? this.battle.screenFlash.color : HEMI_FLASH);
     this.director.update(dt);
     this.floor.update(t, dt);
-    this.shrine.update(t);
-    this.petals.update(t);
+    this.alley.update(t, dt);
+    this.rain.update(t);
+    this.stepLightning(dt);
     this.atmosphere.update(t, dt);
     this.coin.update(dt);
     this.sky.material.uniforms.uTime.value = t;
@@ -526,7 +581,7 @@ export class World {
     this.removeListeners.forEach(f => f());
     for (const r of this.rigs.values()) r.dispose();
     this.rigs.clear();
-    this.floor.dispose(); this.petals.dispose(); this.battle.dispose();
+    this.floor.dispose(); this.rain.dispose(); this.alley.dispose(); this.battle.dispose();
     disposeTree(this.scene);
     this.envRT?.dispose();
     for (const pass of this.composer.passes) pass.dispose();
