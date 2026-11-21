@@ -16,8 +16,8 @@ React never re-renders per frame. The engine owns one canvas, one `WebGLRenderer
 
 ## Game core (`shared/`)
 
-- `pool.ts`: the original 38 sets, byte-identical, plus species `types` (from PokeAPI's `pokemon_types.csv`) and `artId` for alternate forms (Rotom-Wash previously showed base Rotom's artwork).
-- `rules.ts`: `generateTeams`, `teamImport`, `coinWinner`, `winsNeeded`, unchanged behavior. The rare fallback path now uses an unbiased shuffle.
+- `pool.ts`: 100 sets, one per species. The original 38 come first, byte-identical; the other 62 are the main set of each species in Pokémon Showdown's Gen 9 Battle Factory data. Each set carries species `types`, its Smogon singles `tier` (Showdown formats data), optional `ivs` and `artId` for alternate forms (Rotom-Wash).
+- `rules.ts`: `generateTeams` draws 12 distinct species, then searches the 462 ways to split them for two playable sixes (`playable`: role mix, at most two per type) within one tier point (`TIER_POINTS`, `teamPower`) and with the closest role spread, and picks one of the best at random. `teamImport`, `coinWinner` and `winsNeeded` are unchanged.
 - `room.ts`: `reduce(room, seat, action, rng)` is the single authoritative rule set. It is pure (never mutates input) and takes injected randomness, so the backend (Node `crypto`) and the PeerJS host (`crypto.getRandomValues`) run identical rules. `publicView()` strips bearer tokens before broadcast.
 - `protocol.ts`: `parseClientMessage()` validates every untrusted message (types, room code format, name sanitizing including control and bidi characters, avatar whitelist). `parseServerMessage()` normalizes v1 server state so the UI has one shape.
 

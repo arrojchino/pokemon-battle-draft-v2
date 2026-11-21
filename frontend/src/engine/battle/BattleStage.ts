@@ -702,7 +702,7 @@ export class BattleStage {
         break;
       }
       case 'swirl': {
-        this.snd(r.shape === 'wind' ? 'wind' : r.shape === 'spore' ? 'status' : r.shape === 'wisp' ? 'orb' : 'leaves', t);
+        this.snd(r.shape === 'wind' ? 'wind' : r.shape === 'spore' ? 'status' : r.shape === 'wisp' ? 'orb' : r.shape === 'fire' ? 'fire' : 'leaves', t);
         if (r.shape === 'leaf') {
           P.stream(A, B, 0.7, { color: '#7dff8a', size: 0.1, sizeEnd: 0.07, shape: Shape.Leaf, spin: 10, rate: 220, speed: 4.5, spread: 0.3 });
           this.later(0.45, () => P.swirl(B, 0.5, { color: '#a8ff7a', shape: Shape.Leaf, size: 0.09, radius: 0.6, height: 1.6, rate: 200, w: 7, spin: 8, ttl: 0.6 }));
@@ -713,6 +713,11 @@ export class BattleStage {
         } else if (r.shape === 'petal') {
           P.swirl(B, 0.7, { color: '#ff9bd2', shape: Shape.Leaf, size: 0.1, radius: 0.7, height: 1.2, rate: 220, w: 6, spin: 6, ttl: 0.7, inward: true });
           this.later(0.35, () => this.slashes.fire(B, '#ffd1ea', 2, 0.6));
+        } else if (r.shape === 'fire') {
+          // A vortex of flame around the target (Magma Storm, Fire Spin).
+          P.swirl(B, 1.0, { color: '#ff7a22', size: 0.12, sizeEnd: 0.04, radius: 0.55, height: 2.2, rate: 320, w: 9, ttl: 0.8 });
+          P.swirl(B, 1.0, { color: '#ffd36a', size: 0.06, sizeEnd: 0.02, radius: 0.4, height: 1.8, rate: 160, w: 11, ttl: 0.7 });
+          this.rings.fire(this.foot(t), '#ff7a22', { flat: true, s0: 0.3, s1: 1.5, dur: 0.8 });
         } else if (r.shape === 'spore') {
           P.swirl(B, 0.9, { color: '#d8ff8a', size: 0.04, sizeEnd: 0.06, radius: 0.8, height: 0.6, rate: 160, w: 1.5, ttl: 1.1, inward: true });
         } else {
@@ -741,14 +746,14 @@ export class BattleStage {
           const land = this.foot(t).add(tmp2.set((Math.random() - 0.5) * (n > 1 ? 1.1 : 0), 0, (Math.random() - 0.5) * (n > 1 ? 0.8 : 0)));
           // From the sky behind the target, so nothing falls past the lens.
           const start = land.clone().add(tmp2.set(0.5 + Math.random() * 0.6, 4.8 + Math.random(), -2.6 - Math.random()));
-          const trail = r.debris === 'meteor' || r.debris === 'hammer' ? '#c79bff' : r.debris === 'rock' ? '#e8d29a' : null;
+          const trail = r.debris === 'meteor' || r.debris === 'hammer' ? '#c79bff' : r.debris === 'rock' ? '#e8d29a' : r.debris === 'shard' ? '#d8f4ff' : null;
           this.debris.throw(kind, start, this.ballistic(start, land, 0.72), scale, {
             ttl: 2,
             onFly: trail ? p => { for (let i = 0; i < 2; i++) this.particles.emit(p, tmp2.randomDirection().multiplyScalar(0.25), { color: trail, size: Math.min(0.14, scale * 0.45), sizeEnd: 0.01, ttl: 0.4 }); } : undefined,
             onLand: p => {
               this.snd(r.debris === 'salt' ? 'hazard' : 'meteorHit', t, r.debris === 'meteor' ? 0.8 : r.debris === 'hammer' ? 1.2 : 0.5);
               const at = p.clone();
-              this.particles.burst(at.setY(0.2), r.debris === 'salt' ? 6 : 26, 2.6, { color: r.debris === 'meteor' ? '#b48cff' : '#e8d29a', size: 0.07, ttl: 0.7, gravity: 4, rise: 0.8 });
+              this.particles.burst(at.setY(0.2), r.debris === 'salt' ? 6 : 26, 2.6, { color: r.debris === 'meteor' ? '#b48cff' : r.debris === 'shard' ? '#e3f7ff' : '#e8d29a', size: 0.07, ttl: 0.7, gravity: 4, rise: 0.8 });
               if (r.debris !== 'salt') this.rings.fire(at.setY(ARENA.floorY + 0.03), color, { flat: true, s0: 0.1, s1: r.debris === 'hammer' ? 2.6 : 1, dur: 0.5 });
               if (r.debris === 'meteor' || r.debris === 'hammer') { this.light(at.setY(0.5), color, 16, 0.5); this.shake = Math.max(this.shake, r.debris === 'hammer' ? 1 : 0.45); }
             },

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { HOME, type HomeEntry, type HomeMat } from './homeManifest.js';
+import { HOME, type HomeEntry, type HomeFlame, type HomeMat } from './homeManifest.js';
 
 /**
  * Pokémon HOME models, for species the Pokémon 3D API lacks, ships broken, or only has as a static rig.
@@ -28,6 +28,42 @@ export type Blink = { eyes: string[]; half: [number, number]; shut: [number, num
 export type HomeSource = { scene: THREE.Object3D; clips: THREE.AnimationClip[]; blink?: Blink };
 /** Layer-1 texture of a material (an eye's iris, a decal): drawn where the main texture is transparent. */
 export const layerOf = new WeakMap<THREE.Material, THREE.Texture>();
+
+/** A flame shell (Moltres' wings and crest, Infernape's head): mask, flicker noise, upward scroll. */
+export type Flame = { mask: THREE.Texture; noise: THREE.Texture; core: boolean; scroll: number };
+export const flameOf = new WeakMap<THREE.Material, Flame>();
+const FLAME_TIME = { value: 0 };
+
+/**
+ * Additive, flickering fire for a flame shell, one per model instance (tints and fades stay per instance).
+ * The mask gives the silhouette, streaky noise scrolling upward gives the flicker, and the hottest parts
+ * run from orange to pale yellow.
+ */
+export function flameMaterial(f: Flame, name: string): THREE.Material {
+  // Additive colour that leaves destination alpha alone, so dim flame never darkens a transparent canvas.
+  // Cores are strips of scrolling noise: their long edges fade so no rectangle shows.
+  const m = new THREE.MeshBasicMaterial({
+    name, map: f.mask, color: f.core ? '#ffa640' : '#ff5a14', transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor, side: THREE.DoubleSide, toneMapped: false,
+  });
+  m.userData.flame = true;
+  m.onBeforeCompile = s => {
+    s.uniforms.uTime = FLAME_TIME; s.uniforms.uNoise = { value: f.noise };
+    s.fragmentShader = s.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform sampler2D uNoise;')
+      .replace('#include <map_fragment>', `
+        float base = texture2D(map, vMapUv + vec2(0.0, uTime * ${f.scroll.toFixed(2)})).r;
+        float flick = texture2D(uNoise, vMapUv * 0.6 + vec2(0.17, uTime * 0.85)).r;
+        float heat = base * (0.35 + 0.95 * flick);
+        ${f.core ? 'heat *= smoothstep(0.0, 0.3, vMapUv.y) * smoothstep(1.0, 0.65, vMapUv.y);' : ''}
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.92, 0.66), smoothstep(0.5, 1.1, heat)) * heat * ${f.core ? '1.1' : '1.5'};
+        diffuseColor.a = 1.0;`);
+  };
+  m.customProgramCacheKey = () => `home-flame-${f.core ? 'c' : 'm'}-${f.scroll.toFixed(2)}`;
+  m.onBeforeRender = () => { FLAME_TIME.value = performance.now() / 1000; };
+  return m;
+}
 
 // ---------------------------------------------------------------------------------------------------
 // Unity AnimationClip (YAML) reader
@@ -161,9 +197,15 @@ async function texture(href: string, rx: number, ry: number, ox: number, oy: num
   return t;
 }
 
-async function material(src: THREE.Material, e: HomeMat | undefined, base: string) {
+async function material(src: THREE.Material, e: HomeMat | undefined, base: string, fx?: HomeFlame) {
   const m = new THREE.MeshStandardMaterial({ name: src.name, roughness: 0.62, metalness: 0 });
-  // Untextured materials are effect geometry the app shows on demand (Rotom's flames, glass): hidden.
+  if (!e && fx) {
+    const [kind, mask, noise, scroll] = fx;
+    const [mt, nt] = await Promise.all([mask, noise].map(f => texture(url(UNITY_ROOT, base + f), 1, 1, 0, 0, 0, 0)));
+    flameOf.set(m, { mask: mt, noise: nt, core: kind === 'c', scroll });
+    return m;
+  }
+  // Other untextured materials are effect geometry the app shows on demand (Rotom's plasma, glass): hidden.
   if (!e) { m.visible = false; return m; }
   const [file, rx, ry, ox, oy, wu, wv, cut, layer, lrx, lry, lox, loy] = e;
   m.map = await texture(url(UNITY_ROOT, base + file), rx, ry, ox, oy, wu, wv);
@@ -199,7 +241,7 @@ export async function loadHome(dex: number, onProgress?: (loaded: number, total:
     const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     const out = await Promise.all(list.map(src => {
       let p = made.get(src);
-      if (!p) { p = material(src, h.m[short(src.name)], h.f); made.set(src, p); }
+      if (!p) { p = material(src, h.m[short(src.name)], h.f, h.x?.[short(src.name)]); made.set(src, p); }
       return p;
     }));
     mesh.material = Array.isArray(mesh.material) ? out : out[0];

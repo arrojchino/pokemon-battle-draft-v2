@@ -25,7 +25,7 @@ describe('pokédex search', () => {
 describe('pokédex filters and sorting', () => {
   it('lists the whole pool in dex order by default', () => {
     const r = browse(q());
-    expect(r.results).toHaveLength(38);
+    expect(r.results).toHaveLength(POOL.length);
     const ids = r.results.map(e => e.p.id);
     expect(ids).toEqual([...ids].sort((a, b) => a - b));
     expect(dexNo(94)).toBe('No. 0094');
@@ -79,8 +79,9 @@ describe('pokédex set data', () => {
   });
   it('wraps previous and next around the visible list', () => {
     const list = browse(q()).results;
-    expect(neighbours(list, list[0].p.name)!.map(e => e.p.name)).toEqual([list[37].p.name, list[1].p.name]);
-    expect(neighbours(list, 'Missingno')!.map(e => e.p.name)).toEqual([list[37].p.name, list[0].p.name]);
+    const last = list[list.length - 1].p.name;
+    expect(neighbours(list, list[0].p.name)!.map(e => e.p.name)).toEqual([last, list[1].p.name]);
+    expect(neighbours(list, 'Missingno')!.map(e => e.p.name)).toEqual([last, list[0].p.name]);
     expect(neighbours([], null)).toBeNull();
   });
 });

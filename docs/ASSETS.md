@@ -6,7 +6,7 @@ Partner and battling Pokémon are 3D models from the community [Pokémon 3D API]
 
 Every model was graded and its runtime fixes are listed in [ASSET_AUDIT.md](ASSET_AUDIT.md).
 
-Thirty-two draft-pool species use their Pokémon HOME model instead (`FROM_HOME` in `engine/character/monModel.ts`), fetched at runtime from two public GitHub exports: [Pokemon-HOME-GLB-Models](https://github.com/Lilothestitch16/Pokemon-HOME-GLB-Models) (mesh and skeleton) and [Pokemon-HOME-Unity-Models](https://github.com/Lilothestitch16/Pokemon-HOME-Unity-Models) (textures, materials and animation clips). `engine/character/home.ts` assembles them and converts the Unity clips; `scripts/home-manifest.py` regenerates `homeManifest.ts`, which only lists paths and texture transforms. With both sources, every Pokémon in the pool battles as an animated 3D model.
+Ninety-two draft-pool species use their Pokémon HOME model instead (`FROM_HOME` in `engine/character/monModel.ts`), fetched at runtime from two public GitHub exports: [Pokemon-HOME-GLB-Models](https://github.com/Lilothestitch16/Pokemon-HOME-GLB-Models) (mesh and skeleton) and [Pokemon-HOME-Unity-Models](https://github.com/Lilothestitch16/Pokemon-HOME-Unity-Models) (textures, materials and animation clips). `engine/character/home.ts` assembles them and converts the Unity clips; `scripts/home-manifest.py` regenerates `homeManifest.ts`, which only lists paths and texture transforms. With both sources, every Pokémon in the pool battles as an animated 3D model.
 
 ## Partner roster
 
@@ -15,6 +15,10 @@ Fourteen partners live in `frontend/src/characters/roster.ts` (ids validated by 
 ## Cries (runtime)
 
 Partner cries come from the PokeAPI cries repository (`cries/pokemon/latest/<dex>.ogg`), fetched on first use and decoded with the Web Audio API.
+
+## Draft pool sets
+
+The first 38 sets are the original game's. The other 62 are the main set of each species in Pokémon Showdown's Gen 9 Battle Factory data (`data/random-battles/gen9/factory-sets.json` in the MIT-licensed `pokemon-showdown` package; the sets are curated by Smogon), and every set's tier comes from Showdown's formats data. Role names and quips are original.
 
 ## Generated, not downloaded
 

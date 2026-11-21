@@ -43,13 +43,13 @@ Partners are on screen the longest, so only models with a full battle clip set q
 | Thwackey | 811 | A | 6,420 | 1024 px | 242 | 48 | 6.8 MB |
 | Eiscue | 875 | A | 10,020 | 1024 px | 112 | 74 | 5.8 MB |
 
-## Draft pool (38 sets)
+## Draft pool (100 sets)
 
-Every one of the 38 species battles as an animated 3D model. Grades as measured by `qa/models.html` with the shipped plan:
+Every one of the 100 species battles as an animated 3D model. Grades as measured by `qa/models.html` (which loads the whole pool by default) with the shipped plan:
 
 | Grade | A | B | C | F |
 | --- | ---: | ---: | ---: | ---: |
-| Species | 5 | 33 | 0 | 0 |
+| Species | 7 | 92 | 1 | 0 |
 
 B here mostly means the Pokémon HOME set: authored idle, physical attack, special attack (and roar for most), 512 px textures, no damage or faint clips (the stage flinches and topples those procedurally).
 
@@ -94,9 +94,76 @@ B here mostly means the Pokémon HOME set: authored idle, physical attack, speci
 | Kilowattrel | 941 | A | Pokémon 3D API | 7,476 | 1024 px | 59 (battle set) | own battle set |
 | Sableye | 302 | B | Pokémon HOME | 4,242 | 512 px | 4 | API: static rig |
 
+The 62 species added with the expanded pool use Pokémon HOME for one consistent look, except Dragonite and Greninja, whose API models (also partners) are grade A. Two runtime additions came with them: flame shells (`FireCore`/`FireMask`), which have no colour texture in the export, are paired with their fire masks by name in the manifest and drawn as additive, flickering fire; and HOME's gel and glass materials (`Uniran`) render see-through instead of being forced opaque.
+
+| Pokémon | Dex | Grade | Source | Triangles | Texture | Clips | Note |
+| --- | ---: | :---: | --- | ---: | ---: | --- | --- |
+| Dragonite | 149 | A | Pokémon 3D API | 5,699 | 1024 px | 62 (battle set) | own battle set |
+| Gliscor | 472 | B | Pokémon HOME | 7,074 | 512 px | 4 | one consistent source |
+| Zapdos | 145 | B | Pokémon HOME | 5,752 | 512 px | 4 | one consistent source |
+| Moltres | 146 | B | Pokémon HOME | 6,476 | 512 px | 4 | flame shells drawn as fire |
+| Darkrai | 491 | B | Pokémon HOME | 6,708 | 512 px | 4 | one consistent source |
+| Kyurem | 646 | B | Pokémon HOME | 6,996 | 512 px | 4 | ice see-through |
+| Raging Bolt | 1021 | B | Pokémon HOME | 20,102 | 512 px | 4 | one consistent source |
+| Iron Moth | 994 | B | Pokémon HOME | 17,938 | 512 px | 3 | one consistent source |
+| Ting-Lu | 1003 | B | Pokémon HOME | 14,154 | 512 px | 3 | one consistent source |
+| Cinderace | 815 | B | Pokémon HOME | 14,980 | 512 px | 4 | one consistent source |
+| Primarina | 730 | B | Pokémon HOME | 16,292 | 512 px | 3 | one consistent source |
+| Rillaboom | 812 | B | Pokémon HOME | 15,500 | 512 px | 4 | one consistent source |
+| Zamazenta | 889 | B | Pokémon HOME | 14,808 | 512 px | 4 | one consistent source |
+| Enamorus | 905 | B | Pokémon HOME | 12,048 | 512 px | 3 | one consistent source |
+| Pecharunt | 1025 | B | Pokémon HOME | 19,302 | 512 px | 4 | one consistent source |
+| Ogerpon | 1017 | B | Pokémon HOME | 7,024 | 512 px | 4 | one consistent source |
+| Iron Crown | 1023 | B | Pokémon HOME | 30,166 | 512 px | 4 | one consistent source |
+| Ursaluna | 901 | B | Pokémon HOME | 9,605 | 512 px | 3 | one consistent source |
+| Roaring Moon | 1005 | B | Pokémon HOME | 22,638 | 512 px | 3 | one consistent source |
+| Heatran | 485 | B | Pokémon HOME | 7,712 | 512 px | 4 | one consistent source |
+| Latios | 381 | B | Pokémon HOME | 5,262 | 512 px | 3 | one consistent source |
+| Keldeo | 647 | B | Pokémon HOME | 5,716 | 512 px | 4 | one consistent source |
+| Okidogi | 1014 | B | Pokémon HOME | 22,726 | 512 px | 4 | one consistent source |
+| Weavile | 461 | B | Pokémon HOME | 6,132 | 512 px | 4 | one consistent source |
+| Hydrapple | 1019 | B | Pokémon HOME | 68,226 | 512 px | 4 | one consistent source |
+| Skarmory | 227 | B | Pokémon HOME | 6,716 | 512 px | 4 | one consistent source |
+| Lokix | 920 | B | Pokémon HOME | 8,096 | 512 px | 3 | one consistent source |
+| Slither Wing | 988 | B | Pokémon HOME | 19,376 | 512 px | 3 | one consistent source |
+| Excadrill | 530 | B | Pokémon HOME | 4,286 | 512 px | 4 | one consistent source |
+| Greninja | 658 | A | Pokémon 3D API | 5,952 | 1024 px | 74 (battle set) | own battle set |
+| Tyranitar | 248 | B | Pokémon HOME | 7,352 | 512 px | 3 | one consistent source |
+| Slowking | 199 | B | Pokémon HOME | 5,572 | 512 px | 4 | one consistent source |
+| Metagross | 376 | B | Pokémon HOME | 5,924 | 512 px | 4 | one consistent source |
+| Salamence | 373 | B | Pokémon HOME | 6,410 | 512 px | 4 | one consistent source |
+| Conkeldurr | 534 | B | Pokémon HOME | 5,826 | 512 px | 4 | one consistent source |
+| Mandibuzz | 630 | B | Pokémon HOME | 7,128 | 512 px | 4 | one consistent source |
+| Revavroom | 966 | B | Pokémon HOME | 19,320 | 512 px | 3 | one consistent source |
+| Sandy Shocks | 989 | B | Pokémon HOME | 23,492 | 512 px | 3 | one consistent source |
+| Cobalion | 638 | B | Pokémon HOME | 6,713 | 512 px | 4 | one consistent source |
+| Gastrodon | 423 | B | Pokémon HOME | 4,486 | 512 px | 4 | one consistent source |
+| Gardevoir | 282 | B | Pokémon HOME | 5,774 | 512 px | 4 | one consistent source |
+| Umbreon | 197 | B | Pokémon HOME | 3,570 | 512 px | 4 | one consistent source |
+| Gyarados | 130 | B | Pokémon HOME | 5,546 | 512 px | 4 | one consistent source |
+| Mamoswine | 473 | B | Pokémon HOME | 5,580 | 512 px | 4 | one consistent source |
+| Talonflame | 663 | B | Pokémon HOME | 6,758 | 512 px | 4 | one consistent source |
+| Hippowdon | 450 | B | Pokémon HOME | 6,710 | 512 px | 4 | one consistent source |
+| Magnezone | 462 | B | Pokémon HOME | 5,414 | 512 px | 4 | one consistent source |
+| Noivern | 715 | B | Pokémon HOME | 8,910 | 512 px | 4 | one consistent source |
+| Empoleon | 395 | B | Pokémon HOME | 5,388 | 512 px | 4 | one consistent source |
+| Krookodile | 553 | B | Pokémon HOME | 5,692 | 512 px | 4 | one consistent source |
+| Armarouge | 936 | B | Pokémon HOME | 8,766 | 512 px | 3 | one consistent source |
+| Suicune | 245 | B | Pokémon HOME | 5,748 | 512 px | 3 | one consistent source |
+| Terrakion | 639 | B | Pokémon HOME | 4,986 | 512 px | 4 | one consistent source |
+| Amoonguss | 591 | B | Pokémon HOME | 4,292 | 512 px | 4 | one consistent source |
+| Reuniclus | 579 | B | Pokémon HOME | 7,130 | 512 px | 3 | gel drawn see-through |
+| Jirachi | 385 | B | Pokémon HOME | 5,516 | 512 px | 4 | one consistent source |
+| Chandelure | 609 | B | Pokémon HOME | 6,776 | 512 px | 4 | glass lamp see-through |
+| Sylveon | 700 | B | Pokémon HOME | 8,350 | 512 px | 4 | one consistent source |
+| Infernape | 392 | B | Pokémon HOME | 7,438 | 512 px | 4 | head flame drawn as fire |
+| Swampert | 260 | B | Pokémon HOME | 6,074 | 512 px | 4 | one consistent source |
+| Scyther | 123 | B | Pokémon HOME | 5,546 | 512 px | 4 | one consistent source |
+| Porygon-Z | 474 | C | Pokémon HOME | 3,492 | 512 px | 4 | segmented body: few bones |
+
 ## Decisions
 
-- **Two sources.** The Pokémon 3D API keeps the six species where it has Scarlet/Violet clip sets (five full battle sets, plus Great Tusk's 84 clips). Everything else uses its Pokémon HOME model (`FROM_HOME` in `monModel.ts`): the four species the API lacks, the three it ships broken, Rotom-Wash (the API only has the base form) and every species it only has as a static rig or with one to four clips. A HOME model with an authored idle and two attacks beats a static rig with procedural motion.
+- **Two sources.** The Pokémon 3D API keeps eight species: the six where it has Scarlet/Violet clip sets (five full battle sets, plus Great Tusk's 84 clips), and Dragonite and Greninja from the expanded pool (grade A, and partners too). Everything else uses its Pokémon HOME model (`FROM_HOME` in `monModel.ts`): the four species the API lacks, the three it ships broken, Rotom-Wash (the API only has the base form) and every species it only has as a static rig or with one to four clips. A HOME model with an authored idle and two attacks beats a static rig with procedural motion.
 - **The broken API files were not broken in the same way at the source.** Gholdengo's "parts apart" is its coin board and coins, a prop that HOME's idle and attack clips keep hidden through `CusAnimVis_*` visibility nodes; the game applies those tracks, so Gholdengo stands without the stray board. Serperior and Quaquaval are complete in HOME.
 - **Fitting happens in the idle pose for real.** Stopping an animation mixer restores the bind pose, which the old fit measured by mistake; the box is now taken while the idle is applied, over visible meshes only. Serperior (a straight pole in its bind pose) and the HOME props stopped shrinking their Pokémon.
 - **Garchomp's Legends Z-A model** (`models/opt/za/445.glb`) was tried and dropped; HOME's is used.

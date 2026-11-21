@@ -47,6 +47,36 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "100% chance to raise the user's Speed by 1."
  },
+ "armorcannon": {
+  "name": "Armor Cannon",
+  "type": "Fire",
+  "category": "Special",
+  "power": 120,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Lowers the user's Defense and Sp. Def by 1."
+ },
+ "aurasphere": {
+  "name": "Aura Sphere",
+  "type": "Fighting",
+  "category": "Special",
+  "power": 80,
+  "accuracy": 0,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "This move does not check accuracy."
+ },
  "banefulbunker": {
   "name": "Baneful Bunker",
   "type": "Poison",
@@ -91,6 +121,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "Uses user's Def stat as Atk in damage calculation."
+ },
+ "bodyslam": {
+  "name": "Body Slam",
+  "type": "Normal",
+  "category": "Physical",
+  "power": 85,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "30% chance to paralyze the target."
  },
  "bravebird": {
   "name": "Brave Bird",
@@ -182,6 +227,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": false,
   "desc": "Raises the user's Sp. Atk and Sp. Def by 1."
  },
+ "chillyreception": {
+  "name": "Chilly Reception",
+  "type": "Ice",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 0,
+  "priority": 0,
+  "contact": false,
+  "spread": true,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "Starts Snow. User switches out."
+ },
  "closecombat": {
   "name": "Close Combat",
   "type": "Fighting",
@@ -197,6 +257,36 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "Lowers the user's Defense and Sp. Def by 1."
  },
+ "courtchange": {
+  "name": "Court Change",
+  "type": "Normal",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": true,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "Swaps user's field effects with the opposing side."
+ },
+ "crunch": {
+  "name": "Crunch",
+  "type": "Dark",
+  "category": "Physical",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "20% chance to lower the target's Defense by 1."
+ },
  "darkpulse": {
   "name": "Dark Pulse",
   "type": "Dark",
@@ -211,6 +301,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "20% chance to make the target flinch."
+ },
+ "dazzlinggleam": {
+  "name": "Dazzling Gleam",
+  "type": "Fairy",
+  "category": "Special",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": true,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "No additional effect. Hits adjacent foes."
  },
  "defog": {
   "name": "Defog",
@@ -332,6 +437,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "Hits twice. Doubles: Tries to hit each foe once."
  },
+ "dragonpulse": {
+  "name": "Dragon Pulse",
+  "type": "Dragon",
+  "category": "Special",
+  "power": 85,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "No additional effect."
+ },
  "drainpunch": {
   "name": "Drain Punch",
   "type": "Fighting",
@@ -361,6 +481,36 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "User recovers 75% of the damage dealt."
+ },
+ "dualwingbeat": {
+  "name": "Dual Wingbeat",
+  "type": "Flying",
+  "category": "Physical",
+  "power": 40,
+  "accuracy": 90,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Hits 2 times in one turn."
+ },
+ "earthpower": {
+  "name": "Earth Power",
+  "type": "Ground",
+  "category": "Special",
+  "power": 90,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "10% chance to lower the target's Sp. Def by 1."
  },
  "earthquake": {
   "name": "Earthquake",
@@ -392,6 +542,66 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": false,
   "desc": "Target repeats its last move for its next 3 turns."
  },
+ "energyball": {
+  "name": "Energy Ball",
+  "type": "Grass",
+  "category": "Special",
+  "power": 90,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "10% chance to lower the target's Sp. Def by 1."
+ },
+ "extremespeed": {
+  "name": "Extreme Speed",
+  "type": "Normal",
+  "category": "Physical",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 2,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Nearly always goes first."
+ },
+ "facade": {
+  "name": "Facade",
+  "type": "Normal",
+  "category": "Physical",
+  "power": 70,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Power doubles if user is burn/poison/paralyzed."
+ },
+ "ficklebeam": {
+  "name": "Fickle Beam",
+  "type": "Dragon",
+  "category": "Special",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Has a 30% chance this move's power is doubled."
+ },
  "fierydance": {
   "name": "Fiery Dance",
   "type": "Fire",
@@ -406,6 +616,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "50% chance to raise the user's Sp. Atk by 1."
+ },
+ "fireblast": {
+  "name": "Fire Blast",
+  "type": "Fire",
+  "category": "Special",
+  "power": 110,
+  "accuracy": 85,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "10% chance to burn the target."
  },
  "firefang": {
   "name": "Fire Fang",
@@ -422,6 +647,36 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "10% chance to burn. 10% chance to flinch."
  },
+ "firepunch": {
+  "name": "Fire Punch",
+  "type": "Fire",
+  "category": "Physical",
+  "power": 75,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "10% chance to burn the target."
+ },
+ "firstimpression": {
+  "name": "First Impression",
+  "type": "Bug",
+  "category": "Physical",
+  "power": 90,
+  "accuracy": 100,
+  "priority": 2,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Nearly always goes first. First turn out only."
+ },
  "flamethrower": {
   "name": "Flamethrower",
   "type": "Fire",
@@ -436,6 +691,51 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "10% chance to burn the target."
+ },
+ "flareblitz": {
+  "name": "Flare Blitz",
+  "type": "Fire",
+  "category": "Physical",
+  "power": 120,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Has 33% recoil. 10% chance to burn. Thaws user."
+ },
+ "flashcannon": {
+  "name": "Flash Cannon",
+  "type": "Steel",
+  "category": "Special",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "10% chance to lower the target's Sp. Def by 1."
+ },
+ "flipturn": {
+  "name": "Flip Turn",
+  "type": "Water",
+  "category": "Physical",
+  "power": 60,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "User switches out after damaging the target."
  },
  "flowertrick": {
   "name": "Flower Trick",
@@ -466,6 +766,36 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "10% chance to lower the target's Sp. Def by 1."
+ },
+ "foulplay": {
+  "name": "Foul Play",
+  "type": "Dark",
+  "category": "Physical",
+  "power": 95,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Uses target's Attack stat in damage calculation."
+ },
+ "futuresight": {
+  "name": "Future Sight",
+  "type": "Psychic",
+  "category": "Special",
+  "power": 120,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Hits two turns after being used."
  },
  "gigadrain": {
   "name": "Giga Drain",
@@ -510,7 +840,7 @@ export const MOVES: Record<string, MoveInfo> = {
   "status": "",
   "powder": false,
   "typeImmunity": true,
-  "desc": "User takes sure-hit 2× damage until its next turn."
+  "desc": "User takes sure-hit 2x damage until its next turn."
  },
  "glare": {
   "name": "Glare",
@@ -526,6 +856,51 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": false,
   "desc": "Paralyzes the target."
+ },
+ "grassknot": {
+  "name": "Grass Knot",
+  "type": "Grass",
+  "category": "Special",
+  "power": 0,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "More power the heavier the target."
+ },
+ "grassyglide": {
+  "name": "Grassy Glide",
+  "type": "Grass",
+  "category": "Physical",
+  "power": 55,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "User on Grassy Terrain: +1 priority."
+ },
+ "gunkshot": {
+  "name": "Gunk Shot",
+  "type": "Poison",
+  "category": "Physical",
+  "power": 120,
+  "accuracy": 80,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "30% chance to poison the target."
  },
  "haze": {
   "name": "Haze",
@@ -557,6 +932,66 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "Lowers the user's Defense and Sp. Def by 1."
  },
+ "healingwish": {
+  "name": "Healing Wish",
+  "type": "Psychic",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 0,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": true,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "User faints. Next hurt Pokemon is fully healed."
+ },
+ "heavyslam": {
+  "name": "Heavy Slam",
+  "type": "Steel",
+  "category": "Physical",
+  "power": 0,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "More power the heavier the user than the target."
+ },
+ "hex": {
+  "name": "Hex",
+  "type": "Ghost",
+  "category": "Special",
+  "power": 65,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Power doubles if the target has a status ailment."
+ },
+ "highhorsepower": {
+  "name": "High Horsepower",
+  "type": "Ground",
+  "category": "Physical",
+  "power": 95,
+  "accuracy": 95,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "No additional effect."
+ },
  "hurricane": {
   "name": "Hurricane",
   "type": "Flying",
@@ -586,6 +1021,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "No additional effect."
+ },
+ "hypervoice": {
+  "name": "Hyper Voice",
+  "type": "Normal",
+  "category": "Special",
+  "power": 90,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": true,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "No additional effect. Hits adjacent foes."
  },
  "icebeam": {
   "name": "Ice Beam",
@@ -617,6 +1067,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "10% chance to freeze the target."
  },
+ "iceshard": {
+  "name": "Ice Shard",
+  "type": "Ice",
+  "category": "Physical",
+  "power": 40,
+  "accuracy": 100,
+  "priority": 1,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Usually goes first."
+ },
  "icespinner": {
   "name": "Ice Spinner",
   "type": "Ice",
@@ -631,6 +1096,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "Ends the effects of terrain."
+ },
+ "iciclecrash": {
+  "name": "Icicle Crash",
+  "type": "Ice",
+  "category": "Physical",
+  "power": 85,
+  "accuracy": 90,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "30% chance to make the target flinch."
  },
  "iciclespear": {
   "name": "Icicle Spear",
@@ -647,6 +1127,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "Hits 2-5 times in one turn."
  },
+ "irondefense": {
+  "name": "Iron Defense",
+  "type": "Steel",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 0,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": true,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "Raises the user's Defense by 2."
+ },
  "ironhead": {
   "name": "Iron Head",
   "type": "Steel",
@@ -662,6 +1157,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "30% chance to make the target flinch."
  },
+ "ivycudgel": {
+  "name": "Ivy Cudgel",
+  "type": "Grass",
+  "category": "Physical",
+  "power": 100,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "High critical hit ratio. Type depends on user's form."
+ },
  "knockoff": {
   "name": "Knock Off",
   "type": "Dark",
@@ -675,7 +1185,7 @@ export const MOVES: Record<string, MoveInfo> = {
   "status": "",
   "powder": false,
   "typeImmunity": true,
-  "desc": "1.5× damage if foe holds an item. Removes item."
+  "desc": "1.5x damage if foe holds an item. Removes item."
  },
  "kowtowcleave": {
   "name": "Kowtow Cleave",
@@ -706,6 +1216,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "Lowers the user's Sp. Atk by 2."
+ },
+ "leechlife": {
+  "name": "Leech Life",
+  "type": "Bug",
+  "category": "Physical",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "User recovers 50% of the damage dealt."
  },
  "leechseed": {
   "name": "Leech Seed",
@@ -767,6 +1292,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "More power the heavier the target."
  },
+ "lusterpurge": {
+  "name": "Luster Purge",
+  "type": "Psychic",
+  "category": "Special",
+  "power": 95,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "50% chance to lower the target's Sp. Def by 1."
+ },
  "machpunch": {
   "name": "Mach Punch",
   "type": "Fighting",
@@ -782,6 +1322,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "Usually goes first."
  },
+ "magmastorm": {
+  "name": "Magma Storm",
+  "type": "Fire",
+  "category": "Special",
+  "power": 100,
+  "accuracy": 75,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Traps and damages the target for 4-5 turns."
+ },
  "makeitrain": {
   "name": "Make It Rain",
   "type": "Steel",
@@ -796,6 +1351,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "Lowers the user's Sp. Atk by 1. Hits foe(s)."
+ },
+ "malignantchain": {
+  "name": "Malignant Chain",
+  "type": "Poison",
+  "category": "Special",
+  "power": 100,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "50% chance to badly poison the target."
  },
  "matchagotcha": {
   "name": "Matcha Gotcha",
@@ -827,6 +1397,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "30% chance to lower the target's Sp. Atk by 1."
  },
+ "morningsun": {
+  "name": "Morning Sun",
+  "type": "Normal",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 0,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": true,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "Heals the user by a weather-dependent amount."
+ },
  "mysticalfire": {
   "name": "Mystical Fire",
   "type": "Fire",
@@ -856,6 +1441,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": false,
   "desc": "Raises the user's Sp. Atk by 2."
+ },
+ "outrage": {
+  "name": "Outrage",
+  "type": "Dragon",
+  "category": "Physical",
+  "power": 120,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Lasts 2-3 turns. Confuses the user afterwards."
  },
  "painsplit": {
   "name": "Pain Split",
@@ -962,6 +1562,81 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "10% chance to lower the target's Sp. Def by 1."
  },
+ "psychicfangs": {
+  "name": "Psychic Fangs",
+  "type": "Psychic",
+  "category": "Physical",
+  "power": 85,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Destroys screens, unless the target is immune."
+ },
+ "psychicnoise": {
+  "name": "Psychic Noise",
+  "type": "Psychic",
+  "category": "Special",
+  "power": 75,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "For 2 turns, the target is prevented from healing."
+ },
+ "psyshock": {
+  "name": "Psyshock",
+  "type": "Psychic",
+  "category": "Special",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Damages target based on Defense, not Sp. Def."
+ },
+ "pyroball": {
+  "name": "Pyro Ball",
+  "type": "Fire",
+  "category": "Physical",
+  "power": 120,
+  "accuracy": 90,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "10% chance to burn the target. Thaws user."
+ },
+ "quickattack": {
+  "name": "Quick Attack",
+  "type": "Normal",
+  "category": "Physical",
+  "power": 40,
+  "accuracy": 100,
+  "priority": 1,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Usually goes first."
+ },
  "quiverdance": {
   "name": "Quiver Dance",
   "type": "Bug",
@@ -1067,6 +1742,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": false,
   "desc": "Revives a fainted Pokemon to 50% HP."
  },
+ "roar": {
+  "name": "Roar",
+  "type": "Normal",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 0,
+  "priority": -6,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "Forces the target to switch to a random ally."
+ },
  "roost": {
   "name": "Roost",
   "type": "Flying",
@@ -1082,6 +1772,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": false,
   "desc": "Heals 50% HP. Flying-type removed 'til turn ends."
  },
+ "ruination": {
+  "name": "Ruination",
+  "type": "Dark",
+  "category": "Special",
+  "power": 0,
+  "accuracy": 90,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Does damage equal to 1/2 target's current HP."
+ },
  "saltcure": {
   "name": "Salt Cure",
   "type": "Rock",
@@ -1096,6 +1801,36 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "Deals 1/8 max HP each turn; 1/4 on Steel, Water."
+ },
+ "scald": {
+  "name": "Scald",
+  "type": "Water",
+  "category": "Special",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "30% chance to burn the target. Thaws target."
+ },
+ "scaleshot": {
+  "name": "Scale Shot",
+  "type": "Dragon",
+  "category": "Physical",
+  "power": 25,
+  "accuracy": 90,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Hits 2-5 times. User: -1 Def, +1 Spe after last hit."
  },
  "shadowball": {
   "name": "Shadow Ball",
@@ -1126,6 +1861,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "Usually goes first."
+ },
+ "shiftgear": {
+  "name": "Shift Gear",
+  "type": "Steel",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 0,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": true,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "Raises the user's Speed by 2 and Attack by 1."
  },
  "slackoff": {
   "name": "Slack Off",
@@ -1171,6 +1921,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "30% chance to poison the target."
+ },
+ "sludgewave": {
+  "name": "Sludge Wave",
+  "type": "Poison",
+  "category": "Special",
+  "power": 95,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": true,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "10% chance to poison adjacent Pokemon."
  },
  "softboiled": {
   "name": "Soft-Boiled",
@@ -1247,6 +2012,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": false,
   "desc": "Hurts foes on switch-in. Factors Rock weakness."
  },
+ "stoneedge": {
+  "name": "Stone Edge",
+  "type": "Rock",
+  "category": "Physical",
+  "power": 100,
+  "accuracy": 80,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "High critical hit ratio."
+ },
  "strengthsap": {
   "name": "Strength Sap",
   "type": "Grass",
@@ -1276,6 +2056,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "User loses 1/4 of its max HP."
+ },
+ "stunspore": {
+  "name": "Stun Spore",
+  "type": "Grass",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 75,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "par",
+  "powder": true,
+  "typeImmunity": false,
+  "desc": "Paralyzes the target."
  },
  "substitute": {
   "name": "Substitute",
@@ -1307,6 +2102,51 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "Usually goes first. Fails if target is not attacking."
  },
+ "superfang": {
+  "name": "Super Fang",
+  "type": "Normal",
+  "category": "Physical",
+  "power": 0,
+  "accuracy": 90,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Does damage equal to 1/2 target's current HP."
+ },
+ "surf": {
+  "name": "Surf",
+  "type": "Water",
+  "category": "Special",
+  "power": 90,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": true,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Hits adjacent Pokemon. Double damage on Dive."
+ },
+ "switcheroo": {
+  "name": "Switcheroo",
+  "type": "Dark",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "User switches its held item with the target's."
+ },
  "swordsdance": {
   "name": "Swords Dance",
   "type": "Normal",
@@ -1322,6 +2162,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": false,
   "desc": "Raises the user's Attack by 2."
  },
+ "tachyoncutter": {
+  "name": "Tachyon Cutter",
+  "type": "Steel",
+  "category": "Special",
+  "power": 50,
+  "accuracy": 0,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Hits twice. This move does not check accuracy."
+ },
  "taunt": {
   "name": "Taunt",
   "type": "Dark",
@@ -1336,6 +2191,36 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": false,
   "desc": "Target can't use status moves its next 3 turns."
+ },
+ "temperflare": {
+  "name": "Temper Flare",
+  "type": "Fire",
+  "category": "Physical",
+  "power": 75,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Power doubles if the user's last move failed."
+ },
+ "terablast": {
+  "name": "Tera Blast",
+  "type": "Normal",
+  "category": "Special",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "If Terastallized: Phys. if Atk > SpA, type = Tera."
  },
  "thunderwave": {
   "name": "Thunder Wave",
@@ -1366,6 +2251,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "10% chance to paralyze the target."
+ },
+ "thunderclap": {
+  "name": "Thunderclap",
+  "type": "Electric",
+  "category": "Special",
+  "power": 70,
+  "accuracy": 100,
+  "priority": 1,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Usually goes first. Fails if target is not attacking."
  },
  "tidyup": {
   "name": "Tidy Up",
@@ -1427,6 +2327,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": false,
   "desc": "Poisons grounded foes on switch-in. Max 2 layers."
  },
+ "trailblaze": {
+  "name": "Trailblaze",
+  "type": "Grass",
+  "category": "Physical",
+  "power": 50,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "100% chance to raise the user's Speed by 1."
+ },
  "transform": {
   "name": "Transform",
   "type": "Normal",
@@ -1441,6 +2356,51 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": false,
   "desc": "Copies target's stats, moves, types, and Ability."
+ },
+ "triattack": {
+  "name": "Tri Attack",
+  "type": "Normal",
+  "category": "Special",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "20% chance to paralyze or burn or freeze target."
+ },
+ "trick": {
+  "name": "Trick",
+  "type": "Psychic",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "User switches its held item with the target's."
+ },
+ "tripleaxel": {
+  "name": "Triple Axel",
+  "type": "Ice",
+  "category": "Physical",
+  "power": 20,
+  "accuracy": 90,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Hits 3 times. Each hit can miss, but power rises."
  },
  "uturn": {
   "name": "U-turn",
@@ -1457,6 +2417,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "User switches out after damaging the target."
  },
+ "vacuumwave": {
+  "name": "Vacuum Wave",
+  "type": "Fighting",
+  "category": "Special",
+  "power": 40,
+  "accuracy": 100,
+  "priority": 1,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Usually goes first."
+ },
  "voltswitch": {
   "name": "Volt Switch",
   "type": "Electric",
@@ -1472,6 +2447,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "typeImmunity": true,
   "desc": "User switches out after damaging the target."
  },
+ "waterfall": {
+  "name": "Waterfall",
+  "type": "Water",
+  "category": "Physical",
+  "power": 80,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "20% chance to make the target flinch."
+ },
  "wavecrash": {
   "name": "Wave Crash",
   "type": "Water",
@@ -1486,6 +2476,21 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": true,
   "desc": "Has 33% recoil."
+ },
+ "whirlwind": {
+  "name": "Whirlwind",
+  "type": "Normal",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 0,
+  "priority": -6,
+  "contact": false,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "Forces the target to switch to a random ally."
  },
  "wildcharge": {
   "name": "Wild Charge",
@@ -1516,6 +2521,36 @@ export const MOVES: Record<string, MoveInfo> = {
   "powder": false,
   "typeImmunity": false,
   "desc": "Burns the target."
+ },
+ "wish": {
+  "name": "Wish",
+  "type": "Normal",
+  "category": "Status",
+  "power": 0,
+  "accuracy": 0,
+  "priority": 0,
+  "contact": false,
+  "spread": false,
+  "self": true,
+  "status": "",
+  "powder": false,
+  "typeImmunity": false,
+  "desc": "Next turn, 50% of the user's max HP is restored."
+ },
+ "woodhammer": {
+  "name": "Wood Hammer",
+  "type": "Grass",
+  "category": "Physical",
+  "power": 120,
+  "accuracy": 100,
+  "priority": 0,
+  "contact": true,
+  "spread": false,
+  "self": false,
+  "status": "",
+  "powder": false,
+  "typeImmunity": true,
+  "desc": "Has 33% recoil."
  }
 };
 export const moveId = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');

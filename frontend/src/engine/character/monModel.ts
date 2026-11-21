@@ -4,7 +4,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { assetUrl, pokemonModel } from '../../assets.js';
 import { ProceduralRig } from './procedural.js';
-import { loadHome, layerOf, type Blink } from './home.js';
+import { loadHome, layerOf, flameOf, flameMaterial, type Blink } from './home.js';
 
 /**
  * Runtime 3D Pokémon from the community Pokémon 3D API: Draco-compressed GLB with WebP textures, fetched
@@ -39,6 +39,9 @@ const FROM_HOME = [
   10009, // Rotom-Wash: the API only has the base form
   445, 94, 635, 823, 908, 959, 980, 858, 478, 184, 36, 1006, 286, 925, 637, 748, 778, 132, 302, // static or rigless there
   998, 887, 212, 903, 923, // one to four clips there
+  // Expanded pool: HOME for one consistent look (authored idle, physical and special clips, blinking eyes).
+  // Dragonite (149) and Greninja (658) keep their grade-A API models.
+  472, 145, 146, 491, 646, 1021, 994, 1003, 815, 730, 812, 889, 905, 1025, 1017, 1023, 901, 1005, 485, 381, 647, 1014, 461, 1019, 227, 920, 988, 530, 248, 199, 376, 373, 534, 630, 966, 989, 638, 423, 282, 197, 130, 473, 663, 450, 462, 715, 395, 553, 936, 245, 639, 591, 579, 385, 609, 700, 392, 260, 123, 474,
 ];
 for (const dex of FROM_HOME) PLAN[dex] = { ...PLAN[dex], use: 'home' };
 /** National Dex numbers use the API unless planned otherwise; alternate forms (artwork ids above 1025) need a plan. */
@@ -175,7 +178,9 @@ function alphaKind(tex: THREE.Texture): 'opaque' | 'cutout' {
   return kind;
 }
 
-function upgradeMaterial(src: THREE.Material, metal: RegExp | undefined): THREE.MeshStandardMaterial {
+function upgradeMaterial(src: THREE.Material, metal: RegExp | undefined): THREE.Material {
+  const flame = flameOf.get(src);
+  if (flame) return flameMaterial(flame, src.name);
   const s = src as THREE.MeshStandardMaterial;
   const m = s.isMeshStandardMaterial ? (s.clone() as THREE.MeshStandardMaterial) : new THREE.MeshStandardMaterial({
     name: src.name, map: s.map ?? null, color: s.color?.clone() ?? new THREE.Color('#ffffff'), alphaMap: s.alphaMap ?? null,
@@ -187,7 +192,10 @@ function upgradeMaterial(src: THREE.Material, metal: RegExp | undefined): THREE.
   m.roughness = isMetal ? 0.32 : THREE.MathUtils.clamp(m.roughness ?? 0.7, 0.42, 0.85);
   // Bodies flagged as blended: opaque unless the alpha is a real cut-out mask (then alpha-tested, smooth
   // with MSAA through alpha to coverage). Genuine effects (flames, auras) keep blending.
-  if ((m.transparent || m.alphaTest > 0) && m.opacity >= 0.99 && !/(fire|flame|effect|glow|aura|smoke|ghost)/i.test(src.name)) {
+  if (/uniran/i.test(src.name) && m.map) {
+    // HOME's gel and glass shader (Reuniclus' cell, Chandelure's lamp, Kyurem's ice): see-through for real.
+    m.transparent = true; m.depthWrite = false; m.alphaTest = 0;
+  } else if ((m.transparent || m.alphaTest > 0) && m.opacity >= 0.99 && !/(fire|flame|effect|glow|aura|smoke|ghost)/i.test(src.name)) {
     const cut = m.map ? alphaKind(m.map) === 'cutout' : false;
     m.transparent = false; m.depthWrite = true;
     m.alphaTest = cut ? 0.5 : 0; m.alphaToCoverage = cut;
@@ -232,6 +240,7 @@ function instance(src: Source, height: number, metal?: RegExp): MonModel {
       return c;
     });
     m.material = Array.isArray(m.material) ? list : list[0];
+    if (list.some(x => x.userData.flame)) m.castShadow = false;
   });
   model.updateMatrixWorld(true);
   // Measure in the idle pose: some models (single-clip ones especially) have a bind pose far from how
@@ -341,7 +350,7 @@ export function auditModel(m: MonModel) {
   return { tris: Math.round(tris), maxTex, bones, clips: m.clips.length, battleSet, materials: m.materials.length, grade };
 }
 
-type MatState = { color: THREE.Color | null; emissive: THREE.Color | null; opacity: number; transparent: boolean };
+type MatState = { color: THREE.Color | null; emissive: THREE.Color | null; opacity: number; transparent: boolean; depthWrite: boolean };
 type Act = THREE.AnimationAction & { hold?: boolean };
 
 /**
@@ -390,7 +399,7 @@ export class MonBody {
     }
     for (const mat of model.materials) {
       const m = mat as THREE.MeshStandardMaterial;
-      this.base.set(mat, { color: m.color ? m.color.clone() : null, emissive: m.emissive ? m.emissive.clone() : null, opacity: m.opacity, transparent: m.transparent });
+      this.base.set(mat, { color: m.color ? m.color.clone() : null, emissive: m.emissive ? m.emissive.clone() : null, opacity: m.opacity, transparent: m.transparent, depthWrite: m.depthWrite });
       if (m.map && model.blink?.eyes.includes(m.name.slice(m.name.indexOf('-') + 1))) {
         m.map = m.map.clone();
         this.eyes.push({ tex: m.map, x: m.map.offset.x, y: m.map.offset.y });
@@ -532,7 +541,7 @@ export class MonBody {
       const fade = this.opacity < 0.999;
       if (m.transparent !== (fade || b.transparent)) { m.transparent = fade || b.transparent; m.needsUpdate = true; }
       m.opacity = b.opacity * this.opacity;
-      m.depthWrite = !fade;
+      m.depthWrite = !fade && b.depthWrite;
     }
   }
 
