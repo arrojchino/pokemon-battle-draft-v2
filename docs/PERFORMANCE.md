@@ -10,7 +10,7 @@ Target: 60 fps on reasonably modern desktop GPUs, smooth on high-refresh display
 - Environment animation is shader-driven: LED boards, crowd flashes, stars, light shafts, motes, the field pulse.
 - Characters that are not on screen are hidden and skip all work.
 - three.js loads as a lazy chunk; the UI paints first.
-- Pokémon models download at runtime, once per species (partners are 60 KB to 2 MB; some battling species are up to 11 MB), and every instance clones the cached download, so geometry and textures are shared. Until a battling Pokémon's model arrives, its artwork projection is shown. Effects are synthesized; only partner cries are fetched, once each.
+- Pokémon models download at runtime, once per species (partners are 3.4 to 15 MB, mostly animation data; battling species range from 60 KB to 11 MB), and every instance clones the cached download, so geometry and textures are shared. Until a model arrives, its artwork stands in (a card for partners, the projection for battling Pokémon). Effects are synthesized; only partner cries are fetched, once each.
 
 ## Quality tiers
 

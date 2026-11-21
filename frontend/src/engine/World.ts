@@ -8,7 +8,7 @@ import type { CharacterId, CoinSide } from '@shared';
 import { DEFAULT_CHARACTER, characterById, type Emote } from '../characters/roster.js';
 import { CameraDirector, type Shot } from './CameraDirector.js';
 import { MonRig } from './character/MonRig.js';
-import { hasModel, loadMonModel } from './character/monModel.js';
+import { MON_RIM, hasModel, loadMonModel } from './character/monModel.js';
 import { Emitter, type WorldEvents } from './events.js';
 import { AdaptiveQuality, EFFECTS, TIERS, initialTier, stepTier, type EffectsLevel, type QualityPref, type QualityTier, type RenderScale } from './quality.js';
 import { GradeShader } from './post/GradeShader.js';
@@ -77,6 +77,8 @@ export class World {
   private rigs = new Map<string, MonRig>();
   private loading = new Map<string, Promise<MonRig | null>>();
   private lastCry = new Map<string, number>();
+  private prepared = new Set<number>();
+  private rimWhite = new THREE.Color('#dfe8ff');
   private hitboxes = new Map<string, THREE.Mesh>();
   private layout: Layout | null = null;
   private slots: Slot[] = [];
@@ -332,6 +334,18 @@ export class World {
 
   isLoaded(id: CharacterId) { return this.rigs.has(id); }
 
+  /**
+   * Get battling Pokémon ready before they are sent out: download each model and compile its shaders
+   * against this scene now, so a switch-in never waits on the network or stalls a frame compiling.
+   */
+  prepareMons(dexes: number[]) {
+    for (const dex of dexes) {
+      if (this.prepared.has(dex) || !hasModel(dex)) continue;
+      this.prepared.add(dex);
+      void loadMonModel(dex, 1.2).then(m => this.renderer.compileAsync(m.root, this.camera, this.scene).finally(() => { for (const mat of m.materials) mat.dispose(); })).catch(() => this.prepared.delete(dex));
+    }
+  }
+
   // ---------------------------------------------------------------- layout & camera
   setLayout(layout: Layout) {
     const changed = JSON.stringify(layout) !== JSON.stringify(this.layout);
@@ -500,6 +514,8 @@ export class World {
     this.atmosphere.setAccent(this.accent);
     this.stadium.setAccent(this.accent);
     this.rimA.color.copy(this.accent);
+    // Pokémon rim light: the stadium's cool white, warmed by the partner's colour.
+    MON_RIM.color.value.copy(this.rimWhite).lerp(this.accent, 0.35);
 
     // Gaze: the pointer ray meets a plane just in front of the stage; idle pointers hand gaze back to the camera.
     this.pointerIdle += dt;

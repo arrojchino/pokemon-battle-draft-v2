@@ -61,7 +61,8 @@ export function createStageBridge(world: World, mySide: SideId, mine: Character,
         react((1 - s) as 0 | 1, 'excited', true);
         break;
       }
-      default: break; // turn/end: the match screen handles results and series reactions
+      case 'end': if (fx.winner !== null) world.battle.victory(stageSide(fx.winner)); break;
+      default: break; // turn: the match screen handles results and series reactions
     }
   };
 }

@@ -56,11 +56,11 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 
 const a = client('a'), b = client('b');
 await connect(a); await connect(b);
-a.send({ type: 'create', name: 'Ana', bestOf: 3, avatar: 'pikachu', mode: 'app' });
+a.send({ type: 'create', name: 'Ana', bestOf: 3, avatar: 'greninja', mode: 'app' });
 await until(() => a.state, 'create');
 assert.equal(a.state.mode, 'app');
 const code = a.state.code;
-b.send({ type: 'join', code, name: 'Beto', avatar: 'eevee' });
+b.send({ type: 'join', code, name: 'Beto', avatar: 'fuecoco' });
 await until(() => a.state.players[1], 'join');
 
 let forfeited = 0, reconnected = false, timerChecked = false, g1Winner = -1;

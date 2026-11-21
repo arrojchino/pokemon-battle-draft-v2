@@ -144,7 +144,17 @@ export function recipeFor(move: string, type: TypeName, category: 'Physical' | '
   return SPECIAL_BY_TYPE[type] ?? { kind: 'orb', size: 1.2, arc: 0.2 };
 }
 
-/** Seconds from the move line until its hit lands, per recipe (the damage line waits for this). */
+/**
+ * Anticipation before a move's effect starts: the attacker winds up (crouch, rear back, the model's own
+ * attack clip leading in) so every move reads as wind-up, strike and recovery. Self moves start at once.
+ */
+export function windup(r: Recipe): number {
+  return r.kind === 'self' ? 0 : r.kind === 'dash' ? 0.3 : 0.42;
+}
+/** Seconds from the move line until its hit lands, wind-up included (the damage line waits for this). */
+export const impactLead = (r: Recipe) => windup(r) + impactDelay(r);
+
+/** Seconds from the start of the effect until its hit lands, per recipe. */
 export function impactDelay(r: Recipe): number {
   switch (r.kind) {
     case 'dash': return r.fast ? 0.26 : 0.4;

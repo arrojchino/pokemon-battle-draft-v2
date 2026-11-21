@@ -5,8 +5,8 @@
  * validate `avatar` messages.
  */
 export const CHARACTER_IDS = [
-  'pikachu', 'eevee', 'charizard', 'blastoise', 'venusaur', 'gengar', 'umbreon',
-  'snorlax', 'lapras', 'mimikyu', 'dragonite', 'greninja', 'mewtwo', 'fuecoco',
+  'greninja', 'dragonite', 'mewtwo', 'lugia', 'feraligatr', 'flygon', 'fuecoco',
+  'marill', 'gimmighoul', 'fluttermane', 'toxel', 'kingambit', 'thwackey', 'eiscue',
 ] as const;
 export type CharacterId = typeof CHARACTER_IDS[number];
 

@@ -35,22 +35,22 @@ await until(() => ana.hello, 'hello');
 assert.equal(ana.hello.protocol, 4);
 
 // A v3-style create (no visibility) is private and never listed.
-ana.send({ type: 'create', name: 'Ana', bestOf: 3, avatar: 'pikachu', mode: 'app' });
+ana.send({ type: 'create', name: 'Ana', bestOf: 3, avatar: 'greninja', mode: 'app' });
 await until(() => ana.state, 'create private');
 assert.equal(ana.state.visibility, 'private');
 assert.ok(!listed(await list(eve), ana.state.code), 'private rooms are not listed');
 
 // Public rooms are listed, longest-waiting first, with host, partner, series and battle mode.
-beto.send({ type: 'create', name: 'Beto', bestOf: 5, avatar: 'lapras', mode: 'app', visibility: 'public' });
+beto.send({ type: 'create', name: 'Beto', bestOf: 5, avatar: 'lugia', mode: 'app', visibility: 'public' });
 await until(() => beto.state, 'create public');
 await wait(5);
-cleo.send({ type: 'create', name: 'Cleo', bestOf: 3, avatar: 'eevee', mode: 'showdown', visibility: 'public' });
+cleo.send({ type: 'create', name: 'Cleo', bestOf: 3, avatar: 'fuecoco', mode: 'showdown', visibility: 'public' });
 await until(() => cleo.state, 'create public 2');
 assert.equal(beto.state.visibility, 'public');
 let l = await list(eve);
 const entry = l.lobbies.find(x => x.code === beto.state.code);
 assert.ok(entry, 'public room is listed');
-assert.deepEqual({ ...entry, createdAt: 0 }, { code: beto.state.code, host: 'Beto', avatar: 'lapras', bestOf: 5, mode: 'app', createdAt: 0, players: 1 });
+assert.deepEqual({ ...entry, createdAt: 0 }, { code: beto.state.code, host: 'Beto', avatar: 'lugia', bestOf: 5, mode: 'app', createdAt: 0, players: 1 });
 assert.ok(l.now >= entry.createdAt && l.now - entry.createdAt < 10_000, 'createdAt is on the server clock');
 const codes = l.lobbies.map(x => x.code);
 assert.ok(codes.indexOf(beto.state.code) < codes.indexOf(cleo.state.code), 'oldest first');
@@ -68,12 +68,12 @@ await listUntil(eve, x => listed(x, cleoCode), 'returning host listed');
 // Quick join takes the longest-waiting open lobby, and a full room leaves the list.
 const oldest = (await list(eve)).lobbies[0];
 assert.equal(oldest.code, beto.state.code, 'Beto has waited longest (run against a server with no other public lobbies)');
-dani.send({ type: 'quick', name: 'Dani', avatar: 'charizard', bestOf: 3, mode: 'showdown' });
+dani.send({ type: 'quick', name: 'Dani', avatar: 'dragonite', bestOf: 3, mode: 'showdown' });
 await until(() => dani.joined && dani.state, 'quick join');
 assert.equal(dani.state.code, beto.state.code);
 assert.equal(dani.joined.seat, 1);
 await until(() => beto.state.players[1]?.name === 'Dani', 'host sees the guest');
-assert.equal(beto.state.players[1].avatar, 'charizard');
+assert.equal(beto.state.players[1].avatar, 'dragonite');
 assert.ok(!listed(await list(eve), beto.state.code), 'full rooms are not listed');
 
 eve.send({ type: 'quick', name: 'Eve', avatar: null, bestOf: 5, mode: 'app' });
@@ -81,12 +81,12 @@ await until(() => eve.joined, 'quick join 2');
 assert.equal(eve.state.code, cleoCode);
 
 // With nothing open, quick join opens a public lobby with the requested settings; seat names fill in blanks.
-fox.send({ type: 'quick', name: '', avatar: 'snorlax', bestOf: 5, mode: 'app' });
+fox.send({ type: 'quick', name: '', avatar: 'marill', bestOf: 5, mode: 'app' });
 await until(() => fox.joined && fox.state, 'quick create');
 assert.equal(fox.joined.seat, 0);
 assert.deepEqual([fox.state.visibility, fox.state.bestOf, fox.state.mode, fox.state.players[0].name], ['public', 5, 'app', 'Player 1']);
 assert.ok(listed(await list(gus), fox.state.code), 'quick-created lobby is listed');
-gus.send({ type: 'quick', avatar: 'gengar' });
+gus.send({ type: 'quick', avatar: 'gimmighoul' });
 await until(() => gus.joined, 'quick join 3');
 assert.equal(gus.state.code, fox.state.code);
 assert.equal(gus.state.players[1].name, 'Player 2');

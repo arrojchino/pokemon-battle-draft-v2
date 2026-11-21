@@ -1,0 +1,60 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Model audit</title>
+<style>
+body{margin:0;background:#0b1020;color:#cfd8ff;font:12px system-ui}
+#grid{display:grid;grid-template-columns:repeat(var(--cols,8),1fr);gap:4px;padding:4px}
+.cell{position:relative;height:var(--h,200px);background:#131a33;border-radius:6px}
+.cell b{position:absolute;left:6px;top:4px;font-size:12px}
+.cell i{position:absolute;left:6px;bottom:4px;font-style:normal;font-size:10px;color:#8fa0d8;right:6px;line-height:1.3}
+.cell.A b{color:#7dffb0}.cell.B b{color:#ffd23f}.cell.C b{color:#ff9b6a}.cell.F b{color:#ff4d6d}
+canvas{position:fixed;inset:0;pointer-events:none}
+</style></head>
+<body><div id="grid"></div><script type="module">
+// QA contact sheet (dev server only, not part of the build): loads each species through the game's own
+// loader and MonBody and reports what the asset really contains, so models can be graded and regressions
+// spotted. ?ids=25,133 picks species, ?src=regular|za picks the folder, ?act=attack01 loops an action.
+import * as THREE from 'three';
+import { loadMonModel, MonBody, auditModel } from '/pokemon-battle-draft-v2/src/engine/character/monModel.ts';
+const q = new URLSearchParams(location.search);
+const ids = (q.get('ids') || '1000,984,1006,983,980,959,977,979,908,911,914,934,998,887,823,479,445,184,637,286,94,497,861,635,925,132,903,748,36,212,992,1013,778,858,478,923,941,302').split(',').map(Number);
+const act = q.get('act');
+document.documentElement.style.setProperty('--cols', q.get('cols') || '8');
+document.documentElement.style.setProperty('--h', (q.get('h') || '200') + 'px');
+const grid = document.getElementById('grid');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setPixelRatio(1); renderer.setSize(innerWidth, innerHeight); document.body.appendChild(renderer.domElement);
+renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.NeutralToneMapping;
+const pm = new THREE.PMREMGenerator(renderer); const envScene = new THREE.Scene(); envScene.background = new THREE.Color('#3a4a7a');
+const env = pm.fromScene(envScene, 0.04).texture;
+const cells = []; window.__audit = [];
+for (const id of ids) {
+  const el = document.createElement('div'); el.className = 'cell';
+  const b = document.createElement('b'); b.textContent = String(id); const info = document.createElement('i'); info.textContent = 'loading';
+  el.append(b, info); grid.appendChild(el);
+  const scene = new THREE.Scene(); scene.environment = env; scene.environmentIntensity = 0.5;
+  scene.add(new THREE.HemisphereLight('#dfe8ff', '#202436', 1.2)); const d = new THREE.DirectionalLight('#ffffff', 2.4); d.position.set(2, 4, 3); scene.add(d);
+  const cam = new THREE.PerspectiveCamera(30, 1, 0.01, 100); cam.position.set(0, 0.75, 4.4); cam.lookAt(0, 0.62, 0);
+  const cell = { el, scene, cam, body: null }; cells.push(cell);
+  const t0 = performance.now();
+  loadMonModel(id, 1.3).then(m => {
+    const body = new MonBody(m); cell.body = body; scene.add(body.root);
+    body.root.rotation.y = 0.5;
+    if (act) setInterval(() => body.act(act.split('|')), 2600);
+    const a = { id, ms: Math.round(performance.now() - t0), ...auditModel(m) };
+    window.__audit.push(a);
+    el.classList.add(a.grade);
+    b.textContent = `${id} · ${a.grade}`;
+    info.textContent = `${a.tris} tris · tex ${a.maxTex}px · ${a.bones} bones · ${a.clips} clips${a.battleSet ? ' (battle set)' : ''} · ${a.materials} mats`;
+  }, e => { el.classList.add('F'); b.textContent = `${id} · F`; info.textContent = 'missing: ' + String(e.message || e).slice(0, 60); window.__audit.push({ id, grade: 'F', error: String(e.message || e) }); });
+}
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  renderer.setScissorTest(false); renderer.clear(); renderer.setScissorTest(true);
+  for (const c of cells) {
+    c.body?.update(dt);
+    const r = c.el.getBoundingClientRect(); if (r.bottom < 0 || r.top > innerHeight) continue;
+    const y = innerHeight - r.bottom;
+    renderer.setViewport(r.left, y, r.width, r.height); renderer.setScissor(r.left, y, r.width, r.height);
+    c.cam.aspect = r.width / r.height; c.cam.updateProjectionMatrix(); renderer.render(c.scene, c.cam);
+  }
+});
+</script></body></html>

@@ -3,7 +3,7 @@ import { createRoom, reduce, seatGuest, seatForToken, publicView, type RoomState
 
 const rng = (side: 'heads' | 'tails' = 'heads'): Rng => { let x = 0.123; return { coin: () => side, float: () => (x = (x * 9301 + 49297) % 233280 / 233280) }; };
 const fixed = (float: number): Rng => ({ coin: () => 'heads', float: () => float });
-const host = { name: 'Ana', token: 'tok-a', avatar: 'pikachu' as const };
+const host = { name: 'Ana', token: 'tok-a', avatar: 'greninja' as const };
 const guest = { name: 'Beto', token: 'tok-b', avatar: null };
 
 /** Seated room; `caller` overrides the random first caller so each test reads deterministically. */
@@ -93,7 +93,7 @@ describe('room reducer', () => {
     const s = seated(0);
     const before = JSON.stringify(s);
     apply(s, 0, { type: 'call', side: 'heads' });
-    apply(s, 0, { type: 'avatar', avatar: 'eevee' });
+    apply(s, 0, { type: 'avatar', avatar: 'fuecoco' });
     expect(JSON.stringify(s)).toBe(before);
   });
 
@@ -111,7 +111,7 @@ describe('room reducer', () => {
     const v = publicView(seated(), [true, false], 2, 0);
     const text = JSON.stringify(v);
     expect(text.includes('tok-a') || text.includes('tok-b')).toBe(false);
-    expect(v.players[0]).toEqual({ name: 'Ana', avatar: 'pikachu', connected: true });
+    expect(v.players[0]).toEqual({ name: 'Ana', avatar: 'greninja', connected: true });
     expect(v.players[1]!.connected).toBe(false);
     expect(v.protocol).toBe(2);
   });

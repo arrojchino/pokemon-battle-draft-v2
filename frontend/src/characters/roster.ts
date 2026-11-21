@@ -25,23 +25,28 @@ const partner = (id: CharacterId, name: string, dex: number, types: TypeName[], 
   personality: { on: { select: 'greet', hover: 'nod', tossWin: 'excited', tossLose: 'surprised', gameWin: 'victory', gameLose: 'sad', seriesWin: 'victory', attack: 'punch', ...on } },
 });
 
-/** Partner Pokémon. Dex numbers and types are the official ones; quips are original. */
+/**
+ * Partner Pokémon. Every one is a Switch-era rig with a full battle clip set (idle, attack, damage,
+ * faint), so the Pokémon you look at most is always among the best-looking ones: thirteen grade A and
+ * Lugia grade B for its 512 px textures (docs/ASSET_AUDIT.md). Dex numbers and types are the official
+ * ones; quips are original.
+ */
 export const ROSTER: Character[] = [
-  partner('pikachu', 'Pikachu', 25, ['Electric'], '#ffd23f', '#a37b00', 'Cheeks charged, tail up, ready for anything.', { select: 'excited' }),
-  partner('eevee', 'Eevee', 133, ['Normal'], '#e0a56b', '#7a4a22', 'Hasn\u2019t picked an evolution. Has picked a side.', { tossWin: 'twirl' }),
-  partner('charizard', 'Charizard', 6, ['Fire', 'Flying'], '#ff7a2f', '#8a2f05', 'The tail flame burns brighter before a big match.', { select: 'punch', gameWin: 'punch' }),
-  partner('blastoise', 'Blastoise', 9, ['Water'], '#4f8cff', '#163c8c', 'Two cannons, zero hesitation.', { select: 'nod' }),
-  partner('venusaur', 'Venusaur', 3, ['Grass', 'Poison'], '#62d26f', '#1f6b2a', 'Patient as a forest. Twice as stubborn.', { select: 'bow', gameWin: 'bow' }),
-  partner('gengar', 'Gengar', 94, ['Ghost', 'Poison'], '#9a6bff', '#3d1f7a', 'Grins in the dark. Grins wider when you lose.', { tossLose: 'thinking', gameLose: 'faceplant' }),
-  partner('umbreon', 'Umbreon', 197, ['Dark'], '#f5c542', '#5c4508', 'Rings glow when the stadium lights go down.', { select: 'nod' }),
-  partner('snorlax', 'Snorlax', 143, ['Normal'], '#3fb5c4', '#145861', 'Will wake up for a final. Probably.', { select: 'nod', tossLose: 'faceplant' }),
-  partner('lapras', 'Lapras', 131, ['Water', 'Ice'], '#5ec8e5', '#1a5f73', 'Carries the whole team across rough water.', { select: 'bow' }),
-  partner('mimikyu', 'Mimikyu', 778, ['Ghost', 'Fairy'], '#f2d36b', '#6f5a12', 'The disguise is holding. Mostly.', { tossWin: 'twirl', gameLose: 'faceplant' }),
-  partner('dragonite', 'Dragonite', 149, ['Dragon', 'Flying'], '#ffa94d', '#7a4310', 'Gentle until the bell rings.', { tossWin: 'victory' }),
   partner('greninja', 'Greninja', 658, ['Water', 'Dark'], '#3d7bff', '#10275c', 'Already three moves ahead of you.', { select: 'nod', attack: 'punch' }),
+  partner('dragonite', 'Dragonite', 149, ['Dragon', 'Flying'], '#ffa94d', '#7a4310', 'Gentle until the bell rings.', { tossWin: 'victory' }),
   partner('mewtwo', 'Mewtwo', 150, ['Psychic'], '#c39bff', '#4b2a7a', 'Studied every possible draft. Twice.', { select: 'nod', tossWin: 'nod', gameWin: 'thumbs' }),
+  partner('lugia', 'Lugia', 249, ['Psychic', 'Flying'], '#b9c8ff', '#34407a', 'Calms the storm, then wins the match.', { select: 'bow', gameWin: 'bow' }),
+  partner('feraligatr', 'Feraligatr', 160, ['Water'], '#4f9dff', '#12407a', 'Bites first. Asks questions never.', { select: 'excited', attack: 'punch' }),
+  partner('flygon', 'Flygon', 330, ['Ground', 'Dragon'], '#7be06a', '#1e5a1a', 'Kicks up a sandstorm and calls it strategy.', { tossWin: 'twirl' }),
   partner('fuecoco', 'Fuecoco', 909, ['Fire'], '#ff5a3c', '#7a1a0b', 'Eats first, battles second, wins third.', { select: 'excited' }),
+  partner('marill', 'Marill', 183, ['Water', 'Fairy'], '#4fb4ff', '#154c7a', 'Small, round, and absolutely sure of itself.', { select: 'excited', tossLose: 'faceplant' }),
+  partner('gimmighoul', 'Gimmighoul', 999, ['Ghost'], '#f5c542', '#6b4a0a', 'Guards its coins harder than your lead.', { tossLose: 'thinking', gameLose: 'faceplant' }),
+  partner('fluttermane', 'Flutter Mane', 987, ['Ghost', 'Fairy'], '#d36bff', '#4c1a6b', 'An ancient wail with modern timing.', { select: 'twirl' }),
+  partner('toxel', 'Toxel', 848, ['Electric', 'Poison'], '#b07cff', '#3d1d6b', 'Tiny, grumpy and full of sparks.', { select: 'excited', gameLose: 'faceplant' }),
+  partner('kingambit', 'Kingambit', 983, ['Dark', 'Steel'], '#e04848', '#5a1010', 'Leads from the front. Every time.', { select: 'nod', tossWin: 'nod', gameWin: 'thumbs' }),
+  partner('thwackey', 'Thwackey', 811, ['Grass'], '#8fd14f', '#2f5a12', 'Keeps the beat, keeps the pressure.', { select: 'excited', tossWin: 'twirl' }),
+  partner('eiscue', 'Eiscue', 875, ['Ice'], '#7fd8ff', '#1d5a7a', 'Keeps a cool head. Literally.', { select: 'bow', tossLose: 'faceplant' }),
 ];
 
 export const characterById = (id: CharacterId | null | undefined) => ROSTER.find(c => c.id === id) ?? null;
-export const DEFAULT_CHARACTER: CharacterId = 'pikachu';
+export const DEFAULT_CHARACTER: CharacterId = 'greninja';

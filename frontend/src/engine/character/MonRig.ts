@@ -20,8 +20,8 @@ const bell = (u: number) => Math.sin(u * Math.PI);
  */
 const MOTIONS: Record<Exclude<Emote, 'idle'>, Motion> = {
   greet: { dur: 0.9, clip: ['notice01', 'glad01'], f: (u, o) => { o.y = hop(u, 2, 0.12); o.rz = Math.sin(u * Math.PI * 2) * 0.07; } },
-  nod: { dur: 0.5, clip: ['defaultidle01'], f: (u, o) => { o.sy = 1 - 0.05 * bell(u); o.rx = 0.12 * bell(u); } },
-  bow: { dur: 0.9, clip: ['defaultidle01'], f: (u, o) => { o.rx = 0.3 * bell(u); o.sy = 1 - 0.04 * bell(u); } },
+  nod: { dur: 0.5, f: (u, o) => { o.sy = 1 - 0.05 * bell(u); o.rx = 0.12 * bell(u); } },
+  bow: { dur: 0.9, f: (u, o) => { o.rx = 0.3 * bell(u); o.sy = 1 - 0.04 * bell(u); } },
   thumbs: { dur: 0.7, clip: ['glad01'], f: (u, o) => { o.y = hop(u, 1, 0.2); o.sy = 1 + 0.06 * Math.sin(u * Math.PI * 2); } },
   excited: { dur: 1.0, clip: ['glad01', 'roar01'], f: (u, o) => { o.y = hop(u, 3, 0.14); o.rz = Math.sin(u * Math.PI * 3) * 0.05; } },
   surprised: { dur: 0.6, clip: ['notice01'], f: (u, o) => { o.z = -0.16 * bell(u); o.y = 0.1 * bell(u); o.x = Math.sin(u * 60) * 0.025 * (1 - u); } },
@@ -30,7 +30,7 @@ const MOTIONS: Record<Exclude<Emote, 'idle'>, Motion> = {
   punch: { dur: 0.55, clip: ['attack01', 'rangeattack01'], f: (u, o) => { o.z = 0.3 * (u < 0.3 ? u / 0.3 : 1 - (u - 0.3) / 0.7); o.rx = -0.12 * bell(u); } },
   victory: { dur: 1.4, clip: ['glad01', 'roar01'], f: (u, o) => { o.ry = easeInOutCubic(u) * Math.PI * 2; o.y = hop(u, 2, 0.2); } },
   twirl: { dur: 1.0, clip: ['glad01'], f: (u, o) => { o.ry = easeInOutCubic(u) * Math.PI * 2; } },
-  faceplant: { dur: 2.0, clip: ['damage02', 'damage01'], f: (u, o) => { const k = u < 0.2 ? u / 0.2 : u < 0.75 ? 1 : 1 - (u - 0.75) / 0.25; o.rx = 1.0 * easeInOutCubic(k); o.y = -0.03 * k; } },
+  faceplant: { dur: 2.0, clip: ['down01_start', 'damage02', 'damage01'], f: (u, o) => { const k = u < 0.2 ? u / 0.2 : u < 0.75 ? 1 : 1 - (u - 0.75) / 0.25; o.rx = 1.0 * easeInOutCubic(k); o.y = -0.03 * k; } },
 };
 
 let shadowTex: THREE.Texture | null = null;
@@ -64,6 +64,8 @@ export class MonRig {
   private burst: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
   private burstT = 1;
   private motion: { m: Motion; t: number; k: number } | null = null;
+  private upTimer = 0;
+  private lookWorld = new THREE.Vector3();
   private off: Off = { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0, sy: 1 };
   private appear = 0; private appearTarget = 0; private appearV = { v: 0 };
   private yaw = 0; private yawTarget = 0;
@@ -104,9 +106,20 @@ export class MonRig {
     if (e === 'idle') { this.motion = null; return; }
     if (this.reducedMotion && (e === 'twirl' || e === 'victory' || e === 'faceplant')) e = 'thumbs';
     const m = MOTIONS[e];
-    const clipDur = m.clip && this.body?.animated ? this.body.act(m.clip) : 0;
-    // With an authored clip the procedural motion is a light accent (a spin stays a full spin).
-    this.motion = { m, t: 0, k: clipDur ? (e === 'victory' || e === 'twirl' ? 1 : 0.3) : 1 };
+    const b = this.body;
+    // A collapse holds on the floor for a beat, then the model gets back up with its own clip.
+    const down = e === 'faceplant' && !!b?.has(['down01_start']);
+    const clipDur = m.clip && b?.animated ? b.act(down ? ['down01_start'] : m.clip, { hold: down }) : 0;
+    if (down) { window.clearTimeout(this.upTimer); this.upTimer = window.setTimeout(() => { b!.act(['down01_end']); }, 1500); }
+    // Body language on top for every model: a cheer, a flinch, a lunge.
+    if (b) {
+      if (e === 'excited' || e === 'victory' || e === 'thumbs' || e === 'greet' || e === 'twirl') b.pulse('cheer');
+      else if (e === 'surprised' || e === 'sad') b.pulse('hit');
+      else if (e === 'punch') b.pulse('attack', 0.3);
+    }
+    // With an authored clip the procedural motion is a light accent (a spin stays a full spin; a collapse
+    // is all clip).
+    this.motion = { m, t: 0, k: clipDur ? (e === 'victory' || e === 'twirl' ? 1 : down ? 0 : 0.3) : 1 };
   }
 
   setVisible(v: boolean, instant = false) {
@@ -127,12 +140,14 @@ export class MonRig {
   }
 
   lookAt(world: THREE.Vector3) {
+    this.lookWorld.copy(world);
     this.root.updateMatrixWorld();
     this.invRoot.copy(this.root.matrixWorld).invert();
     this.lookLocal.copy(world).applyMatrix4(this.invRoot);
     const yaw = Math.atan2(this.lookLocal.x, Math.max(0.2, this.lookLocal.z));
     // A model turns a little toward its target; the artwork card turns fully to stay readable.
-    this.yawTarget = this.card ? Math.atan2(this.lookLocal.x, this.lookLocal.z) : THREE.MathUtils.clamp(yaw, -0.45, 0.45);
+    // The body turns a little; the head (procedural look-at) does the rest.
+    this.yawTarget = this.card ? Math.atan2(this.lookLocal.x, this.lookLocal.z) : THREE.MathUtils.clamp(yaw, -0.3, 0.3);
   }
 
   update(dt: number) {
@@ -164,7 +179,7 @@ export class MonRig {
     this.pivot.rotation.set(o.rx, this.yaw + o.ry, o.rz);
     this.pivot.scale.set(s, s * o.sy, s);
     this.shadow.scale.setScalar(Math.max(0.001, this.appear) * (1 - Math.min(0.5, o.y * 1.5)));
-    this.body?.update(dt);
+    if (this.body) { this.body.lookAt(this.lookWorld); this.body.update(dt); }
 
     if (this.burstT < 1) {
       this.burstT = Math.min(1, this.burstT + dt / 0.45);
@@ -176,6 +191,7 @@ export class MonRig {
   }
 
   dispose() {
+    window.clearTimeout(this.upTimer);
     this.root.removeFromParent();
     this.body?.dispose();
     if (this.card) { this.card.geometry.dispose(); this.card.material.map?.dispose(); this.card.material.dispose(); }

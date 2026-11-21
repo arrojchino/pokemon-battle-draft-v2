@@ -60,6 +60,9 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
   useEffect(() => () => arena?.dispose(), [arena]);
   const arenaSnap = useSyncExternalStore(arena ? arena.controller.subscribe : noopSubscribe, arena ? arena.controller.getSnapshot : nullSnapshot);
   const battleOver = !!arenaSnap && arenaSnap.state.phase === 'ended' && !arenaSnap.busy;
+  // Team Preview names all twelve Pokémon: download and compile their models before anyone is sent out.
+  const teamKey = arenaSnap ? arenaSnap.state.sides.map(s => s.mons.map(mon => mon.set?.artId ?? mon.set?.id ?? 0).join(',')).join(',') : '';
+  useEffect(() => { if (world && teamKey) world.prepareMons(teamKey.split(',').map(Number).filter(Boolean)); }, [world, teamKey]);
   // Visible during the battle phase, and after it until Continue (so the final knockout plays out).
   // A reset mid-battle abandons an unfinished arena.
   // Keep the arena up after the server records the result until local playback has shown the ending

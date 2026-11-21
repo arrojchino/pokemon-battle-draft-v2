@@ -24,7 +24,7 @@ Without `VITE_BACKEND_URL` the frontend uses the public PeerJS relay and the roo
 
 ## Partners, stadium and sound
 
-- **Partner Pokémon.** Choose a partner on the **Partner** screen: Pikachu, Eevee, Charizard, Blastoise, Venusaur, Gengar, Umbreon, Snorlax, Lapras, Mimikyu, Dragonite, Greninja, Mewtwo or Fuecoco. It stands beside the title menu, in lobbies and on the field between games, and your opponent sees it. Each one is a 3D model from the community [Pokémon 3D API](https://github.com/Pokemon-3D-api/assets) (Draco-compressed glTF, downloaded once and cached), normalised to the same height, sent out with a Poké Ball flash. When a model cannot load, the official artwork stands in as a card.
+- **Partner Pokémon.** Choose a partner on the **Partner** screen: Greninja, Dragonite, Mewtwo, Lugia, Feraligatr, Flygon, Fuecoco, Marill, Gimmighoul, Flutter Mane, Toxel, Kingambit, Thwackey or Eiscue. It stands beside the title menu, in lobbies and on the field between games, and your opponent sees it. Each one is a 3D model from the community [Pokémon 3D API](https://github.com/Pokemon-3D-api/assets) (Draco-compressed glTF, downloaded once and cached), normalised to the same height, sent out with a Poké Ball flash. Partners were chosen by audit: every one is a Switch-era rig with its own idle, attack, damage and faint clips ([docs/ASSET_AUDIT.md](docs/ASSET_AUDIT.md)). When a model cannot load, the official artwork stands in as a card.
 - Partners react to the match with their own animation clips where the model has them (Scarlet/Violet-style models bring idle, notice, glad, attack, damage and faint clips) plus a light procedural layer that works for every model: greet, hop, spin on wins, slump on losses. Big reactions play the Pokémon's own cry (PokeAPI cries, fetched on first use), lower for sad ones, at most once every few seconds.
 - **The stadium:** a floodlit night stadium. The battle field has mown turf and classic white lines (boundary, centre line, centre circle with a Poké Ball button, trainer boxes) inside a polished rim with an accent light strip; LED boards along the barrier wall scroll the game's name in your partner's colour; a bowl of stands with a crowd and the odd phone flash; four floodlight towers with faint light shafts; a starry sky with a moon. Planar reflections on the high tier. Reduced motion and Reduce flashing stop the crowd flashes and the scrolling boards.
 - **Sound:** sound effects are synthesized live with the Web Audio API (`frontend/src/audio/sound.ts`), so there are no effect files to download or license: UI ticks, the coin, the draft, every move archetype (punches, slashes, flames, water, zaps, beams, orbs, quakes, meteors, coins, heals, shields), hits, crits, faints, Tera, stamps, and win and lose stings. Partner cries are the one recorded sound. Volume and mute live in Settings. Audio starts on your first click or key press (browser autoplay rules).
@@ -68,9 +68,10 @@ URL switches for checking things by hand: `?perf` (diagnostics overlay), `?quali
 | `frontend/src/net/` | One `Transport` interface with two implementations (WebSocket backend, PeerJS host). |
 | `frontend/src/ui/` | React screens: title, partner select, room setup, match (toss, draft, battle, history). |
 | `frontend/public/assets/` | The Draco decoder (`draco/`) for the runtime Pokémon models. Models, artwork and cries are fetched at runtime and never bundled. |
+| `frontend/qa/` | `models.html`, a dev-server-only contact sheet that loads and grades any species through the game's own loader ([docs/ASSET_AUDIT.md](docs/ASSET_AUDIT.md)). Not part of the build. |
 | `frontend/src/audio/` | Synthesized sound effects and partner cries. |
 | `tools/` | `subset_fonts.sh`. |
-| `docs/` | Architecture, assets and licenses, performance, and the audit of the original build. |
+| `docs/` | Architecture, assets and licenses, the 3D asset audit, performance, and the audit of the original build. |
 
 ## Showdown integration (the "On Showdown" mode): what is and is not possible
 
@@ -93,6 +94,7 @@ In this mode battle results are reported in the app by either player (two-step c
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): engine, character rig, networking and protocol, state flow.
 - [docs/ASSETS.md](docs/ASSETS.md): runtime Pokémon models, artwork and cries, the partner roster, generated scenery and audio.
+- [docs/ASSET_AUDIT.md](docs/ASSET_AUDIT.md): grade of every 3D Pokémon (partners and draft pool), the runtime fixes each model gets, and the visual regression checklist.
 - [docs/PERFORMANCE.md](docs/PERFORMANCE.md): quality tiers, adaptive resolution, measurements, profiling switches.
 - [docs/AUDIT.md](docs/AUDIT.md): what the original build did, what was kept, fixed and replaced.
 

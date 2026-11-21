@@ -1,5 +1,5 @@
 import { POOL, TYPE_NAMES, moveInfo, type Pokemon, type TypeName } from '@shared';
-import { impactDelay, recipeFor } from '../engine/battle/moveFx.js';
+import { impactLead, recipeFor } from '../engine/battle/moveFx.js';
 
 /**
  * Client-side battle model. Pure: feed it simulator protocol lines (one player's stream, see
@@ -296,7 +296,7 @@ export function lineDuration(line: string): number {
       const name = line.split('|')[3] ?? '';
       const info = moveInfo(name);
       const r = recipeFor(name, info?.type ?? 'Normal', info?.category ?? 'Status');
-      return r.kind === 'self' ? 1050 : Math.round(260 + impactDelay(r) * 1000);
+      return r.kind === 'self' ? 1050 : Math.round(260 + impactLead(r) * 1000);
     }
     case '-damage': return 700;
     case 'faint': return 1500;

@@ -5,7 +5,7 @@ import { pokemonArt } from '../../assets.js';
 import { easeOutCubic, rand } from '../math.js';
 import { ARENA, BattleCamera } from './BattleCamera.js';
 import { Barrier, Beam, Debris, Flashes, Particles, Rings, Shape, Slashes, type DebrisKind } from './fx.js';
-import { impactDelay, recipeFor, type Aura, type Recipe } from './moveFx.js';
+import { impactDelay, recipeFor, windup, type Aura, type Recipe } from './moveFx.js';
 import type { Cue } from '../../audio/sound.js';
 import { MonBody, hasModel, loadMonModel } from '../character/monModel.js';
 
@@ -89,6 +89,31 @@ const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
 const smooth = (x: number) => x * x * (3 - 2 * x);
 
+/** Seconds a thrown Poké Ball takes to reach its spot before the Pokémon comes out. */
+export const BALL_FLIGHT = 0.42;
+const BALL_GEO = new THREE.SphereGeometry(0.085, 32, 20);
+/** A classic Poké Ball, shaded in its own shader: red top, white bottom, black band and button. */
+function pokeBallMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uOpen: { value: 0 } },
+    vertexShader: /* glsl */`varying vec3 vP; varying vec3 vN; void main() { vP = position; vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`uniform float uOpen; varying vec3 vP; varying vec3 vN;
+      void main() {
+        vec3 p = normalize(vP);
+        vec3 col = p.y > 0.0 ? vec3(0.86, 0.12, 0.06) : vec3(0.94, 0.95, 0.97);
+        col = mix(col, vec3(0.04), smoothstep(0.085, 0.06, abs(p.y)));
+        float r = length(p.xy);
+        float front = step(0.0, p.z);
+        col = mix(col, vec3(0.04), front * smoothstep(0.31, 0.29, r));
+        col = mix(col, vec3(0.97), front * smoothstep(0.21, 0.19, r));
+        vec3 L = normalize(vec3(0.35, 0.85, 0.45));
+        float d = 0.4 + 0.6 * max(dot(vN, L), 0.0);
+        float s = pow(max(dot(reflect(-L, vN), vec3(0.0, 0.0, 1.0)), 0.0), 28.0);
+        gl_FragColor = vec4(col * d + s * 0.7 + vec3(uOpen * 2.5), 1.0);
+      }`,
+  });
+}
+
 /**
  * The active Pokémon on one side of the field. It appears at once as a holographic projection of the
  * official artwork (scanlines, type-tinted rim, glitch on impact, dissolve on faint); when the
@@ -124,6 +149,13 @@ class Hologram {
   private bodyDex = 0;
   private bodyIn = 1;
   private yaw = 0;
+  /** Static models fall over procedurally when they faint (0..1). */
+  private topple = 0;
+  private ball: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
+  private ballT = 1; private ballFrom = new THREE.Vector3(); private ballOpen = 0;
+  /** Called when the thrown ball opens and the Pokémon comes out. */
+  onOpen: ((side: 0 | 1) => void) | null = null;
+  private asleep = false;
   /** Ceiling for the hit/heal/Tera flash on the projection (lowered by Reduce flashing). */
   flashCap = 1;
 
@@ -160,7 +192,11 @@ class Hologram {
     this.crystal.position.y = ARENA.cardY; this.crystal.scale.set(0.9, 1.15, 0.6);
     this.group.add(this.crystal);
     this.group.visible = false;
+    this.ball = new THREE.Mesh(BALL_GEO, pokeBallMaterial());
+    this.ball.visible = false; this.ball.castShadow = true;
   }
+  /** The ball flies in world space, so it lives outside the Pokémon's group. */
+  get ballMesh() { return this.ball; }
 
   place(p: THREE.Vector3) { this.home.copy(p); this.group.position.copy(p); }
   /** Where the projection is right now (follows rushes). */
@@ -174,12 +210,19 @@ class Hologram {
     this.dissolving = false; this.dissolveT = 0; this.uniforms.uDissolve.value = 0; this.uniforms.uAlpha.value = 1;
     this.crystalTarget = 0; this.uniforms.uStatusAmt.value = 0; this.dashT = 1;
     this.revealT = instant ? 1 : 0;
+    this.topple = 0; this.asleep = false;
+    // Sent out from a thrown Poké Ball: nothing shows until it opens.
+    if (!instant) {
+      this.ballT = 0; this.ballOpen = 0;
+      this.ballFrom.copy(this.home).add(this.side === 0 ? tmp.set(-1.3, 1.5, 2.1) : tmp.set(1.1, 1.7, -1.9));
+      this.bodyIn = 0; this.revealT = 0;
+    } else this.ballT = 1;
     // 3D model: the same species comes back as it was (revived or switched back in); a new one loads
     // while the projection stands in for it.
     const dex = artId <= 1025 && hasModel(artId) ? artId : 0;
     if (this.body && this.bodyDex !== dex) { this.body.dispose(); this.body = null; this.bodyDex = 0; }
     this.card.visible = !this.body; this.beam.visible = !this.body;
-    if (this.body) { this.body.reset(); this.bodyIn = instant ? 1 : 0; this.body.act(['glad01', 'notice01']); }
+    if (this.body) { this.body.reset(); this.body.root.rotation.x = 0; this.bodyIn = instant ? 1 : 0; }
     else if (dex) {
       void loadMonModel(dex, MON_HEIGHT).then(m => {
         if (token !== this.loadToken || !this.present || this.dissolving) { for (const mat of m.materials) mat.dispose(); return; }
@@ -187,8 +230,9 @@ class Hologram {
         this.body.root.position.y = PLATFORM_Y;
         this.group.add(this.body.root);
         this.card.visible = false; this.beam.visible = false;
-        this.bodyIn = instant ? 1 : 0;
-        this.body.hit('#ffffff', 1);
+        // Arriving after the ball opened (a slow download): grow in with a flash of its own.
+        if (this.ballT >= 1) { this.bodyIn = instant ? 1 : 0; if (!instant) this.body.hit('#ffffff', 1); }
+        if (this.asleep) this.body.setIdle('sleep');
       }).catch(() => { /* the projection stays */ });
     }
     const tex = await artTexture(artId, name);
@@ -206,24 +250,72 @@ class Hologram {
   }
   hit(strength: number, color: string) {
     this.shake = Math.min(1, 0.35 + strength); this.uniforms.uGlitch.value = Math.min(1, 0.4 + strength); this.uniforms.uFlash.value = 0.8; this.uniforms.uFlashColor.value.set(color);
-    this.body?.hit(color, Math.min(1, 0.5 + strength) * this.flashCap); this.body?.act(strength > 0.6 ? ['damage02', 'damage01'] : ['damage01'], { speed: 1.15 });
+    const b = this.body;
+    if (!b) return;
+    b.hit(color, Math.min(1, 0.5 + strength) * this.flashCap);
+    // Recoil: the model's own damage clip (the heavier one for big hits) plus a procedural flinch.
+    if (!this.asleep) b.act(strength > 0.6 ? ['damage02', 'damage01'] : ['damage01'], { speed: 1.1, fade: 0.08 });
+    b.pulse('hit');
   }
-  /** The attacker's own motion: a strike for contact moves, a ranged pose for the rest, a cheer for self moves. */
-  attack(kind: 'contact' | 'ranged' | 'self') {
-    this.body?.act(kind === 'contact' ? ['attack01', 'attack02'] : kind === 'ranged' ? ['rangeattack01', 'attack02', 'attack01'] : ['glad01', 'roar01', 'rangeattack01']);
+  /**
+   * The attacker's own motion, timed so its strike lands `strikeIn` seconds from now: the model's attack
+   * clip (contact), ranged attack clip (special and non-contact) or roar/cheer (self moves), sped up or
+   * slowed to fit; models without clips wind up and strike procedurally.
+   */
+  attack(kind: 'contact' | 'ranged' | 'self', strikeIn: number) {
+    const b = this.body;
+    if (!b) return;
+    if (this.asleep) { b.pulse('hit'); return; }
+    const names = kind === 'contact' ? ['attack01', 'attack02'] : kind === 'ranged' ? ['rangeattack01', 'attack02', 'attack01'] : ['roar01', 'glad01', 'rangeattack01'];
+    if (!b.strike(names, strikeIn)) b.pulse(kind === 'self' ? 'roar' : 'attack', strikeIn);
   }
+  /** Winner's celebration. */
+  celebrate() { if (!this.body || this.dissolving) return; if (!this.body.act(['glad01', 'roar01'])) this.body.pulse('cheer'); this.hop = 1; }
   distort(amount = 0.8) { this.uniforms.uGlitch.value = Math.max(this.uniforms.uGlitch.value, amount); }
   heal() { this.uniforms.uFlash.value = 0.5; this.uniforms.uFlashColor.value.set('#7dffb0'); this.hop = 1; this.body?.hit('#7dffb0', 0.6 * this.flashCap); }
   pulse(color: string, amount = 0.6) { this.uniforms.uFlash.value = amount; this.uniforms.uFlashColor.value.set(color); this.hop = 1; this.body?.hit(color, amount * this.flashCap); }
   dodge() { this.sidestep = 1; }
-  faint() { this.dissolving = true; this.dissolveT = 0; this.crystalTarget = 0; this.body?.act(['down01_start', 'damage02', 'damage01'], { hold: true }); }
+  faint() {
+    this.dissolving = true; this.dissolveT = 0; this.crystalTarget = 0;
+    const b = this.body;
+    if (!b) return;
+    // The model's own collapse (then its knocked-out loop); models without one topple over.
+    if (b.act(['down01_start'], { hold: true, fade: 0.1 })) window.setTimeout(() => { if (this.dissolving) b.loop(['down01_loop']); }, 380);
+    else if (!b.act(['damage02'], { hold: true })) this.topple = 0.0001;
+  }
   tera(color: string) { this.crystalTarget = 1; (this.crystal.material as THREE.LineBasicMaterial).color.set(color).multiplyScalar(2.2); this.uniforms.uFlash.value = 1; this.uniforms.uFlashColor.value.set(color); this.uniforms.uTint.value.set(color); this.body?.hit(color, this.flashCap); }
-  status(color: string | null) { if (color) { this.uniforms.uStatus.value.set(color); this.uniforms.uStatusAmt.value = 1; } else this.uniforms.uStatusAmt.value = 0; this.body?.setTint(color, 0.28); }
-  hide() { this.group.visible = false; this.present = false; this.dashT = 1; for (const g of this.ghosts) g.visible = false; }
+  status(color: string | null, asleep = false) {
+    if (color) { this.uniforms.uStatus.value.set(color); this.uniforms.uStatusAmt.value = 1; } else this.uniforms.uStatusAmt.value = 0;
+    // Asleep: the model's sleep loop (or a drowsy droop); other statuses tint it.
+    this.body?.setTint(asleep ? null : color, 0.28);
+    if (asleep !== this.asleep) { this.asleep = asleep; this.body?.setIdle(asleep ? 'sleep' : 'battle'); }
+  }
+  hide() { this.group.visible = false; this.present = false; this.dashT = 1; this.ballT = 1; this.ball.visible = false; for (const g of this.ghosts) g.visible = false; }
 
-  update(dt: number, t: number, camera: THREE.Camera, reduced: boolean) {
+  update(dt: number, t: number, camera: THREE.Camera, reduced: boolean, foeCenter: THREE.Vector3) {
     if (!this.group.visible) { for (const g of this.ghosts) g.visible = false; return; }
     this.uniforms.uTime.value = t;
+    // Poké Ball throw: an arc with backspin, then it pops open in a flash and the Pokémon comes out.
+    if (this.ballT < 1) {
+      this.ballT = Math.min(1, this.ballT + dt / BALL_FLIGHT);
+      const u = this.ballT, land = tmp.copy(this.home).setY(0.62);
+      this.ball.visible = true;
+      this.ball.position.lerpVectors(this.ballFrom, land, u);
+      this.ball.position.y += Math.sin(u * Math.PI) * 0.7;
+      this.ball.rotation.x -= dt * 22; this.ball.rotation.y = this.side === 0 ? 0.6 : -2.4;
+      this.ball.scale.setScalar(1);
+      if (this.ballT >= 1) { this.ballOpen = 1; this.revealT = 0; this.bodyIn = 0; this.body?.hit('#ffffff', 1); this.onOpen?.(this.side); }
+      this.card.visible = false; if (this.body) this.body.root.visible = false;
+      return;
+    }
+    if (this.ballOpen > 0) {
+      this.ballOpen = Math.max(0, this.ballOpen - dt / 0.16);
+      this.ball.material.uniforms.uOpen.value = 1 - this.ballOpen;
+      this.ball.scale.setScalar(1 + (1 - this.ballOpen) * 1.6);
+      this.ball.visible = this.ballOpen > 0;
+    } else this.ball.visible = false;
+    this.card.visible = !this.body;
+    if (this.body) this.body.root.visible = true;
     this.revealT = Math.min(1, this.revealT + dt / (reduced ? 0.2 : 0.75));
     this.uniforms.uReveal.value = easeOutCubic(this.revealT);
     this.uniforms.uGlitch.value *= Math.exp(-5 * dt);
@@ -233,6 +325,7 @@ class Hologram {
       this.dissolveT = Math.min(1, this.dissolveT + dt / (reduced ? 0.4 : this.body ? 1.6 : 1.1));
       this.uniforms.uDissolve.value = this.dissolveT;
       this.body?.setOpacity(1 - smooth(Math.max(0, (this.dissolveT - 0.45) / 0.55)));
+      if (this.topple > 0) this.topple = Math.min(1, this.topple + dt / 0.55);
       if (this.dissolveT >= 1) { this.hide(); this.dissolving = false; return; }
     }
     this.shake = Math.max(0, this.shake - dt * 2.4);
@@ -269,7 +362,13 @@ class Hologram {
       const want = Math.atan2(tmp2.x - this.group.position.x, tmp2.z - this.group.position.z);
       this.yaw += Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw)) * (1 - Math.exp(-10 * dt));
       this.body.root.rotation.y = this.yaw + spin;
+      // Procedural faint for models without a collapse clip: tip over sideways and settle.
+      const tp = this.topple > 0 ? smooth(this.topple) : 0;
+      this.body.root.rotation.z = tp * 1.35 * (this.side === 0 ? 1 : -1);
+      this.body.root.position.y = PLATFORM_Y - tp * 0.08;
       if (!this.dissolving) this.body.setOpacity(this.uniforms.uAlpha.value);
+      // The head follows the opponent.
+      this.body.lookAt(this.dissolving || this.asleep ? null : foeCenter);
       this.body.update(dt);
     }
 
@@ -293,6 +392,7 @@ class Hologram {
 
   dispose() {
     this.body?.dispose(); this.body = null;
+    this.ball.removeFromParent(); this.ball.material.dispose();
     this.group.traverse(o => { const m = o as THREE.Mesh; if (m.geometry) m.geometry.dispose(); const mat = m.material as THREE.Material | undefined; mat?.dispose(); });
     for (const g of this.ghosts) g.material.dispose();
   }
@@ -370,6 +470,7 @@ export class BattleStage {
   private jobs: { at: number; fn: () => void }[] = [];
   private time = 0;
   private impactAt: [number, number] = [0, 0];
+  private foeCenter = new THREE.Vector3();
   private freeze = 0;
   /** Effects setting: point-light flash strength (0..1), and calm = no screen flashes, dimmer hologram flashes. */
   private lightAmt = 1;
@@ -383,7 +484,7 @@ export class BattleStage {
 
   constructor(private camera: THREE.Camera, private reduced: () => boolean) {
     this.holos = [new Hologram(0), new Hologram(1)];
-    this.holos.forEach((h, i) => { h.place(ARENA.mon[i]); h.foe.copy(ARENA.mon[1 - i]); });
+    this.holos.forEach((h, i) => { h.place(ARENA.mon[i]); h.foe.copy(ARENA.mon[1 - i]); this.group.add(h.ballMesh); h.onOpen = s => this.ballOpened(s); });
     for (const h of this.holos) { this.group.add(h.group); for (const g of h.ghosts) this.group.add(g); }
     for (const o of this.orbs) this.group.add(o.mesh);
     for (const b of this.beams) this.group.add(b.mesh);
@@ -422,17 +523,28 @@ export class BattleStage {
   }
 
   /* ---------------- events */
+  private switchTint: [string, string] = ['#ffffff', '#ffffff'];
   switchIn(side: 0 | 1, artId: number, name: string, tint: string, instant: boolean) {
     const reduced = this.reduced();
+    this.switchTint[side] = tint;
     void this.holos[side].show(artId, name, tint, instant || reduced);
     if (instant) return;
+    if (reduced) { this.ballOpened(side); return; }
+    this.snd('dash', side, 0.5);
+    this.cam.switchIn(side);
+  }
+  /** The ball pops: a white flash, a ring and sparks in the Pokémon's colour where it lands. */
+  private ballOpened(side: 0 | 1) {
+    const tint = this.switchTint[side];
     this.snd('switchIn', side);
     const f = this.foot(side);
+    this.particles.burst(tmp.copy(this.home(side)).setY(0.62), 50, 2.6, { color: '#ffffff', size: 0.07, ttl: 0.5, drag: 3 });
     this.particles.burst(f, 40, 2.2, { color: tint, size: 0.06, ttl: 0.9, rise: 1.2, drag: 2 });
     this.rings.fire(f, tint, { flat: true, s0: 0.2, s1: 1.4, dur: 0.6 });
-    this.light(this.home(side), tint, 10, 0.8);
-    if (!reduced) this.cam.switchIn(side);
+    this.light(this.home(side), '#ffffff', 14, 0.5);
   }
+  /** The last Pokémon standing celebrates. */
+  victory(side: 0 | 1) { this.holos[side].celebrate(); }
 
   move(side: 0 | 1, move: string, type: TypeName, category: 'Physical' | 'Special' | 'Status', target: 0 | 1 | null) {
     const r = recipeFor(move, type, category);
@@ -440,12 +552,15 @@ export class BattleStage {
     const tgt: 0 | 1 = target === null || target === side ? (1 - side) as 0 | 1 : target;
     const selfMove = r.kind === 'self';
     const delay = impactDelay(r);
-    if (!selfMove && r.kind !== 'hazard' && r.kind !== 'field') this.impactAt[tgt] = this.time + delay;
+    // Wind-up first (the attacker's anticipation), then the effect; the damage line waits for both.
+    const lead = windup(r);
+    if (!selfMove && r.kind !== 'hazard' && r.kind !== 'field') this.impactAt[tgt] = this.time + lead + delay;
     const style = r.kind === 'dash' ? 'dash' : (r.kind === 'rain' && r.debris !== 'coin') || r.kind === 'quake' || r.kind === 'field' || r.kind === 'hazard' ? 'field' : selfMove ? 'self' : 'projectile';
     const big = (r.kind === 'dash' && !!r.big) || (moveInfo(move)?.power ?? 0) >= 110;
-    if (!this.reduced()) this.cam.attack(side, style, delay, tgt, big);
-    this.holos[side].attack(r.kind === 'dash' ? 'contact' : selfMove ? 'self' : 'ranged');
-    this.play(r, side, tgt, color);
+    if (!this.reduced()) this.cam.attack(side, style, lead + delay, tgt, big);
+    // Contact moves strike when the rush connects; everything else releases as the effect starts.
+    this.holos[side].attack(r.kind === 'dash' ? 'contact' : selfMove ? 'self' : 'ranged', r.kind === 'dash' ? lead + delay : Math.max(0.25, lead));
+    if (lead > 0) this.later(lead, () => this.play(r, side, tgt, color)); else this.play(r, side, tgt, color);
   }
 
   private play(r: Recipe, s: 0 | 1, t: 0 | 1, color: string) {
@@ -749,7 +864,7 @@ export class BattleStage {
     this.kickScreen(0.6, c, 0.12);
     if (!this.reduced()) this.cam.tera(side);
   }
-  status(side: 0 | 1, s: string | null) { this.holos[side].status(s ? STATUS_HEX[s] ?? null : null); if (s) this.snd('status', side); }
+  status(side: 0 | 1, s: string | null) { this.holos[side].status(s ? STATUS_HEX[s] ?? null : null, s === 'slp'); if (s) this.snd('status', side); }
   boost(side: 0 | 1, up: boolean) {
     this.snd(up ? 'buff' : 'debuff', side, 0.7);
     const at = this.home(side).setY(up ? 0.4 : 1.7);
@@ -769,7 +884,7 @@ export class BattleStage {
     this.time += dt;
     for (let i = this.jobs.length - 1; i >= 0; i--) if (this.jobs[i].at <= this.time) { const j = this.jobs[i]; this.jobs.splice(i, 1); j.fn(); }
     const reduced = this.reduced();
-    for (const h of this.holos) h.update(dt, this.time, this.camera, reduced);
+    for (const h of this.holos) h.update(dt, this.time, this.camera, reduced, this.holos[1 - h.side].center(this.foeCenter));
     for (const o of this.orbs) o.update(dt);
     this.particles.update(dt);
     this.rings.update(dt, this.camera);
