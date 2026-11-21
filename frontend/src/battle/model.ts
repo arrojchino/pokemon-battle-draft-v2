@@ -26,7 +26,9 @@ export type MonView = {
 export type SideView = { name: string; mons: MonView[]; active: string | null; conditions: string[] };
 
 export type RequestMove = { move: string; id: string; pp?: number; maxpp?: number; target?: string; disabled?: boolean | string };
-export type RequestPokemon = { ident: string; details: string; condition: string; active: boolean; item?: string; ability?: string; baseAbility?: string; teraType?: string; terastallized?: string; moves: string[] };
+export type RequestPokemon = { ident: string; details: string; condition: string; active: boolean; item?: string; ability?: string; baseAbility?: string; teraType?: string; terastallized?: string; moves: string[];
+  /** Gen 9 Revival Blessing: set on the active Pokémon while its user picks a fainted ally to revive. */
+  reviving?: boolean };
 export type BattleRequest = {
   rqid?: number; wait?: boolean; teamPreview?: boolean; forceSwitch?: boolean[];
   active?: { moves: RequestMove[]; canTerastallize?: string; trapped?: boolean; maybeTrapped?: boolean }[];
@@ -85,10 +87,16 @@ const sideOf = (ident: string): SideId => (ident.startsWith('p2') ? 1 : 0);
 /** "p1a: Gholdengo" → "p1: Gholdengo" */
 const monKey = (ident: string) => ident.replace(/^(p[12])[a-z]?:\s*/, '$1: ');
 const speciesOf = (details: string) => details.split(',')[0].trim();
+/** Revival Blessing request: a forced "switch" whose only valid targets are fainted party members. */
+export const isRevival = (req: BattleRequest) => !!req.forceSwitch?.[0] && req.side.pokemon.some(p => p.active && p.reviving);
+
 /** Switching is locked only for the active Pokémon, fainted ones, and when the simulator reports a trap
- * (sleep, paralysis and other statuses never lock it). A forced replacement ignores traps. */
+ * (sleep, paralysis and other statuses never lock it). A forced replacement ignores traps. During a
+ * Revival Blessing it is the other way round: only fainted Pokémon can be chosen. */
 export function switchLocked(p: RequestPokemon, req: BattleRequest): boolean {
-  return p.active || p.condition.endsWith(' fnt') || (!!req.active?.[0]?.trapped && !req.forceSwitch?.[0]);
+  const fainted = p.condition.endsWith(' fnt');
+  if (isRevival(req)) return p.active || !fainted;
+  return p.active || fainted || (!!req.active?.[0]?.trapped && !req.forceSwitch?.[0]);
 }
 
 export function setFor(species: string): Pokemon | null {
@@ -216,8 +224,11 @@ export class BattleModel {
       case '-heal': {
         const m = this.mon(args[0]); const before = m.hp / m.maxhp;
         const c = parseCondition(args[1]); m.hp = c.hp; m.maxhp = c.maxhp; m.status = c.status;
-        this.log(`${this.cap(this.name(m))} restored HP${from ? ` (${from})` : ''}.`, sideOf(args[0]) === s.mySide ? 'good' : 'info');
-        fx.push({ kind: 'heal', side: sideOf(args[0]), gained: Math.max(0, m.hp / m.maxhp - before) });
+        const revived = m.fainted && !c.fainted;
+        if (revived) m.fainted = false;
+        this.log(revived ? `${this.cap(this.name(m))} was revived and is ready to fight again!` : `${this.cap(this.name(m))} restored HP${from ? ` (${from})` : ''}.`, sideOf(args[0]) === s.mySide ? 'good' : 'info');
+        // A revived Pokémon waits on the bench: no healing effect on whoever is on the field.
+        if (!revived) fx.push({ kind: 'heal', side: sideOf(args[0]), gained: Math.max(0, m.hp / m.maxhp - before) });
         break;
       }
       case 'faint': { const m = this.mon(args[0]); m.hp = 0; m.fainted = true; this.log(`${this.cap(this.name(m))} fainted!`, 'faint'); fx.push({ kind: 'faint', side: sideOf(args[0]) }); break; }

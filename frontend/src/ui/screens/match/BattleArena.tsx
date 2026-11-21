@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { moveInfo, type TypeName } from '@shared';
 import type { BattleController } from '../../../battle/controller.js';
-import { setFor as setForSpecies, switchLocked, type BattleRequest, type LogEntry, type MonView, type RequestPokemon, type SideView } from '../../../battle/model.js';
+import { isRevival, setFor as setForSpecies, switchLocked, type BattleRequest, type LogEntry, type MonView, type RequestPokemon, type SideView } from '../../../battle/model.js';
 import { Icon } from '../../primitives.js';
 import { sound } from '../../../audio/sound.js';
 import { moveVerdict, type Fighter } from '../../../battle/matchup.js';
@@ -154,7 +154,7 @@ function MoveButton({ m, index, off, user, target, teraPreview, onPick }: { m: {
     </button>
   );
 }
-function SwapButton({ p, mon, disabled, foe, onPick }: { p: RequestPokemon; mon: MonView | undefined; disabled: boolean; foe: Fighter | null; onPick: () => void }) {
+function SwapButton({ p, mon, disabled, foe, onPick, revive }: { p: RequestPokemon; mon: MonView | undefined; disabled: boolean; foe: Fighter | null; onPick: () => void; revive?: boolean }) {
   const out = p.condition.endsWith(' fnt');
   const sp = p.details.split(',')[0];
   const set = setForSpecies(sp);
@@ -163,7 +163,7 @@ function SwapButton({ p, mon, disabled, foe, onPick }: { p: RequestPokemon; mon:
     return <MonCard f={fighterOfReq(p, mon)} hp={out ? { hp: 0, maxhp: maxhp || hp } : { hp, maxhp }} status={mon?.status ?? null} moves={set?.moves ?? p.moves} vs={foe} foeAttacker={foe} />;
   });
   return (
-    <button {...tip} className={`swap ${p.active ? 'is-active' : ''} ${out ? 'is-out' : ''}`} disabled={disabled} onClick={onPick}>
+    <button {...tip} className={`swap ${p.active ? 'is-active' : ''} ${out ? 'is-out' : ''} ${revive && out && !disabled ? 'is-revive' : ''}`} disabled={disabled} onClick={onPick} aria-label={revive && out && !disabled ? `Revive ${sp}` : undefined}>
       <Sprite eager artId={set?.artId ?? set?.id ?? 0} name={set?.name ?? p.ident.slice(4)} />
       <span className="swap__hp"><i style={{ '--f': mon ? (mon.fainted ? 0 : mon.hp / mon.maxhp) : 1 } as CSSProperties} /></span>
       <span className="swap__name">{sp}</span>
@@ -175,6 +175,7 @@ function Actions({ req, choose, mons, foe }: { req: BattleRequest; choose: (c: s
   const [tera, setTera] = useState(false);
   const active = req.active?.[0];
   const forced = !!req.forceSwitch?.[0];
+  const revival = isRevival(req);
   const bench = req.side.pokemon.map((p, i) => ({ p, i, mon: mons.mons.find(m => m.key === p.ident.replace(/^(p[12])[a-z]?:\s*/, '$1: ')) }));
   const me = bench.find(b => b.p.active);
   const user = me ? fighterOfReq(me.p, me.mon) : null;
@@ -197,9 +198,9 @@ function Actions({ req, choose, mons, foe }: { req: BattleRequest; choose: (c: s
           </button>
         )}
         <div className="switches" aria-label="Switch">
-          {forced && <p className="actions__prompt">Choose your next Pokémon</p>}
+          {forced && <p className="actions__prompt">{revival ? 'Revival Blessing: choose a fainted Pokémon to revive' : 'Choose your next Pokémon'}</p>}
           {bench.map(({ p, i, mon }) => (
-            <SwapButton key={p.ident} p={p} mon={mon} foe={target} disabled={switchLocked(p, req)} onPick={() => choose(`switch ${i + 1}`)} />
+            <SwapButton key={p.ident} p={p} mon={mon} foe={target} revive={revival} disabled={switchLocked(p, req)} onPick={() => choose(`switch ${i + 1}`)} />
           ))}
         </div>
       </div>

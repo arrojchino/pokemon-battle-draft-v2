@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { switchLocked, type BattleRequest, type RequestPokemon } from '../src/battle/model.js';
+import { isRevival, switchLocked, type BattleRequest, type RequestPokemon } from '../src/battle/model.js';
 
 const mon = (ident: string, condition: string, active = false): RequestPokemon => ({ ident, details: ident.slice(4), condition, active, moves: [] });
 const request = (activeCondition: string, extra: Partial<BattleRequest> = {}, trapped = false): BattleRequest => ({
@@ -27,5 +27,20 @@ describe('switching', () => {
   it('ignores traps when a replacement is forced', () => {
     const forced = request('0 fnt', { forceSwitch: [true] }, true);
     expect(switchLocked(forced.side.pokemon[1], forced)).toBe(false);
+  });
+
+  it('during Revival Blessing offers only fainted Pokémon', () => {
+    const base = request('300/300', { forceSwitch: [true] });
+    base.side.pokemon[0].reviving = true;
+    delete base.active;
+    const [user, healthy, fainted] = base.side.pokemon;
+    expect(isRevival(base)).toBe(true);
+    expect(switchLocked(user, base)).toBe(true);
+    expect(switchLocked(healthy, base)).toBe(true);
+    expect(switchLocked(fainted, base)).toBe(false);
+    // An ordinary forced switch (after a faint) is not a revival.
+    const normal = request('0 fnt', { forceSwitch: [true] });
+    expect(isRevival(normal)).toBe(false);
+    expect(switchLocked(normal.side.pokemon[2], normal)).toBe(true);
   });
 });
