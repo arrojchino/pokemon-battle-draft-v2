@@ -46,7 +46,7 @@ function Shell() {
   let body;
   let key: string = screen;
   if (inMatch) { key = 'match'; body = <MatchScreen room={session.room!} seat={session.seat!} transport={session.transport} link={session.link} />; }
-  else if (screen === 'partners') body = <PartnerSelect onBack={() => setScreen(partnerReturn)} onConfirm={() => setScreen(partnerReturn)} confirmLabel={partnerReturn === 'multiplayer' ? 'Roll out as {name}' : 'Paint it {name}'} />;
+  else if (screen === 'partners') body = <PartnerSelect onBack={() => setScreen(partnerReturn)} onConfirm={() => setScreen(partnerReturn)} confirmLabel={partnerReturn === 'multiplayer' ? '{name}, I choose you!' : 'Partner up with {name}'} />;
   else if (screen === 'multiplayer') body = <MultiplayerScreen mode={mode} inviteCode={invite} onBack={() => setScreen('title')} onChangePartner={() => goPartners('multiplayer')} />;
   else if (screen === 'pokedex') body = <PokedexScreen onBack={() => setScreen('title')} />;
   else if (screen === 'settings') body = <SettingsScreen onBack={() => setScreen('title')} />;

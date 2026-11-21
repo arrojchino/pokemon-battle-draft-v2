@@ -12,6 +12,7 @@ export function useAudio() {
   const { world } = useWorld();
   useEffect(() => { sound.setVolume(s.volume, s.muted); }, [s.volume, s.muted]);
   useEffect(() => world?.events.on('sound', ({ cue, pan, gain }) => sound.play(cue, { pan, gain })), [world]);
+  useEffect(() => world?.events.on('cry', ({ dex, pan, gain, rate }) => sound.cry(dex, { pan, gain, rate })), [world]);
   useEffect(() => {
     const unlock = () => sound.unlock();
     let hovered: Element | null = null;

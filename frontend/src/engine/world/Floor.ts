@@ -3,7 +3,16 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
 
 export const MAX_SLOTS = 4;
 
-/** Rain-soaked asphalt pit: optional planar reflection in the puddles, rain ripples, a spray-painted ring and per-character glows. */
+/** Field axis: from your Pokémon's spot to the opponent's (see BattleCamera ARENA), so the lines frame the battle. */
+const MID = new THREE.Vector2(0.075, -0.1);
+const AXIS = new THREE.Vector2(2.15, -2.5).normalize();
+
+/**
+ * The stadium platform and its battle field: mown turf inside classic white field lines (boundary, centre
+ * line, centre circle with a Poké Ball core, trainer boxes), a polished rim around it with an accent
+ * light strip, optional planar reflection, a pulse wave for big moments and a soft glow under each
+ * Pokémon standing on it.
+ */
 export class StageFloor {
   readonly group = new THREE.Group();
   readonly uniforms = {
@@ -16,8 +25,8 @@ export class StageFloor {
     uPulseColor: { value: new THREE.Color('#40e0ff') },
     uSlots: { value: Array.from({ length: MAX_SLOTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
     uReflect: { value: 0 },
-    /** Rain ripple strength (0 when reduced motion asks for calm). */
-    uRain: { value: 1 },
+    uMid: { value: MID.clone() },
+    uAxis: { value: AXIS.clone() },
   };
   private reflector: Reflector | null = null;
   private surface: THREE.Mesh;
@@ -38,68 +47,61 @@ export class StageFloor {
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: /* glsl */`
-        uniform sampler2D tDiffuse; uniform vec3 color; uniform float uTime, uPulse, uReflect, uRain; uniform vec3 uAccent, uPulseColor; uniform vec4 uSlots[${MAX_SLOTS}];
+        uniform sampler2D tDiffuse; uniform vec3 color; uniform float uTime, uPulse, uReflect;
+        uniform vec3 uAccent, uPulseColor; uniform vec4 uSlots[${MAX_SLOTS}]; uniform vec2 uMid, uAxis;
         varying vec4 vUvRefl; varying vec3 vWorld;
         float ring(float r, float c, float w) { return smoothstep(w, 0.0, abs(r - c)); }
         float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
-        float fbm(vec2 p) { return vn(p) * 0.5 + vn(p * 2.03 + 11.0) * 0.3 + vn(p * 4.1 + 3.0) * 0.2; }
-        // Rain ripples: one drop per cell, each on its own clock; returns ring brightness and a normal tilt.
-        vec3 ripples(vec2 p, float t) {
-          vec3 acc = vec3(0.0);
-          for (int k = 0; k < 2; k++) {
-            vec2 q = p * (k == 0 ? 2.2 : 3.1) + float(k) * 17.0;
-            vec2 id = floor(q); vec2 f = fract(q) - 0.5;
-            float s = h21(id + float(k) * 3.7);
-            vec2 o = (vec2(h21(id + 1.3), h21(id + 7.1)) - 0.5) * 0.6;
-            float life = fract(t * (0.9 + s * 0.6) + s * 13.0);
-            vec2 d = f - o; float r = length(d);
-            float w = ring(r, life * 0.45, 0.03) * (1.0 - life) * (1.0 - life) * step(0.45, s);
-            acc += vec3(normalize(d + 1e-4) * w, w);
-          }
-          return acc;
-        }
+        float sdBox(vec2 p, vec2 b) { vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+        float line(float d, float w) { float aa = fwidth(d) * 1.2 + 1e-4; return 1.0 - smoothstep(w - aa, w + aa, abs(d)); }
         void main() {
-          vec2 p = vWorld.xz; float r = length(p); float a = atan(p.y, p.x);
-          // Wet asphalt: grainy aggregate, cracks along noise ridges, oil stains with a faint rainbow.
-          float g = fbm(p * 3.0); float grain = h21(floor(p * 140.0));
-          vec3 base = vec3(0.020, 0.019, 0.018) * (0.75 + 0.5 * g) * (0.85 + 0.3 * grain);
-          float crack = smoothstep(0.035, 0.0, abs(fbm(p * 0.9 + 4.0) - 0.5)) * smoothstep(0.4, 0.7, fbm(p * 2.0));
-          base *= 1.0 - crack * 0.7;
-          float oil = smoothstep(0.62, 0.8, fbm(p * 0.55 + 21.0));
-          base += oil * 0.02 * (0.5 + 0.5 * cos(6.28 * (fbm(p * 4.0) + vec3(0.0, 0.33, 0.67))));
-          // Puddles collect in low spots; they are darker, smoother and mirror the scene.
-          float puddle = smoothstep(0.52, 0.6, fbm(p * 0.42 + 2.0));
-          vec3 rip = ripples(p, uTime) * uRain;
-          vec3 col = base * (1.0 - puddle * 0.55);
+          vec2 p = vWorld.xz; float r = length(p);
+          // Field space: x along the battle axis, y across it.
+          vec2 d = p - uMid; vec2 q = vec2(dot(d, uAxis), dot(d, vec2(-uAxis.y, uAxis.x)));
+          vec2 hb = vec2(2.9, 2.0);
+          float inField = 1.0 - smoothstep(-0.02, 0.02, sdBox(q, hb));
+          // Mown turf: alternating bands across the field, fine grain, darker toward the edges.
+          float band = step(0.5, fract(q.x * 0.6 + 0.25));
+          float grain = vn(p * 38.0) * 0.6 + vn(p * 9.0) * 0.4;
+          vec3 turf = mix(vec3(0.018, 0.050, 0.060), vec3(0.024, 0.064, 0.074), band) * (0.82 + 0.3 * grain);
+          turf *= 1.0 - 0.25 * smoothstep(1.2, 3.2, length(q / hb * vec2(2.4, 1.6)));
+          // Polished rim outside the field: near-black with soft concentric sheen.
+          vec3 rim = vec3(0.016, 0.019, 0.030) * (0.9 + 0.2 * sin(r * 40.0) * 0.5);
+          vec3 col = mix(rim, turf, inField);
           #ifdef USE_REFLECTION
             vec2 ruv = vUvRefl.xy / vUvRefl.w;
-            vec2 j = rip.xy * 0.012 + (vec2(fbm(p * 6.0), fbm(p * 6.0 + 9.0)) - 0.5) * 0.006 * (1.0 - puddle);
-            vec3 refl = texture2D(tDiffuse, ruv + j).rgb * 0.6 + texture2D(tDiffuse, ruv + j * 1.8 + vec2(0.0, 0.004)).rgb * 0.4;
-            col += refl * uReflect * mix(0.12, 0.75, puddle);
+            vec3 refl = texture2D(tDiffuse, ruv + (vec2(vn(p * 7.0), vn(p * 7.0 + 9.0)) - 0.5) * 0.004).rgb;
+            col += refl * uReflect * mix(0.22, 0.05, inField);
           #endif
-          col += vec3(0.25, 0.28, 0.32) * rip.z * (0.04 + 0.96 * puddle) * 0.45;
-          // The fight ring is spray-painted: chipped hazard stripes on the rim, a scuffed accent line inside.
-          float wear = smoothstep(0.35, 0.6, fbm(p * 7.0 + 5.0));
-          float band = smoothstep(0.32, 0.3, abs(r - 5.55));
-          float stripe = step(0.5, fract((a * 5.55 + r) * 1.6));
-          vec3 paint = mix(vec3(0.02), vec3(0.85, 0.65, 0.05), stripe) * band * wear;
-          col = mix(col, paint * 0.55 + col * 0.3, band * wear);
-          float dash = step(0.35, fract(a * 6.0 / 3.14159 + uTime * 0.03));
-          vec3 glow = uAccent * ring(r, 2.55, 0.03) * dash * 0.9 * (0.4 + 0.6 * wear);
-          glow += vec3(0.9, 0.85, 0.75) * ring(r, 4.1, 0.02) * 0.12 * wear;
-          // Pulse wave expanding from the centre on events (coin landing, confirm, big hits).
-          float wave = ring(r, uPulse * 7.0, 0.35) * (1.0 - uPulse);
-          glow += uPulseColor * wave * 2.5;
-          // Painted circle and a soft glow under each active character slot (xz = position, z = radius, w = intensity).
+          // Field lines.
+          float lw = 0.022;
+          float cr = length(q);
+          float lines = line(sdBox(q, hb), lw);
+          // The centre line is the Poké Ball's band: it stops at the button ring in the middle.
+          lines = max(lines, line(q.x, lw) * step(abs(q.y), hb.y) * step(0.24, cr));
+          lines = max(lines, line(cr - 0.9, lw));
+          lines = max(lines, line(cr - 0.24, lw * 0.9));
+          lines = max(lines, line(sdBox(q - vec2(2.35, 0.0), vec2(0.55, 0.8)), lw * 0.8));
+          lines = max(lines, line(sdBox(q + vec2(2.35, 0.0), vec2(0.55, 0.8)), lw * 0.8));
+          // The button itself, filled in softly.
+          float core = (1.0 - smoothstep(0.14, 0.155, cr)) * 0.3;
+          float wear = 0.85 + 0.15 * vn(p * 22.0);
+          col = mix(col, vec3(0.86, 0.9, 0.97), clamp(lines * 0.78 * wear + core, 0.0, 1.0));
+          // Accent light strip near the platform edge.
+          vec3 glow = uAccent * ring(r, 5.55, 0.025) * 0.75;
+          glow += vec3(0.75, 0.82, 1.0) * ring(r, 5.85, 0.012) * 0.25;
+          // Pulse wave from the centre on events (coin landing, confirm, big hits).
+          glow += uPulseColor * ring(r, uPulse * 7.0, 0.35) * (1.0 - uPulse) * 2.2;
+          // Soft glow and ring under each Pokémon on the platform (xy = position, z = radius, w = intensity).
           for (int i = 0; i < ${MAX_SLOTS}; i++) {
             vec4 s = uSlots[i];
-            float d = length(p - s.xy);
-            glow += uAccent * (ring(d, s.z, 0.03) * 1.3 * (0.5 + 0.5 * wear) + smoothstep(s.z, 0.0, d) * 0.1) * s.w;
+            float dd = length(p - s.xy);
+            glow += uAccent * (ring(dd, s.z, 0.03) * 1.1 + smoothstep(s.z, 0.0, dd) * 0.1) * s.w;
           }
           col += glow;
-          col *= smoothstep(6.0, 5.85, r) * 0.9 + 0.1;
+          col *= smoothstep(6.0, 5.9, r) * 0.9 + 0.1;
           gl_FragColor = vec4(col * color, 1.0);
         }`,
     };
@@ -117,14 +119,13 @@ export class StageFloor {
     }
     this.surface.rotation.x = -Math.PI / 2;
     this.surface.position.y = 0.201;
-    this.surface.receiveShadow = false;
     this.group.add(this.surface);
 
     // Platform body and a shadow catcher sharing the disc footprint.
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius + 0.25, 0.2, 96, 1, true), new THREE.MeshStandardMaterial({ color: '#0c0d16', roughness: 0.5, metalness: 0.6 }));
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius + 0.25, 0.2, 96, 1, true), new THREE.MeshStandardMaterial({ color: '#0b0f1c', roughness: 0.45, metalness: 0.6 }));
     body.position.y = 0.1;
     this.group.add(body);
-    const shadow = new THREE.Mesh(new THREE.CircleGeometry(radius, 64), new THREE.ShadowMaterial({ opacity: 0.55, color: '#000004' }));
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(radius, 64), new THREE.ShadowMaterial({ opacity: 0.5, color: '#000006' }));
     shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.203; shadow.receiveShadow = true;
     this.group.add(shadow);
   }

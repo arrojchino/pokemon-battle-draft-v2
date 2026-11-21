@@ -11,7 +11,7 @@ type Props = { inviteCode: string; onPlay: () => void; onJoin: () => void; onPok
 type Item = { id: string; label: string; icon: IconName; on: () => void; jp?: string; desc?: string; primary?: boolean; util?: boolean };
 
 /**
- * The first frame people see: a classic start menu with a sliding ▶ cursor, the bot on stage beside it.
+ * The first frame people see: a classic start menu with a sliding ▶ cursor, your partner Pokémon on the field beside it.
  * Arrow keys move the cursor (Settings and Credits share the last row), Enter picks, Escape is ignored.
  */
 export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners, onSettings, onCredits }: Props) {
@@ -25,7 +25,7 @@ export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners,
   const [cursor, setCursor] = useState(0);
 
   useEffect(() => { world?.setLayout({ mode: 'title', featured: s.partner }); }, [world, s.partner]);
-  // Greet once the bot is on stage (immediately if already loaded, otherwise when it arrives).
+  // Greet once the partner is on the field (immediately if already loaded, otherwise when it arrives).
   useEffect(() => {
     if (!world) return;
     let t = 0;
@@ -41,7 +41,7 @@ export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners,
     { id: 'play', label: 'Play online', jp: '対戦', desc: 'Create a room and invite a rival', icon: 'swords', on: onPlay, primary: !inviteCode },
     ...(!inviteCode ? [{ id: 'join', label: 'Join with code', jp: '参加', desc: "Enter a rival's room code", icon: 'hash' as const, on: onJoin }] : []),
     { id: 'pool', label: 'Draft pool', jp: '図鑑', desc: `All ${POOL.length} sets the coin can deal`, icon: 'grid', on: onPokedex },
-    { id: 'paint', label: 'Paint shop', jp: '塗装', desc: 'Repaint your battle bot', icon: 'palette', on: onPartners },
+    { id: 'partner', label: 'Partner', jp: '相棒', desc: `Choose who cheers you on · ${c.name}`, icon: 'user', on: onPartners },
     { id: 'settings', label: 'Settings', icon: 'gear', on: onSettings, util: true },
     { id: 'credits', label: 'Credits', icon: 'info', on: onCredits, util: true },
   ];
@@ -116,8 +116,8 @@ export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners,
             <span className="wordmark__pre">Pokémon</span>
             <span className="wordmark__main"><span>Battle</span> <span>Draft</span></span>
           </h1>
-          <p className="eyebrow title__league"><Icon name="trophy" size={14} />Back Alley League<span className="jp">路地裏リーグ</span></p>
-          <p className="title__lede">Two rivals, one coin, twelve random sets. Draft in the back alley, then settle it in the pit.</p>
+          <p className="eyebrow title__league"><Icon name="trophy" size={14} />Stadium League<span className="jp">スタジアムリーグ</span></p>
+          <p className="title__lede">Two trainers, one coin, twelve random sets. Draft your team, then settle it under the stadium lights.</p>
         </header>
         <nav className="menu" ref={nav} aria-label="Main menu">
           <span className="menu__cursor" aria-hidden="true" />

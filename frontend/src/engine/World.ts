@@ -5,26 +5,25 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import type { CharacterId, CoinSide } from '@shared';
-import { BOT, DEFAULT_CHARACTER, characterById, type Emote } from '../characters/roster.js';
+import { DEFAULT_CHARACTER, characterById, type Emote } from '../characters/roster.js';
 import { CameraDirector, type Shot } from './CameraDirector.js';
-import { BotRig } from './character/BotRig.js';
-import { loadBot } from './character/loadBot.js';
+import { MonRig } from './character/MonRig.js';
+import { hasModel, loadMonModel } from './character/monModel.js';
 import { Emitter, type WorldEvents } from './events.js';
 import { AdaptiveQuality, EFFECTS, TIERS, initialTier, stepTier, type EffectsLevel, type QualityPref, type QualityTier, type RenderScale } from './quality.js';
 import { GradeShader } from './post/GradeShader.js';
 import { createSky } from './world/Sky.js';
-import { createSkyline } from './world/Skyline.js';
 import { StageFloor, MAX_SLOTS } from './world/Floor.js';
-import { Alley } from './world/Alley.js';
-import { Rain } from './world/Rain.js';
+import { Stadium } from './world/Stadium.js';
 import { Atmosphere } from './world/Atmosphere.js';
 import { Coin } from './world/Coin.js';
 import { BattleStage } from './battle/BattleStage.js';
-import { ARENA, yawTo } from './battle/BattleCamera.js';
 
-const HEMI_BASE = new THREE.Color('#4a4238');
-const HEMI_FLASH = new THREE.Color('#b8c8ff');
-const BLOOM_STRENGTH = 0.6;
+const FOG_COLOR = new THREE.Color('#060a18');
+const FOG_DENSITY = 0.0105;
+const BLOOM_STRENGTH = 0.55;
+/** Partner Pokémon height on the platform (every model is normalised to it). */
+const PARTNER_HEIGHT = 1.1;
 
 export type DuoShot = 'room' | 'match' | 'draft' | 'battle';
 export type Layout =
@@ -32,14 +31,14 @@ export type Layout =
   | { mode: 'select'; focus: CharacterId | null }
   | { mode: 'duo'; mine: CharacterId | null; theirs: CharacterId | null; shot: DuoShot; coin: boolean }
   | { mode: 'victory'; winner: CharacterId; loser: CharacterId | null }
-  /** In-app battle: partners step back, holograms of the active Pokémon take the centre. */
+  /** In-app battle: the partners leave the field to the battling Pokémon. */
   | { mode: 'arena'; mine: CharacterId; theirs: CharacterId };
 
 type Slot = { key: string; x: number; z: number; facing: number; focus: boolean };
 
 /**
  * Display options the World honours (from Settings): quality preset, render scale, effects intensity,
- * calm = Reduce flashing (no lightning or screen flashes), steady = the Steady camera style.
+ * calm = Reduce flashing (no crowd camera flashes or screen flashes), steady = the Steady camera style.
  */
 export type WorldOptions = {
   quality: QualityPref; renderScale: RenderScale; effects: EffectsLevel; calm: boolean; steady: boolean;
@@ -64,15 +63,9 @@ export class World {
   private pref: QualityPref;
   private adaptive: AdaptiveQuality;
   private floor!: StageFloor;
-  private skyline!: THREE.InstancedMesh;
-  private rain!: Rain;
   private hemi!: THREE.HemisphereLight;
-  private boltLight!: THREE.DirectionalLight;
-  /** Lightning: seconds until the next strike, the flash level, and the scheduled flicker sequence. */
-  private bolt = { next: 9, flash: 0, seq: [] as number[], t: 0 };
-  private boltFlash = 0;
   private atmosphere!: Atmosphere;
-  private alley: Alley;
+  private stadium: Stadium;
   private sky: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
   private coin: Coin;
   readonly battle: BattleStage;
@@ -81,8 +74,9 @@ export class World {
   private rimB: THREE.DirectionalLight;
   private accent = new THREE.Color('#3ee6ff');
   private accentTarget = new THREE.Color('#3ee6ff');
-  private rigs = new Map<string, BotRig>();
-  private loading = new Map<string, Promise<BotRig | null>>();
+  private rigs = new Map<string, MonRig>();
+  private loading = new Map<string, Promise<MonRig | null>>();
+  private lastCry = new Map<string, number>();
   private hitboxes = new Map<string, THREE.Mesh>();
   private layout: Layout | null = null;
   private slots: Slot[] = [];
@@ -135,11 +129,11 @@ export class World {
     this.director.reducedMotion = this.reducedMotion;
     this.director.steady = this.steady;
 
-    this.scene.fog = new THREE.FogExp2('#05030b', 0.0085);
+    this.scene.fog = new THREE.FogExp2(FOG_COLOR, FOG_DENSITY);
     this.sky = createSky();
     this.scene.add(this.sky);
-    this.alley = new Alley();
-    this.scene.add(this.alley.group);
+    this.stadium = new Stadium({ fogColor: FOG_COLOR, fogDensity: FOG_DENSITY });
+    this.scene.add(this.stadium.group);
     this.coin = new Coin(() => this.reducedMotion);
     this.coin.group.position.set(0, 1.08, 0.75);
     this.coin.onLand = () => { this.floor.pulse(); this.events.emit('sound', { cue: 'coinLand', pan: 0 }); };
@@ -150,20 +144,17 @@ export class World {
     this.battle.onSound = (cue, pan, gain) => this.events.emit('sound', { cue, pan, gain });
     this.scene.add(this.battle.group);
 
-    // Lighting: a sodium street-lamp key with shadows, neon rims (cyan and pink) for silhouettes; the
-    // barrel fire and the pink sign are real point lights inside the alley.
-    this.hemi = new THREE.HemisphereLight('#4a4238', '#0a0706', 0.32);
+    // Lighting: the floodlights as one cool key with shadows from high in front, a sky fill, and two rims
+    // (the partner's accent and a stadium blue) that cut the Pokémon out of the night.
+    this.hemi = new THREE.HemisphereLight('#a9bcff', '#0b0e1a', 0.75);
     this.scene.add(this.hemi);
-    // Lightning: a cold light from high behind the walls, dark until a strike.
-    this.boltLight = new THREE.DirectionalLight('#c8d6ff', 0); this.boltLight.position.set(-3, 14, -12);
-    this.scene.add(this.boltLight);
-    this.key = new THREE.DirectionalLight('#ffd2a0', 1.65);
-    this.key.position.set(2.4, 6.5, 5.5); this.key.target.position.set(0, 1, 0);
+    this.key = new THREE.DirectionalLight('#f1f5ff', 2.4);
+    this.key.position.set(2.4, 7.5, 5.5); this.key.target.position.set(0, 1, 0);
     this.key.shadow.camera.left = -3.2; this.key.shadow.camera.right = 3.2; this.key.shadow.camera.top = 3.2; this.key.shadow.camera.bottom = -1.5;
     this.key.shadow.camera.near = 2; this.key.shadow.camera.far = 16; this.key.shadow.bias = -0.0004; this.key.shadow.normalBias = 0.025;
     this.scene.add(this.key, this.key.target);
-    this.rimA = new THREE.DirectionalLight('#3ee6ff', 2.2); this.rimA.position.set(-4, 3, -4);
-    this.rimB = new THREE.DirectionalLight('#ff3d7a', 1.6); this.rimB.position.set(4, 2.5, -3.5);
+    this.rimA = new THREE.DirectionalLight('#3ee6ff', 1.8); this.rimA.position.set(-4, 3, -4);
+    this.rimB = new THREE.DirectionalLight('#6f8cff', 1.4); this.rimB.position.set(4, 2.5, -3.5);
     this.scene.add(this.rimA, this.rimB);
 
     this.buildTierDependent();
@@ -195,16 +186,9 @@ export class World {
     this.floor = new StageFloor(q.reflections, 1024);
     this.floor.uniforms.uAccent.value.copy(this.accent);
     this.scene.add(this.floor.group);
-    if (this.skyline) { this.scene.remove(this.skyline); this.skyline.geometry.dispose(); (this.skyline.material as THREE.Material).dispose(); this.skyline.dispose(); }
-    this.skyline = createSkyline(q.buildings);
-    this.scene.add(this.skyline);
-    if (this.rain) { this.scene.remove(this.rain.mesh); this.rain.dispose(); }
-    this.rain = new Rain(q.rain);
-    this.rain.setSpeed(this.reducedMotion ? 0.35 : 1);
-    this.scene.add(this.rain.mesh);
-    this.floor.uniforms.uRain.value = this.reducedMotion ? 0.3 : 1;
     if (this.atmosphere) { this.scene.remove(this.atmosphere.group); disposeTree(this.atmosphere.group); }
-    this.atmosphere = new Atmosphere(q.shafts);
+    this.atmosphere = new Atmosphere(q.shafts, this.stadium.lamps);
+    this.atmosphere.reduced = this.reducedMotion;
     this.atmosphere.setAccent(this.accent);
     this.scene.add(this.atmosphere.group);
 
@@ -232,9 +216,9 @@ export class World {
   }
 
   /**
-   * Effects intensity and Reduce flashing: bloom strength, post-processing grit (grain, scratches and
-   * colour fringe; grime and impact blur are scaled per frame), battle particles and light flashes, and
-   * the alley's flickering signs (flicker counts as flashing).
+   * Effects intensity and Reduce flashing: bloom strength, post-processing (grain and colour fringe;
+   * impact blur is scaled per frame), battle particles and light flashes, and the crowd's camera
+   * flashes and scrolling boards (flashes count as flashing).
    */
   private applyEffects() {
     const fx = this.fx, base = GradeShader.uniforms, g = this.grade.uniforms;
@@ -242,39 +226,7 @@ export class World {
     g.uGrain.value = base.uGrain.value * (this.reducedMotion ? 0.5 : 1) * fx.post;
     g.uFringe.value = base.uFringe.value * fx.post;
     this.battle.setEffects(fx.particles, fx.lights, this.calm);
-    this.alley.reduced = this.reducedMotion || this.calm;
-  }
-
-  /**
-   * Distant lightning every 12 to 30 seconds: two or three quick flickers that light the clouds, the
-   * rain and the wet ground, then thunder a moment later (the delay sells the distance). Skipped with
-   * reduced motion or Reduce flashing, since flashes are exactly what those settings are for.
-   */
-  private stepLightning(dt: number) {
-    const b = this.bolt;
-    b.next -= dt;
-    if (b.next <= 0 && !this.reducedMotion && !this.calm) {
-      b.next = 12 + Math.random() * 18; b.t = 0;
-      const n = 2 + Math.floor(Math.random() * 2);
-      b.seq = []; let at = 0;
-      for (let i = 0; i < n; i++) { b.seq.push(at, 0.05 + Math.random() * 0.06); at += 0.09 + Math.random() * 0.14; }
-      const dist = 0.6 + Math.random() * 1.6;
-      window.setTimeout(() => this.events.emit('sound', { cue: 'thunder', pan: Math.random() * 1.2 - 0.6, gain: 1.4 - dist * 0.35 }), dist * 1000);
-    }
-    let f = 0;
-    if (b.seq.length) {
-      b.t += dt;
-      for (let i = 0; i < b.seq.length; i += 2) { const s0 = b.seq[i], d = b.seq[i + 1]; if (b.t >= s0 && b.t < s0 + d) f = Math.max(f, 1 - i * 0.15); }
-      if (b.t > b.seq[b.seq.length - 2] + 0.4) b.seq = [];
-    }
-    b.flash += (f - b.flash) * Math.min(1, dt * (f > b.flash ? 60 : 9));
-    this.sky.material.uniforms.uFlash.value = b.flash;
-    this.rain.setFlash(b.flash);
-    this.alley.setFlash(b.flash);
-    this.hemi.intensity = 0.32 + b.flash * 2.2;
-    this.hemi.color.lerpColors(HEMI_BASE, HEMI_FLASH, Math.min(1, b.flash));
-    this.boltLight.intensity = b.flash * 4.5;
-    this.boltFlash = b.flash;
+    this.stadium.reduced = this.reducedMotion || this.calm;
   }
 
   private shiftTier(dir: -1 | 1): boolean {
@@ -308,7 +260,7 @@ export class World {
   }
   setReducedMotion(v: boolean) {
     this.reducedMotion = v; this.director.reducedMotion = v;
-    this.rain.setSpeed(v ? 0.35 : 1); this.floor.uniforms.uRain.value = v ? 0.3 : 1;
+    this.atmosphere.reduced = v;
     for (const r of this.rigs.values()) r.reducedMotion = v;
     this.syncBattleCamera();
     this.applyEffects();
@@ -322,21 +274,22 @@ export class World {
   private pixelScale() { return this.renderScale === 'auto' ? this.adaptive.scale : this.renderScale; }
 
   private buildEnvironmentMap() {
-    // Reflections for metals (coin, platform rim) from a tiny neon-and-sky scene, prefiltered once.
+    // Reflections for the Pokémon, the coin and the platform rim: the night sky plus four floodlight
+    // panels high around the field and a stadium-blue glow behind it, prefiltered once.
     const envScene = new THREE.Scene();
     envScene.add(createSky());
-    const panel = (c: string, x: number, y: number, z: number, s: number) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(s, s * 0.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(4), side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 1, 0); envScene.add(m); };
-    panel('#2fe6ff', 8, 4, -6, 5); panel('#ff2f8a', -6, 5, -9, 6); panel('#ffa040', -7, 3, -2, 4); panel('#ffd2a0', 3, 9, 6, 6);
+    const panel = (c: string, x: number, y: number, z: number, s: number) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(s, s * 0.45), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(5), side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 1, 0); envScene.add(m); };
+    for (const l of this.stadium.lamps) panel('#eef3ff', l.x * 0.45, l.y * 0.5, l.z * 0.45, 4);
+    panel('#3a5cff', 0, 2, -9, 6);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.envRT = pmrem.fromScene(envScene, 0.02);
     this.scene.environment = this.envRT.texture;
-    this.scene.environmentIntensity = 0.18;
+    this.scene.environmentIntensity = 0.45;
     pmrem.dispose(); disposeTree(envScene);
   }
 
   // ---------------------------------------------------------------- characters
   private async preload(ids: CharacterId[]) {
-    // One model serves every paint job, so only the paints actually on screen need instances.
     for (const id of ids.length ? ids : [DEFAULT_CHARACTER]) { await this.ensureRig(id); if (this.disposed) return; }
     this.events.emit('ready');
   }
@@ -348,7 +301,7 @@ export class World {
   }
 
   /** Get (or lazily create) a rig. `#2` keys are second instances used when both players pick the same partner. */
-  private ensureRig(key: string): Promise<BotRig | null> {
+  private ensureRig(key: string): Promise<MonRig | null> {
     const existing = this.rigs.get(key);
     if (existing) return Promise.resolve(existing);
     let p = this.loading.get(key);
@@ -356,24 +309,22 @@ export class World {
     const id = key.split('#')[0] as CharacterId;
     const c = characterById(id);
     if (!c) return Promise.resolve(null);
-    p = loadBot(BOT.model, c.paint, (l, t) => this.reportProgress('bot', l, t, 'battle bot')).then(bot => {
-      if (this.disposed) { disposeTree(bot.scene); return null; }
-      const rig = new BotRig(bot, c);
+    // The 3D model when the Pokémon 3D API has one; otherwise (or offline) the official artwork card.
+    const model = hasModel(c.dex) ? loadMonModel(c.dex, PARTNER_HEIGHT, (l, t) => this.reportProgress(key, l, t, c.name)).catch(() => null) : Promise.resolve(null);
+    p = model.then(m => {
+      if (this.disposed) return null;
+      const rig = new MonRig(m, c);
       rig.reducedMotion = this.reducedMotion;
       rig.setVisible(false, true); rig.root.visible = false;
       this.scene.add(rig.root);
       // Invisible capsule-ish hitbox for hover/click picking (cheaper and steadier than skinned meshes).
-      const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, rig.height * 0.95, 8), new THREE.MeshBasicMaterial({ visible: false }));
+      const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, rig.height * 0.95, 8), new THREE.MeshBasicMaterial({ visible: false }));
       hit.position.y = rig.height * 0.48; hit.userData.key = key;
       rig.root.add(hit); this.hitboxes.set(key, hit);
       this.rigs.set(key, rig);
       this.events.emit('characterReady', { id });
       if (this.layout && !this.pendingLayout) this.applyLayout(this.layout, false);
       return rig;
-    }).catch(err => {
-      this.loading.delete(key);
-      this.events.emit('error', { message: `Could not load ${c.name}: ${String((err as Error).message ?? err)}` });
-      return null;
     });
     this.loading.set(key, p);
     return p;
@@ -411,7 +362,7 @@ export class World {
 
   private shotFor(l: Layout): Shot {
     switch (l.mode) {
-      case 'title': return { pos: [-0.15, 1.12, 3.5], target: [0.55, 0.86, 0], fov: 30, time: 1.4 };
+      case 'title': return { pos: [-0.45, 1.3, 4.4], target: [0.6, 0.78, 0], fov: 30, time: 1.4 };
       case 'select': {
         if (!l.focus) return { pos: [0, 1.1, 5.0], target: [0, 0.8, 0], fov: 31, time: 1.2 };
         const s = this.selectSlots(l.focus).find(x => x.focus)!;
@@ -427,7 +378,7 @@ export class World {
   }
 
   private selectSlots(focus: CharacterId | null): Slot[] {
-    // The paint shop: just your bot, centre stage.
+    // Partner select: just the chosen Pokémon, centre stage.
     return focus ? [{ key: focus, x: 0, z: 0.35, facing: 0, focus: true }] : [];
   }
 
@@ -443,10 +394,7 @@ export class World {
       this.coin.visibleTarget = l.coin ? 1 : 0;
     } else this.coin.visibleTarget = 0;
     if (l.mode === 'arena') {
-      // Pokémon-style field: each partner behind their Pokémon, squared up to the other partner.
-      const [a, b] = ARENA.trainer;
-      slots.push({ key: l.mine, x: a.x, z: a.z, facing: yawTo(a, b), focus: false });
-      slots.push({ key: l.theirs === l.mine ? `${l.theirs}#2` : l.theirs, x: b.x, z: b.z, facing: yawTo(b, a), focus: false });
+      // The partners leave the field to the battling Pokémon.
       accent = l.mine;
       if (modeChanged && !this.reducedMotion) this.battle.cam.intro();
     } else this.battle.clear();
@@ -460,7 +408,7 @@ export class World {
     for (const [key, rig] of this.rigs) {
       const s = slots.find(x => x.key === key);
       if (!s) { rig.setVisible(false); rig.focused = false; continue; }
-      // New screen (or newly shown): teleport and reset spring bones. Within a screen: glide.
+      // New screen (or newly shown): teleport. Within a screen: glide.
       rig.place(s.x, s.z, s.facing, !rig.isShown || modeChanged);
       rig.setVisible(true);
       rig.focused = s.focus;
@@ -486,10 +434,13 @@ export class World {
     const rig = key ? this.rigs.get(key) : undefined;
     if (!rig) return;
     rig.play(e);
-    // Every reaction comes with a little robot gibberish, panned to where the bot stands.
-    const cue = e === 'excited' || e === 'victory' || e === 'twirl' || e === 'thumbs' || e === 'greet' ? 'chirpHappy'
-      : e === 'sad' || e === 'faceplant' ? 'chirpSad' : e === 'punch' || e === 'thinking' ? 'chirpAngry' : 'chirp';
-    if (rig.root.visible) this.events.emit('sound', { cue, pan: Math.max(-1, Math.min(1, rig.root.position.x / 3)), gain: 0.8 });
+    // Big reactions come with the Pokémon's own cry (lower for sad ones), at most once every few seconds each.
+    if (!rig.root.visible || e === 'nod' || e === 'bow' || e === 'thinking' || e === 'idle') return;
+    const now = performance.now();
+    if (now - (this.lastCry.get(key!) ?? -1e9) < 3500) return;
+    this.lastCry.set(key!, now);
+    const sad = e === 'sad' || e === 'faceplant';
+    this.events.emit('cry', { dex: rig.character.dex, pan: Math.max(-1, Math.min(1, rig.root.position.x / 3)), gain: sad ? 0.45 : 0.65, rate: sad ? 0.88 : 1 });
   }
 
   hover(id: CharacterId | null) {
@@ -547,6 +498,7 @@ export class World {
     this.accent.lerp(this.accentTarget, 1 - Math.exp(-3 * dt));
     this.floor.uniforms.uAccent.value.copy(this.accent);
     this.atmosphere.setAccent(this.accent);
+    this.stadium.setAccent(this.accent);
     this.rimA.color.copy(this.accent);
 
     // Gaze: the pointer ray meets a plane just in front of the stage; idle pointers hand gaze back to the camera.
@@ -581,20 +533,14 @@ export class World {
     }
     // Impact blur is a camera jolt (off with reduced motion or the steady camera) and post-processing (scaled by effects).
     this.grade.uniforms.uPunch.value = arena && !this.reducedMotion && !this.steady ? this.battle.screenPunch * this.fx.post : 0;
-    const bf = this.boltFlash * 0.07, sf = arena ? this.battle.screenFlash.amt : 0;
-    this.grade.uniforms.uFlashAmt.value = Math.max(sf, bf);
-    const grime = (arena ? 1 : 0.55) * (this.reducedMotion ? 0.6 : 1) * this.fx.post;
-    this.grade.uniforms.uGrime.value += (grime - this.grade.uniforms.uGrime.value) * Math.min(1, dt * 2);
-    this.grade.uniforms.uFlashColor.value.copy(sf >= bf ? this.battle.screenFlash.color : HEMI_FLASH);
+    this.grade.uniforms.uFlashAmt.value = arena ? this.battle.screenFlash.amt : 0;
+    this.grade.uniforms.uFlashColor.value.copy(this.battle.screenFlash.color);
     this.director.update(dt);
     this.floor.update(t, dt);
-    this.alley.update(t, dt);
-    this.rain.update(t);
-    this.stepLightning(dt);
+    this.stadium.update(t);
     this.atmosphere.update(t, dt);
     this.coin.update(dt);
     this.sky.material.uniforms.uTime.value = t;
-    (this.skyline.material as THREE.ShaderMaterial).uniforms.uTime.value = t;
     this.grade.uniforms.uTime.value = t;
 
     this.renderer.info.reset();
@@ -618,6 +564,7 @@ export class World {
     this.camera.zoom = w / h < 1 ? Math.max(0.55, w / h * 1.15) : 1;
     this.camera.updateProjectionMatrix();
     this.coin.setPixelScale(h * dpr / 900);
+    this.atmosphere?.setPixelScale(h * dpr / 900);
     this.battle?.setPixelScale(h * dpr / 900);
   }
 
@@ -640,7 +587,7 @@ export class World {
     this.removeListeners.forEach(f => f());
     for (const r of this.rigs.values()) r.dispose();
     this.rigs.clear();
-    this.floor.dispose(); this.rain.dispose(); this.alley.dispose(); this.battle.dispose();
+    this.floor.dispose(); this.stadium.dispose(); this.battle.dispose();
     disposeTree(this.scene);
     this.envRT?.dispose();
     for (const pass of this.composer.passes) pass.dispose();

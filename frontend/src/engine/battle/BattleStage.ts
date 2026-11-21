@@ -7,6 +7,11 @@ import { ARENA, BattleCamera } from './BattleCamera.js';
 import { Barrier, Beam, Debris, Flashes, Particles, Rings, Shape, Slashes, type DebrisKind } from './fx.js';
 import { impactDelay, recipeFor, type Aura, type Recipe } from './moveFx.js';
 import type { Cue } from '../../audio/sound.js';
+import { MonBody, hasModel, loadMonModel } from '../character/monModel.js';
+
+/** Battling Pokémon models are normalised to this height and stand on the platform top. */
+const MON_HEIGHT = 1.2;
+const PLATFORM_Y = 0.205;
 
 /** Conventional type colours, used for move trails, impacts and Tera crystals. */
 export const TYPE_HEX: Record<TypeName, string> = {
@@ -85,10 +90,11 @@ const tmp2 = new THREE.Vector3();
 const smooth = (x: number) => x * x * (3 - 2 * x);
 
 /**
- * A holographic projection of the active Pokémon: the official artwork rendered as light, with
- * scanlines, a type-tinted rim, glitch on impact and a dissolve on faint. Deliberately presented as a
- * projection from a floor emitter, not as a fake 3D model. Your side is mirrored so both Pokémon
- * face each other across the field.
+ * The active Pokémon on one side of the field. It appears at once as a holographic projection of the
+ * official artwork (scanlines, type-tinted rim, glitch on impact, dissolve on faint); when the
+ * Pokémon 3D API has a model for the species, the model is sent out in its place as soon as it has
+ * downloaded, facing its opponent, with its own battle idle, attack, damage and faint animations where
+ * the model has them. Alternate forms without their own model keep the projection.
  */
 class Hologram {
   readonly group = new THREE.Group();
@@ -112,6 +118,12 @@ class Hologram {
   private dashT = 1; private dashDur = 0.75; private dashTo = new THREE.Vector3(); private spinning = false; private vanish = false;
   private trail: THREE.Vector3[] = Array.from({ length: 10 }, () => new THREE.Vector3());
   present = false;
+  /** Where the opposing Pokémon stands: models face it. */
+  readonly foe = new THREE.Vector3();
+  private body: MonBody | null = null;
+  private bodyDex = 0;
+  private bodyIn = 1;
+  private yaw = 0;
   /** Ceiling for the hit/heal/Tera flash on the projection (lowered by Reduce flashing). */
   flashCap = 1;
 
@@ -162,6 +174,23 @@ class Hologram {
     this.dissolving = false; this.dissolveT = 0; this.uniforms.uDissolve.value = 0; this.uniforms.uAlpha.value = 1;
     this.crystalTarget = 0; this.uniforms.uStatusAmt.value = 0; this.dashT = 1;
     this.revealT = instant ? 1 : 0;
+    // 3D model: the same species comes back as it was (revived or switched back in); a new one loads
+    // while the projection stands in for it.
+    const dex = artId <= 1025 && hasModel(artId) ? artId : 0;
+    if (this.body && this.bodyDex !== dex) { this.body.dispose(); this.body = null; this.bodyDex = 0; }
+    this.card.visible = !this.body; this.beam.visible = !this.body;
+    if (this.body) { this.body.reset(); this.bodyIn = instant ? 1 : 0; this.body.act(['glad01', 'notice01']); }
+    else if (dex) {
+      void loadMonModel(dex, MON_HEIGHT).then(m => {
+        if (token !== this.loadToken || !this.present || this.dissolving) { for (const mat of m.materials) mat.dispose(); return; }
+        this.body = new MonBody(m, 'battle'); this.bodyDex = dex;
+        this.body.root.position.y = PLATFORM_Y;
+        this.group.add(this.body.root);
+        this.card.visible = false; this.beam.visible = false;
+        this.bodyIn = instant ? 1 : 0;
+        this.body.hit('#ffffff', 1);
+      }).catch(() => { /* the projection stays */ });
+    }
     const tex = await artTexture(artId, name);
     if (token !== this.loadToken) return;
     this.uniforms.map.value = tex;
@@ -175,14 +204,21 @@ class Hologram {
     this.dashTo.copy(this.home).addScaledVector(tmp.normalize(), Math.max(0, len - 0.85));
     for (const p of this.trail) p.copy(this.home);
   }
-  hit(strength: number, color: string) { this.shake = Math.min(1, 0.35 + strength); this.uniforms.uGlitch.value = Math.min(1, 0.4 + strength); this.uniforms.uFlash.value = 0.8; this.uniforms.uFlashColor.value.set(color); }
+  hit(strength: number, color: string) {
+    this.shake = Math.min(1, 0.35 + strength); this.uniforms.uGlitch.value = Math.min(1, 0.4 + strength); this.uniforms.uFlash.value = 0.8; this.uniforms.uFlashColor.value.set(color);
+    this.body?.hit(color, Math.min(1, 0.5 + strength) * this.flashCap); this.body?.act(strength > 0.6 ? ['damage02', 'damage01'] : ['damage01'], { speed: 1.15 });
+  }
+  /** The attacker's own motion: a strike for contact moves, a ranged pose for the rest, a cheer for self moves. */
+  attack(kind: 'contact' | 'ranged' | 'self') {
+    this.body?.act(kind === 'contact' ? ['attack01', 'attack02'] : kind === 'ranged' ? ['rangeattack01', 'attack02', 'attack01'] : ['glad01', 'roar01', 'rangeattack01']);
+  }
   distort(amount = 0.8) { this.uniforms.uGlitch.value = Math.max(this.uniforms.uGlitch.value, amount); }
-  heal() { this.uniforms.uFlash.value = 0.5; this.uniforms.uFlashColor.value.set('#7dffb0'); this.hop = 1; }
-  pulse(color: string, amount = 0.6) { this.uniforms.uFlash.value = amount; this.uniforms.uFlashColor.value.set(color); this.hop = 1; }
+  heal() { this.uniforms.uFlash.value = 0.5; this.uniforms.uFlashColor.value.set('#7dffb0'); this.hop = 1; this.body?.hit('#7dffb0', 0.6 * this.flashCap); }
+  pulse(color: string, amount = 0.6) { this.uniforms.uFlash.value = amount; this.uniforms.uFlashColor.value.set(color); this.hop = 1; this.body?.hit(color, amount * this.flashCap); }
   dodge() { this.sidestep = 1; }
-  faint() { this.dissolving = true; this.dissolveT = 0; this.crystalTarget = 0; }
-  tera(color: string) { this.crystalTarget = 1; (this.crystal.material as THREE.LineBasicMaterial).color.set(color).multiplyScalar(2.2); this.uniforms.uFlash.value = 1; this.uniforms.uFlashColor.value.set(color); this.uniforms.uTint.value.set(color); }
-  status(color: string | null) { if (color) { this.uniforms.uStatus.value.set(color); this.uniforms.uStatusAmt.value = 1; } else this.uniforms.uStatusAmt.value = 0; }
+  faint() { this.dissolving = true; this.dissolveT = 0; this.crystalTarget = 0; this.body?.act(['down01_start', 'damage02', 'damage01'], { hold: true }); }
+  tera(color: string) { this.crystalTarget = 1; (this.crystal.material as THREE.LineBasicMaterial).color.set(color).multiplyScalar(2.2); this.uniforms.uFlash.value = 1; this.uniforms.uFlashColor.value.set(color); this.uniforms.uTint.value.set(color); this.body?.hit(color, this.flashCap); }
+  status(color: string | null) { if (color) { this.uniforms.uStatus.value.set(color); this.uniforms.uStatusAmt.value = 1; } else this.uniforms.uStatusAmt.value = 0; this.body?.setTint(color, 0.28); }
   hide() { this.group.visible = false; this.present = false; this.dashT = 1; for (const g of this.ghosts) g.visible = false; }
 
   update(dt: number, t: number, camera: THREE.Camera, reduced: boolean) {
@@ -193,8 +229,10 @@ class Hologram {
     this.uniforms.uGlitch.value *= Math.exp(-5 * dt);
     this.uniforms.uFlash.value = Math.min(this.flashCap, this.uniforms.uFlash.value * Math.exp(-7 * dt));
     if (this.dissolving) {
-      this.dissolveT = Math.min(1, this.dissolveT + dt / (reduced ? 0.4 : 1.1));
+      // A model plays its faint, then fades; the projection erodes.
+      this.dissolveT = Math.min(1, this.dissolveT + dt / (reduced ? 0.4 : this.body ? 1.6 : 1.1));
       this.uniforms.uDissolve.value = this.dissolveT;
+      this.body?.setOpacity(1 - smooth(Math.max(0, (this.dissolveT - 0.45) / 0.55)));
       if (this.dissolveT >= 1) { this.hide(); this.dissolving = false; return; }
     }
     this.shake = Math.max(0, this.shake - dt * 2.4);
@@ -222,8 +260,21 @@ class Hologram {
     this.card.lookAt(camera.position.x, this.card.getWorldPosition(tmp2).y, camera.position.z);
     if (spin) this.card.rotateY(spin);
 
-    // Afterimages trail the rush.
-    const moving = this.dashT < 1 && !reduced;
+    if (this.body) {
+      // Grow out of the send-out flash, then face the foe (turned a little toward the camera, as in the games).
+      this.bodyIn = Math.min(1, this.bodyIn + dt / (reduced ? 0.15 : 0.4));
+      const u = this.bodyIn, s = u >= 1 ? 1 : 1 + 2.7 * Math.pow(u - 1, 3) + 1.7 * Math.pow(u - 1, 2);
+      this.body.root.scale.setScalar(Math.max(0.001, s));
+      tmp2.lerpVectors(this.foe, camera.position, this.side === 0 ? 0.3 : 0.4);
+      const want = Math.atan2(tmp2.x - this.group.position.x, tmp2.z - this.group.position.z);
+      this.yaw += Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw)) * (1 - Math.exp(-10 * dt));
+      this.body.root.rotation.y = this.yaw + spin;
+      if (!this.dissolving) this.body.setOpacity(this.uniforms.uAlpha.value);
+      this.body.update(dt);
+    }
+
+    // Afterimages trail the rush (the projection only).
+    const moving = this.dashT < 1 && !reduced && !this.body;
     this.trail.unshift(this.trail.pop()!.copy(this.card.getWorldPosition(tmp2)));
     this.ghosts.forEach((g, i) => {
       g.visible = moving;
@@ -241,6 +292,7 @@ class Hologram {
   }
 
   dispose() {
+    this.body?.dispose(); this.body = null;
     this.group.traverse(o => { const m = o as THREE.Mesh; if (m.geometry) m.geometry.dispose(); const mat = m.material as THREE.Material | undefined; mat?.dispose(); });
     for (const g of this.ghosts) g.material.dispose();
   }
@@ -331,7 +383,7 @@ export class BattleStage {
 
   constructor(private camera: THREE.Camera, private reduced: () => boolean) {
     this.holos = [new Hologram(0), new Hologram(1)];
-    this.holos.forEach((h, i) => h.place(ARENA.mon[i]));
+    this.holos.forEach((h, i) => { h.place(ARENA.mon[i]); h.foe.copy(ARENA.mon[1 - i]); });
     for (const h of this.holos) { this.group.add(h.group); for (const g of h.ghosts) this.group.add(g); }
     for (const o of this.orbs) this.group.add(o.mesh);
     for (const b of this.beams) this.group.add(b.mesh);
@@ -392,6 +444,7 @@ export class BattleStage {
     const style = r.kind === 'dash' ? 'dash' : (r.kind === 'rain' && r.debris !== 'coin') || r.kind === 'quake' || r.kind === 'field' || r.kind === 'hazard' ? 'field' : selfMove ? 'self' : 'projectile';
     const big = (r.kind === 'dash' && !!r.big) || (moveInfo(move)?.power ?? 0) >= 110;
     if (!this.reduced()) this.cam.attack(side, style, delay, tgt, big);
+    this.holos[side].attack(r.kind === 'dash' ? 'contact' : selfMove ? 'self' : 'ranged');
     this.play(r, side, tgt, color);
   }
 
@@ -625,7 +678,7 @@ export class BattleStage {
 
   private selfFx(effect: Extract<Recipe, { kind: 'self' }>['effect'], s: 0 | 1, color: string) {
     const A = this.home(s), f = this.foot(s), P = this.particles, h = this.holos[s];
-    this.snd(effect === 'heal' || effect === 'revive' ? 'heal' : effect === 'protect' || effect === 'screen' ? 'shield' : effect === 'curse' ? 'debuff' : effect === 'sleep' ? 'chirpSad' : effect === 'sub' || effect === 'transform' ? 'rings' : effect === 'drum' ? 'punch' : 'buff', s);
+    this.snd(effect === 'heal' || effect === 'revive' ? 'heal' : effect === 'protect' || effect === 'screen' ? 'shield' : effect === 'curse' ? 'debuff' : effect === 'sleep' ? 'status' : effect === 'sub' || effect === 'transform' ? 'rings' : effect === 'drum' ? 'punch' : 'buff', s);
     switch (effect) {
       case 'buff': P.swirl(A, 0.8, { color, size: 0.06, radius: 0.65, height: 1.8, rate: 150, w: 5, ttl: 0.8 }); this.rings.fire(f, color, { flat: true, s0: 1.4, s1: 0.2, dur: 0.6 }); this.later(0.6, () => h.pulse(color)); break;
       case 'blades': P.swirl(A, 0.9, { color: '#e8f0ff', shape: Shape.Star, size: 0.16, radius: 0.75, height: 0.4, rate: 60, w: 9, ttl: 0.9, spin: 5 }); this.later(0.6, () => { this.slashes.fire(A, '#ffffff', 2, 0.8); h.pulse('#ffffff'); }); break;

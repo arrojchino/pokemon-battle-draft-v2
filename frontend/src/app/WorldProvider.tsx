@@ -10,7 +10,7 @@ export const useWorld = () => useContext(WorldCtx);
 
 /**
  * Owns the one WebGL canvas for the whole app. The engine chunk (three.js) is loaded
- * lazily so the UI paints immediately; without WebGL2 the app falls back to rendered portraits.
+ * lazily so the UI paints immediately; without WebGL2 the app falls back to partner artwork.
  */
 export function WorldProvider({ children }: { children: ReactNode }) {
   const host = useRef<HTMLDivElement>(null);

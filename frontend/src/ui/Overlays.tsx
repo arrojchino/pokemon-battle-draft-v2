@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { POOL } from '@shared';
-import { BOT, characterById } from '../characters/roster.js';
+import { characterById } from '../characters/roster.js';
 import { useWorld } from '../app/WorldProvider.js';
 import { Modal } from './primitives.js';
 
-/** True once the stage can be shown: the first bot is ready, or the world settled on ready or fallback. */
+/** True once the stage can be shown: the first partner is ready, or the world settled on ready or fallback. */
 export function useStageReady(): boolean {
   const { status, firstCharacter } = useWorld();
   return firstCharacter || status.kind !== 'loading';
@@ -28,11 +28,13 @@ export function CreditsDialog({ open, onClose }: { open: boolean; onClose: () =>
     <Modal open={open} onClose={onClose} title="Credits & licenses">
       <div className="credits">
         <section>
-          <h3>Battle bot</h3>
+          <h3>Pokémon models and media</h3>
           <ul className="credits__list">
-            <li><strong><a href={BOT.credit.url} target="_blank" rel="noopener noreferrer">{BOT.credit.model}</a></strong><span>{BOT.credit.author}</span><span className="badge">{BOT.credit.license}</span></li>
+            <li><strong><a href="https://github.com/Pokemon-3D-api/assets" target="_blank" rel="noopener noreferrer">Pokémon 3D API</a></strong><span>3D models, loaded at runtime</span><span className="badge">Fan resource</span></li>
+            <li><strong><a href="https://github.com/PokeAPI/sprites" target="_blank" rel="noopener noreferrer">PokeAPI sprites</a></strong><span>Official artwork, loaded at runtime</span><span className="badge">Fan resource</span></li>
+            <li><strong><a href="https://github.com/PokeAPI/cries" target="_blank" rel="noopener noreferrer">PokeAPI cries</a></strong><span>Partner cries, loaded at runtime</span><span className="badge">Fan resource</span></li>
           </ul>
-          <p className="credits__note">Paint jobs, names and quips are original to this project.</p>
+          <p className="credits__note">Models, artwork and cries are fetched from those repositories when needed and are not bundled. Partner quips are original to this project.</p>
         </section>
         <section>
           <h3>Typefaces</h3>
@@ -48,10 +50,10 @@ export function CreditsDialog({ open, onClose }: { open: boolean; onClose: () =>
         </section>
         <section>
           <h3>Pokémon</h3>
-          <p className="credits__note">Official artwork is loaded at runtime from the PokeAPI sprites repository and is not bundled. Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc. and GAME FREAK inc. This is an unofficial, non-commercial fan project.</p>
+          <p className="credits__note">Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc. and GAME FREAK inc. This is an unofficial, non-commercial fan project.</p>
           <p className="credits__note">Battles played on Showdown open play.pokemonshowdown.com in its own tab; this app does not bundle or modify the Showdown client.</p>
         </section>
-        <p className="credits__note">Sound effects are synthesized in the browser; the alley, its textures and the partner badges are generated in code.</p>
+        <p className="credits__note">Sound effects are synthesized in the browser; the stadium, its field and its lights are generated in code.</p>
       </div>
     </Modal>
   );
@@ -85,12 +87,13 @@ const TIPS = [
   `Every game deals twelve of the ${POOL.length} sets in the draft pool: two teams of six.`,
   'Best of 3 or best of 5: the first to 2 or 3 wins takes the series.',
   'A drawn battle is replayed from a fresh coin toss.',
-  'Battle right here in the alley, or take both teams to Pokémon Showdown.',
+  'Battle right here in the stadium, or take both teams to Pokémon Showdown.',
+  'Your partner Pokémon cheers you on from the field between battles. Pick one from the title menu.',
 ];
 
 /**
  * First-load veil: the capsule rolls inside a ring that fills with the real byte progress of the opening
- * bot. When the stage is ready the ring closes, the capsule pops and the veil dissolves over the menu.
+ * partner's model. When the stage is ready the ring closes, the capsule pops and the veil dissolves over the menu.
  */
 export function LoadingVeil() {
   const { status } = useWorld();
@@ -108,7 +111,7 @@ export function LoadingVeil() {
           <svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="37" pathLength={100} /><circle className="veil__ring" cx="40" cy="40" r="37" pathLength={100} /></svg>
           <span className="spinner" />
         </div>
-        <p className="veil__brand"><span className="veil__pre">Pokémon</span><strong className="veil__title">Battle Draft</strong><span className="jp veil__jp">路地裏リーグ</span></p>
+        <p className="veil__brand"><span className="veil__pre">Pokémon</span><strong className="veil__title">Battle Draft</strong><span className="jp veil__jp">ドラフトバトル</span></p>
         <div className="veil__bar"><i /></div>
         <small className="num">{label} · {Math.round(p * 100)}%</small>
         <p className="veil__tip"><span className="eyebrow">Tip</span>{tip}</p>
@@ -117,7 +120,7 @@ export function LoadingVeil() {
   );
 }
 
-/** Without WebGL: a still composition using the generated badges, so the game stays fully playable. */
+/** Without WebGL: a still composition of partner artwork, so the game stays fully playable. */
 export function FallbackBackdrop({ featured }: { featured: string[] }) {
   const { status } = useWorld();
   if (status.kind !== 'fallback') return null;

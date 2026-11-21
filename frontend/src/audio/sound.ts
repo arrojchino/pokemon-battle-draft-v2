@@ -1,11 +1,13 @@
 /**
- * All game audio, synthesized live with the Web Audio API: no sound files to download or license.
+ * Game audio, synthesized live with the Web Audio API: no effect files to download or license.
  * Sound effects only: the game deliberately has no background music.
  *
- * Effects run through a little tape saturation and a short generated "back alley" reverb into a master
- * gain (volume and mute), so everything shares the same grimy room. The context starts on the first
+ * Effects run through a little saturation and a short generated stadium reverb into a master gain
+ * (volume and mute), so everything shares the same space. Partner Pokémon cries are the one recorded
+ * sound, fetched at runtime from the PokéAPI cries repository. The context starts on the first
  * user gesture (browser autoplay rules) and is suspended when the tab is hidden.
  */
+import { pokemonCry } from '../assets.js';
 
 export type Cue =
   // UI
@@ -16,11 +18,7 @@ export type Cue =
   | 'switchIn' | 'dash' | 'punch' | 'slash' | 'bite' | 'fire' | 'water' | 'zap' | 'beamCharge' | 'beam'
   | 'orb' | 'orbHit' | 'rings' | 'wind' | 'leaves' | 'quake' | 'meteor' | 'meteorHit' | 'coins' | 'heal' | 'shield'
   | 'buff' | 'debuff' | 'hazard' | 'status' | 'hit' | 'hitBig' | 'crit' | 'super' | 'resist' | 'miss' | 'faint' | 'tera'
-  | 'stamp' | 'ko' | 'win' | 'lose'
-  // World
-  | 'thunder'
-  // Bots
-  | 'chirp' | 'chirpHappy' | 'chirpSad' | 'chirpAngry';
+  | 'stamp' | 'ko' | 'win' | 'lose';
 
 export type PlayOpts = { gain?: number; pan?: number; pitch?: number };
 
@@ -38,6 +36,7 @@ class SoundEngine {
   private muted = false;
   private last = new Map<Cue, number>();
   private meter: AnalyserNode | null = null;
+  private cries = new Map<number, Promise<AudioBuffer>>();
 
   /** Create (or resume) the context. Safe to call on every gesture. */
   unlock() {
@@ -60,7 +59,7 @@ class SoundEngine {
       comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
       this.master.connect(comp).connect(ctx.destination);
       this.meter = ctx.createAnalyser(); this.meter.fftSize = 512; comp.connect(this.meter);
-      // Tape-ish saturation on effects for grit.
+      // Gentle saturation on effects to glue the synth voices together.
       const shaper = ctx.createWaveShaper();
       const curve = new Float32Array(1024);
       for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(x * 1.8) / Math.tanh(1.8); }
@@ -239,14 +238,6 @@ class SoundEngine {
       case 'ko': this.thud(t, 40, 1, 0.6, o); this.tone('square', midi(43), midi(31), t, 0.6, 0.12, o); break;
       case 'win': [0, 4, 7, 12, 7, 12, 16, 19].forEach((n, i) => this.tone('square', midi(60 + n), midi(60 + n), t + i * 0.09, i === 7 ? 0.6 : 0.1, 0.09, o)); this.thud(t, 60, 0.5, 0.3, o); break;
       case 'lose': [0, -1, -2, -3].forEach((n, i) => this.wah(midi(55 + n), t + i * 0.32, i === 3 ? 0.9 : 0.28, o)); break;
-      case 'thunder': {
-        // A crack, then a long rolling rumble that swells and fades.
-        this.hiss(t, 0.25, 0.5, 'highpass', 1500, 400, 0.7, o, 0.003);
-        this.hiss(t + 0.05, 3.2, 0.7, 'lowpass', 320, 60, 0.8, o, 0.4);
-        for (let i = 0; i < 4; i++) this.hiss(t + 0.3 + i * r(0.3, 0.7), r(0.6, 1.2), 0.35, 'lowpass', r(150, 260), 50, 1, o, 0.1);
-        break;
-      }
-      case 'chirp': case 'chirpHappy': case 'chirpSad': case 'chirpAngry': this.chirp(cue, t, o); break;
     }
   }
 
@@ -261,16 +252,29 @@ class SoundEngine {
     osc.start(t); osc.stop(t + dur + 0.1);
   }
 
-  /** Robot gibberish: a few pitched square blips with a vowel-ish filter. */
-  private chirp(kind: Cue, t: number, o: PlayOpts) {
-    const n = 3 + Math.floor(Math.random() * 4);
-    const base = kind === 'chirpSad' ? 300 : kind === 'chirpAngry' ? 180 : kind === 'chirpHappy' ? 620 : 440;
-    for (let i = 0; i < n; i++) {
-      const up = kind === 'chirpHappy' ? 1 + i * 0.12 : kind === 'chirpSad' ? 1 - i * 0.08 : 0.8 + Math.random() * 0.5;
-      const f = base * up * (o.pitch ?? 1);
-      const d = t + i * 0.075;
-      this.tone(kind === 'chirpAngry' ? 'sawtooth' : 'square', f, f * (Math.random() < 0.5 ? 1.25 : 0.8), d, 0.06, 0.06, { ...o, pitch: 1 });
+  /**
+   * A Pokémon's cry (PokéAPI cries repository, OGG), fetched on first use and cached. Plays straight into
+   * the master bus (no saturation: it is a recording) with a touch of the stadium reverb. Rate below 1
+   * lowers and slows it. Fails silently offline or where the browser cannot decode OGG.
+   */
+  cry(dex: number, o: { pan?: number; gain?: number; rate?: number } = {}) {
+    const ctx = this.live;
+    if (!ctx || ctx.state !== 'running' || !Number.isInteger(dex) || dex < 1) return;
+    let p = this.cries.get(dex);
+    if (!p) {
+      p = fetch(pokemonCry(dex)).then(r => { if (!r.ok) throw new Error(String(r.status)); return r.arrayBuffer(); }).then(b => ctx.decodeAudioData(b));
+      this.cries.set(dex, p);
+      p.catch(() => this.cries.delete(dex));
     }
+    void p.then(buf => {
+      if (this.ctx !== ctx) return;
+      const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = o.rate ?? 1;
+      const g = ctx.createGain(); g.gain.value = 0.55 * (o.gain ?? 1);
+      const pan = ctx.createStereoPanner(); pan.pan.value = Math.max(-1, Math.min(1, o.pan ?? 0));
+      src.connect(g).connect(pan).connect(this.master);
+      const send = ctx.createGain(); send.gain.value = 0.35; pan.connect(send).connect(this.verbSend);
+      src.start(ctx.currentTime + 0.01);
+    }).catch(() => { /* no cry this time */ });
   }
 }
 

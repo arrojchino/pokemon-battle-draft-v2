@@ -15,6 +15,8 @@ export type WorldEvents = {
   error: { message: string };
   /** Something on stage made a noise; the app routes it to the sound engine. pan is -1..1. */
   sound: { cue: Cue; pan: number; gain?: number };
+  /** A Pokémon on stage cried (National Dex number); rate below 1 sounds lower, for sad moments. */
+  cry: { dex: number; pan: number; gain?: number; rate?: number };
 };
 
 type Handler<T> = (payload: T) => void;

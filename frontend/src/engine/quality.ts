@@ -13,20 +13,19 @@ export type QualitySettings = {
   shadows: boolean;
   shadowMap: number;
   /** Rain streaks (instanced quads, GPU-animated). */
-  rain: number;
-  buildings: number;
+  /** Floodlight shafts over the field. */
   shafts: boolean;
 };
 
 export const TIERS: Record<QualityTier, QualitySettings> = {
-  high: { tier: 'high', maxDpr: 2, msaa: 4, bloom: true, reflections: true, shadows: true, shadowMap: 2048, rain: 2600, buildings: 340, shafts: true },
-  medium: { tier: 'medium', maxDpr: 1.5, msaa: 2, bloom: true, reflections: false, shadows: true, shadowMap: 1024, rain: 1600, buildings: 220, shafts: true },
-  low: { tier: 'low', maxDpr: 1, msaa: 0, bloom: false, reflections: false, shadows: false, shadowMap: 512, rain: 600, buildings: 120, shafts: false },
+  high: { tier: 'high', maxDpr: 2, msaa: 4, bloom: true, reflections: true, shadows: true, shadowMap: 2048, shafts: true },
+  medium: { tier: 'medium', maxDpr: 1.5, msaa: 2, bloom: true, reflections: false, shadows: true, shadowMap: 1024, shafts: true },
+  low: { tier: 'low', maxDpr: 1, msaa: 0, bloom: false, reflections: false, shadows: false, shadowMap: 512, shafts: false },
 };
 
 /**
  * Effects intensity, independent of the quality tier: particle density, point-light flash strength,
- * bloom strength and post-processing grit (grain, film scratches, colour fringe, impact blur), as 0..1.
+ * bloom strength and post-processing (grain, colour fringe, impact blur), as 0..1.
  * Minimal keeps the attack shapes (orbs, beams, rings, slashes, debris) so every move still reads.
  */
 export const EFFECTS: Record<EffectsLevel, { particles: number; lights: number; bloom: number; post: number }> = {

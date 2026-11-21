@@ -31,7 +31,7 @@ await until(() => a.hello && b.hello, 'hello');
 assert.equal(a.hello.protocol, 4);
 
 // v2 create with avatar; v1-style join (no avatar field) must still work.
-a.send({ type: 'create', name: 'Ana\u0000‮', bestOf: 3, avatar: 'rust' });
+a.send({ type: 'create', name: 'Ana\u0000‮', bestOf: 3, avatar: 'pikachu' });
 await until(() => a.joined && a.state, 'create');
 const code = a.state.code;
 assert.match(code, /^[0-9A-F]{6}$/);
@@ -47,8 +47,8 @@ const tokens = [a.joined.token, b.joined.token];
 for (const c of [a, b]) for (const text of c.raw.filter(t => t.includes('"state"'))) for (const tok of tokens) assert.ok(!text.includes(tok), `${c.label} received a token in a state broadcast`);
 
 // Avatar selection is validated against the whitelist.
-b.send({ type: 'avatar', avatar: 'toxic' });
-await until(() => a.state.players[1].avatar === 'toxic', 'avatar');
+b.send({ type: 'avatar', avatar: 'eevee' });
+await until(() => a.state.players[1].avatar === 'eevee', 'avatar');
 b.send({ type: 'avatar', avatar: '../../etc/passwd' });
 await until(() => b.errors.includes('Malformed message'), 'bad avatar rejected');
 

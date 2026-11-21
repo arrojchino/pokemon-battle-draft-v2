@@ -1,5 +1,5 @@
 /* ============================================================
-   Battle HUD details and callouts (ported from the retired grime pass onto tokens).
+   Battle HUD details and callouts (on tokens).
    Owned by the battle HUD workstream.
    ============================================================ */
 .arena__dock { position: relative; box-shadow: var(--shadow-2); }

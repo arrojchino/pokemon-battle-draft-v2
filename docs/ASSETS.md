@@ -1,25 +1,23 @@
 # Assets and licenses
 
-## Battle bot
+## Pokémon models (runtime)
 
-| Asset | Author | License | Source |
-|---|---|---|---|
-| `frontend/public/assets/models/bot.glb` (RobotExpressive) | Tomás Laulhé (Quaternius); morph targets and cleanup by Don McCurdy | CC0 1.0 | [three.js repository](https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf/RobotExpressive), also published as "Animated LowPoly Robot" on [OpenGameArt](https://opengameart.org/content/animated-lowpoly-robot) |
+Partner and battling Pokémon are 3D models from the community [Pokémon 3D API](https://github.com/Pokemon-3D-api/assets) (`models/opt/regular/<National Dex number>.glb`), fetched from GitHub when first needed and cached per species; nothing is bundled. The files are Draco-compressed glTF with WebP textures, so the Draco decoder ships in `frontend/public/assets/draco/` (copied from three.js `examples/jsm/libs/draco/gltf`, Apache-2.0). Sizes range from about 60 KB to 11 MB per species; Scarlet/Violet-style models are the heavy ones and bring 40 to 70 animation clips.
 
-The license was read from the model's own README in the three.js repository (`CC0 1.0`) and cross-checked with the OpenGameArt listing. The file is used unmodified; consider supporting the author's Patreon.
+The API has no model for four species in the draft pool (Grimmsnarl 861, Dondozo 977, Iron Hands 992, Sinistcha 1013); `MISSING` in `engine/character/monModel.ts` lists them and those Pokémon keep the artwork projection. Alternate forms with their own artwork id (above 1025) keep it too.
 
-It ships 14 animation clips (Idle, Wave, Yes, No, ThumbsUp, Jump, Punch, Dance, Death and others) and three facial morph targets (Angry, Surprised, Sad), all used by `BotRig.ts`.
+## Partner roster
 
-## Paint jobs
+Fourteen partners live in `frontend/src/characters/roster.ts` (ids validated by the server through `shared/src/characters.ts`): Dex number, types, an accent colour readable on the dark interface, the official artwork as portrait, an original one-line quip and the reaction each game moment triggers. To add one: add the id to `shared/src/characters.ts` and an entry to `ROSTER` (check the model in the API first).
 
-Eight paint jobs live in `frontend/src/characters/roster.ts`. The model's `Main` material is replaced per instance with a paint colour; joints (`Grey`) and the visor (`Black`) keep their roles. Rust, scuffs and dirt are generated in the shader (`addGrime` in `loadBot.ts`), so no textures are involved. To add a paint: add an id to `shared/src/characters.ts` and an entry to `ROSTER`. Names and quips are original to this project.
+## Cries (runtime)
+
+Partner cries come from the PokeAPI cries repository (`cries/pokemon/latest/<dex>.ogg`), fetched on first use and decoded with the Web Audio API.
 
 ## Generated, not downloaded
 
-- Portrait badges: small SVGs drawn in code (`badge()` in `roster.ts`).
-- Panel grime, stains and grain: SVG `feTurbulence` data URIs in `styles/grime.css`.
-- The alley: brick walls, graffiti (original doodles and words), neon signs and every surface are canvas textures or shaders generated at load (`engine/world/Alley.ts`).
-- All sound effects and music: synthesized in `frontend/src/audio/sound.ts`.
+- The stadium: field, lines, stands, crowd, LED boards (canvas text), floodlights, sky, light shafts and motes are shaders and canvas textures generated at load (`engine/world/`).
+- All sound effects: synthesized in `frontend/src/audio/sound.ts`.
 
 ## Pokémon artwork
 
