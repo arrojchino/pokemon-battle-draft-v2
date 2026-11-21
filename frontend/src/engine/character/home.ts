@@ -92,8 +92,8 @@ function sampleTimes(curves: Curve[], stop: number) {
 
 /**
  * Bone clip in glTF space. Only nodes the model has are kept; quaternion curves win over Euler ones.
- * Helper nodes carry data in their position: CusAnimVis_* meshes are shown while x is non-zero (Gholdengo's
- * coin board only appears when it surfs into an attack), CusAnimMat_* drive material values (unused here).
+ * Helper nodes carry data in their position: CusAnimVis_* meshes are shown while x is non-zero (props such as
+ * Gholdengo's coin board stay hidden in the battle clips), CusAnimMat_* drive material values (unused here).
  */
 export function unityClip(name: string, text: string, nodes: Set<string>): THREE.AnimationClip {
   const { curves, stop } = parseUnityAnim(text);

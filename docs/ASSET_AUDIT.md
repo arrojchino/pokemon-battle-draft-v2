@@ -97,7 +97,7 @@ B here mostly means the Pokémon HOME set: authored idle, physical attack, speci
 ## Decisions
 
 - **Two sources.** The Pokémon 3D API keeps the six species where it has Scarlet/Violet clip sets (five full battle sets, plus Great Tusk's 84 clips). Everything else uses its Pokémon HOME model (`FROM_HOME` in `monModel.ts`): the four species the API lacks, the three it ships broken, Rotom-Wash (the API only has the base form) and every species it only has as a static rig or with one to four clips. A HOME model with an authored idle and two attacks beats a static rig with procedural motion.
-- **The broken API files were not broken in the same way at the source.** Gholdengo's "parts apart" is its coin board and coins, which the game hides until an attack: HOME's clips toggle them through `CusAnimVis_*` nodes, so the board now appears when Gholdengo attacks. Serperior and Quaquaval are complete in HOME.
+- **The broken API files were not broken in the same way at the source.** Gholdengo's "parts apart" is its coin board and coins, a prop that HOME's idle and attack clips keep hidden through `CusAnimVis_*` visibility nodes; the game applies those tracks, so Gholdengo stands without the stray board. Serperior and Quaquaval are complete in HOME.
 - **Fitting happens in the idle pose for real.** Stopping an animation mixer restores the bind pose, which the old fit measured by mistake; the box is now taken while the idle is applied, over visible meshes only. Serperior (a straight pole in its bind pose) and the HOME props stopped shrinking their Pokémon.
 - **Garchomp's Legends Z-A model** (`models/opt/za/445.glb`) was tried and dropped; HOME's is used.
 
