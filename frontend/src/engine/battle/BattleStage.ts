@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { TypeName } from '@shared';
 import { moveInfo } from '@shared';
 import { pokemonArt } from '../../assets.js';
-import { easeOutCubic, rand } from '../math.js';
+import { easeOutCubic } from '../math.js';
 import { ARENA, BattleCamera } from './BattleCamera.js';
 import { Barrier, Beam, Debris, Flashes, Particles, Rings, Shape, Slashes, type DebrisKind } from './fx.js';
 import { impactDelay, recipeFor, windup, type Aura, type Recipe } from './moveFx.js';
@@ -245,7 +245,8 @@ class Hologram {
     this.dashT = 0; this.dashDur = o.fast ? 0.48 : 0.74; this.spinning = !!o.spin; this.vanish = !!o.vanish;
     tmp.subVectors(to, this.home).setY(0);
     const len = tmp.length();
-    this.dashTo.copy(this.home).addScaledVector(tmp.normalize(), Math.max(0, len - 0.85));
+    // Stop where the two bodies meet instead of passing through the target.
+    this.dashTo.copy(this.home).addScaledVector(tmp.normalize(), Math.max(0, len - (this.body ? 0.55 + this.body.radius * 1.4 : 0.85)));
     for (const p of this.trail) p.copy(this.home);
   }
   hit(strength: number, color: string) {
@@ -342,7 +343,8 @@ class Hologram {
       this.uniforms.uAlpha.value = this.vanish ? (u > 0.12 && u < 0.5 ? 0.08 : 1) : 1;
     }
     if (reduced) k *= 0.25;
-    const sx = reduced ? 0 : (rand(t * 60) - 0.5) * 0.12 * this.shake;
+    // Recoil wobble: a smooth, quickly damped sway (random per-frame jitter read as stutter).
+    const sx = reduced ? 0 : Math.sin(t * 34) * 0.06 * this.shake * this.shake * (this.body ? 0.6 : 1);
     const dodge = reduced ? 0 : Math.sin(this.sidestep * Math.PI) * 0.4;
     tmp.lerpVectors(this.home, this.dashTo, k);
     // Dodge sideways relative to the field line.
@@ -828,7 +830,8 @@ export class BattleStage {
       if (crit) this.snd('crit', side); else if (effect === 'super') this.snd('super', side); else if (effect === 'resist') this.snd('resist', side);
       if (heavy) {
         this.shake = Math.max(this.shake, 0.4 + strength * 0.6); this.onImpact?.(color);
-        if (!this.reduced()) { this.freeze = crit ? 0.12 : 0.08; this.fovPunch = Math.max(this.fovPunch, 2 + strength * 4); }
+        // Impact frames: a brief hit-stop on crits and super-effective hits only.
+        if (!this.reduced()) { this.freeze = crit ? 0.09 : effect === 'super' ? 0.06 : 0; this.fovPunch = Math.max(this.fovPunch, 2 + strength * 4); }
         this.kickScreen(0.3 + strength * 0.35, crit ? '#ffffff' : color, crit ? 0.08 : 0.04);
       }
     };
@@ -875,6 +878,17 @@ export class BattleStage {
     for (const o of this.orbs) o.stop();
     this.particles.clear(); this.rings.clear(); this.debris.clear(); this.flashes.clear();
     this.jobs.length = 0; this.cam.reset(); this.impactAt = [0, 0];
+  }
+  /**
+   * Compile every effect's shaders now (pooled meshes are hidden until first use, and the renderer only
+   * compiles what is visible), so no move stalls a frame compiling the first time it is played.
+   */
+  prewarm(renderer: THREE.WebGLRenderer, scene: THREE.Scene) {
+    const hidden: THREE.Object3D[] = [];
+    this.group.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    const done = renderer.compileAsync(this.group, this.camera, scene);
+    for (const o of hidden) o.visible = false;
+    return done;
   }
   setPixelScale(s: number) { for (const o of this.orbs) o.mat.uniforms.uScale.value = s; this.particles.mat.uniforms.uScale.value = s; }
 

@@ -22,7 +22,8 @@ const v = (x: number, y: number, z: number): [number, number, number] => [x, y, 
 /**
  * Battle cinematography. The stage asks for a beat sequence per event (attack, impact, faint, Tera,
  * switch); between events the camera settles into a slowly breathing establishing shot. The World
- * feeds the result into the spring-driven CameraDirector, so even hard cuts land on smooth motion.
+ * feeds the result into the spring-driven CameraDirector: beats glide into each other, and only the
+ * battle intro and the biggest impacts use hard cuts.
  */
 export class BattleCamera {
   private beats: Beat[] = [];
@@ -70,25 +71,26 @@ export class BattleCamera {
   }
   attack(side: 0 | 1, style: 'projectile' | 'dash' | 'field' | 'self', impactAt: number, target: 0 | 1 | null, big: boolean) {
     const tgt = target ?? ((1 - side) as 0 | 1);
-    if (style === 'self') { this.play([{ shot: this.focus(side, 0), hold: 0.45, cut: true }, { shot: this.focus(side, 1), hold: 0.9 }]); return; }
-    if (style === 'field') { this.play([{ shot: this.wide(), hold: impactAt + 0.9, cut: true }]); return; }
+    if (style === 'self') { this.play([{ shot: this.focus(side, 0), hold: 0.45 }, { shot: this.focus(side, 1), hold: 0.9 }]); return; }
+    if (style === 'field') { this.play([{ shot: this.wide(), hold: impactAt + 0.9 }]); return; }
     const lead = style === 'dash' ? this.chase() : this.windup(side);
     this.play([
-      { shot: lead, hold: Math.max(0.12, impactAt - 0.06), cut: style !== 'dash' },
-      { shot: this.impact(tgt, big), hold: 0.85, cut: true },
+      { shot: lead, hold: Math.max(0.12, impactAt - 0.12) },
+      // A fast push onto the target as the hit lands; only the biggest hits smash-cut.
+      { shot: { ...this.impact(tgt, big), time: big ? 0.3 : 0.16 }, hold: 0.85, cut: big },
     ]);
   }
   switchIn(side: 0 | 1) {
     const m = this.mon(side);
     const dx = side === 0 ? 0.7 : -0.7;
-    this.play([{ shot: { pos: v(m.x + dx * 1.3, m.y + 0.4, m.z + 3.3), target: v(m.x, m.y + 0.05, m.z), fov: 34, time: 0.5 }, hold: 1.0, cut: true }]);
+    this.play([{ shot: { pos: v(m.x + dx * 1.3, m.y + 0.4, m.z + 3.3), target: v(m.x, m.y + 0.05, m.z), fov: 34, time: 0.5 }, hold: 1.0 }]);
   }
   faint(side: 0 | 1) {
     const m = this.mon(side);
-    this.play([{ shot: { pos: v(m.x + (side === 0 ? 0.5 : -0.5), m.y + 0.3, m.z + 2.8), target: v(m.x, m.y - 0.05, m.z), fov: 32, time: 1.8 }, hold: 1.4, cut: true }]);
+    this.play([{ shot: { pos: v(m.x + (side === 0 ? 0.5 : -0.5), m.y + 0.3, m.z + 2.8), target: v(m.x, m.y - 0.05, m.z), fov: 32, time: 1.2 }, hold: 1.4 }]);
   }
   tera(side: 0 | 1) {
-    this.play([{ shot: this.focus(side, -0.6), hold: 0.4, cut: true }, { shot: this.focus(side, 0.9), hold: 1.2 }]);
+    this.play([{ shot: { ...this.focus(side, -0.6), time: 0.35 }, hold: 0.4 }, { shot: this.focus(side, 0.9), hold: 1.2 }]);
   }
 
   /** Advance; returns the shot to steer toward and whether to cut to it this frame. */

@@ -64,7 +64,7 @@ export function MultiplayerScreen({ mode, inviteCode, onBack, onChangePartner }:
   ];
 
   return (
-    <main className="screen mp">
+    <main className="screen mp scroller">
       <ScreenHeader title="Online battle" eyebrow="Multiplayer" jp="通信対戦" onBack={onBack} />
       <div className="mp__grid">
         <aside className="mp__trainer panel" style={partnerStyle(s.partner)}>

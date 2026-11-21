@@ -83,7 +83,7 @@ export function SettingsPanel() {
 /** Full-screen settings, reached from the main menu. */
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
   return (
-    <main className="screen settings-screen">
+    <main className="screen settings-screen scroller">
       <div className="settings-screen__inner">
         <ScreenHeader title="Settings" eyebrow="Options" jp="設定" onBack={onBack} />
         <SettingsPanel />

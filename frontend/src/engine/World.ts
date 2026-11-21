@@ -78,6 +78,7 @@ export class World {
   private loading = new Map<string, Promise<MonRig | null>>();
   private lastCry = new Map<string, number>();
   private prepared = new Set<number>();
+  private prewarmed = false;
   private rimWhite = new THREE.Color('#dfe8ff');
   private hitboxes = new Map<string, THREE.Mesh>();
   private layout: Layout | null = null;
@@ -313,7 +314,9 @@ export class World {
     if (!c) return Promise.resolve(null);
     // The 3D model when the Pokémon 3D API has one; otherwise (or offline) the official artwork card.
     const model = hasModel(c.dex) ? loadMonModel(c.dex, PARTNER_HEIGHT, (l, t) => this.reportProgress(key, l, t, c.name)).catch(() => null) : Promise.resolve(null);
-    p = model.then(m => {
+    // Compile the model's shaders before it is shown, so its first frame on stage does not hitch.
+    const compiled = model.then(m => (m ? this.renderer.compileAsync(m.root, this.camera, this.scene).then(() => m, () => m) : m));
+    p = compiled.then(m => {
       if (this.disposed) return null;
       const rig = new MonRig(m, c);
       rig.reducedMotion = this.reducedMotion;
@@ -407,9 +410,11 @@ export class World {
       accent = l.mine;
       this.coin.visibleTarget = l.coin ? 1 : 0;
     } else this.coin.visibleTarget = 0;
+    this.adaptive.hold = l.mode === 'arena';
     if (l.mode === 'arena') {
       // The partners leave the field to the battling Pokémon.
       accent = l.mine;
+      if (!this.prewarmed) { this.prewarmed = true; void this.battle.prewarm(this.renderer, this.scene).catch(() => { this.prewarmed = false; }); }
       if (modeChanged && !this.reducedMotion) this.battle.cam.intro();
     } else this.battle.clear();
     if (l.mode === 'victory') {

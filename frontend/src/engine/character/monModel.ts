@@ -16,17 +16,15 @@ import { ProceduralRig } from './procedural.js';
  * (see procedural.ts) that brings static models to life. `qa/models.html` shows the result for any id.
  */
 
-type Plan = { folder?: string; use?: 'model' | 'art'; metal?: RegExp };
+export type Plan = { folder?: string; use?: 'model' | 'art'; metal?: RegExp; /** Stray meshes to drop (effect geometry left in the file). */ hide?: RegExp };
 /**
  * Per-species decisions from the asset audit (docs/ASSET_AUDIT.md). `art` = the model fails the quality
  * bar or does not exist, so the Pokémon is shown as its official artwork instead.
  */
-const PLAN: Record<number, Plan> = {
-  1000: { metal: /^body_(a|b)/ },     // Gholdengo is made of gold
+export const PLAN: Record<number, Plan> = {
+  1000: { use: 'art' },               // Gholdengo: parts sit apart even in the bind pose (broken file)
+  911: { hide: /^Object_21[02]$/ },   // Skeledirge: a stray effect strip props it up, its song bird lies loose on the floor
   497: { use: 'art' },                // Serperior: bind pose is a straight vertical pole, no clips
-  778: { use: 'art' },                // Mimikyu: 340 triangles
-  637: { use: 'art' },                // Volcarona: 1.9k triangles, 128 px texture, no rig
-  748: { use: 'art' },                // Toxapex: 1.5k triangles, no rig
   914: { use: 'art' },                // Quaquaval: clips stripped, rest pose collapses the body
   861: { use: 'art' }, 977: { use: 'art' }, 992: { use: 'art' }, 1013: { use: 'art' }, // not in the API
 };
@@ -99,8 +97,22 @@ export function preloadMon(dex: number, onProgress?: (loaded: number, total: num
   let p = sources.get(dex);
   if (!p) {
     p = gltfLoader().loadAsync(pokemonModel(dex, PLAN[dex]?.folder), e => onProgress?.(e.loaded, e.total || e.loaded)).then(g => {
-      // Once per download: every instance shares this geometry.
-      g.scene.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !m.geometry.attributes.normal) smoothNormals(m.geometry); });
+      // Once per download: every instance shares this geometry and these clips.
+      // The game's lower levels of detail ship as extra meshes that z-fight with the full one, and a few
+      // files carry stray effect geometry: drop both.
+      const lods: THREE.Object3D[] = [];
+      g.scene.traverse(o => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        if (/_lod[1-9]$/i.test(o.name) || PLAN[dex]?.hide?.test(o.name)) lods.push(o);
+        else if (!m.geometry.attributes.normal) smoothNormals(m.geometry);
+      });
+      for (const o of lods) o.removeFromParent();
+      // Bone tracks stored with step interpolation stutter at their key rate: rotations and positions
+      // become linear (scale stays stepped, since some models use it to swap eyes and mouths).
+      for (const clip of g.animations) for (const t of clip.tracks) {
+        if (t.getInterpolation() === THREE.InterpolateDiscrete && /[.](quaternion|position)$/.test(t.name)) t.setInterpolation(THREE.InterpolateLinear);
+      }
       return { scene: g.scene, clips: g.animations };
     });
     sources.set(dex, p);
@@ -175,11 +187,6 @@ function instance(src: Source, height: number, metal?: RegExp): MonModel {
   const model = cloneSkinned(src.scene);
   const materials: THREE.Material[] = [];
   const own = new Map<THREE.Material, THREE.Material>();
-  // Some exports keep the game's lower levels of detail as extra meshes: drawing them too doubles the
-  // cost and z-fights with the full model.
-  const lods: THREE.Object3D[] = [];
-  model.traverse(o => { if ((o as THREE.Mesh).isMesh && /_lod[1-9]$/i.test(o.name)) lods.push(o); });
-  for (const o of lods) o.removeFromParent();
   model.traverse(o => {
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;

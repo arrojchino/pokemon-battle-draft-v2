@@ -7,7 +7,7 @@ export function PokedexScreen({ onBack }: { onBack: () => void }) {
   return (
     <main className="screen dex">
       <ScreenHeader title="Draft Pool" eyebrow={`${POOL.length} sets`} jp="図鑑" onBack={onBack} />
-      <div className="dex__grid">{POOL.map((p, i) => <PokemonCard key={p.name} p={p} index={i} compact />)}</div>
+      <div className="dex__grid scroller" tabIndex={0} aria-label="Draft pool sets">{POOL.map((p, i) => <PokemonCard key={p.name} p={p} index={i} compact />)}</div>
     </main>
   );
 }

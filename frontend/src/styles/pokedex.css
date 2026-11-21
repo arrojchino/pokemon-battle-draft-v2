@@ -2,4 +2,4 @@
    Draft Pool / Pokédex browser. Owned by the Pokédex workstream. Tokens only.
    ============================================================ */
 .dex { display: flex; flex-direction: column; }
-.dex__grid { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s-4); padding-bottom: var(--s-8); }
+.dex__grid { flex: 1; min-height: 0; overflow-y: auto; padding-right: var(--s-2); scrollbar-gutter: stable; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s-4); padding-bottom: var(--s-8); }

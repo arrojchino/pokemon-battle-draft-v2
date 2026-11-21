@@ -34,7 +34,17 @@ for (const id of ids) {
   const cam = new THREE.PerspectiveCamera(30, 1, 0.01, 100); cam.position.set(0, 0.75, 4.4); cam.lookAt(0, 0.62, 0);
   const cell = { el, scene, cam, body: null }; cells.push(cell);
   const t0 = performance.now();
-  loadMonModel(id, 1.3).then(m => {
+  loadMonModel(id, 1.3).then(async m => {
+    if (q.get('mode') === 'bind') {
+      // Bind pose straight from the file: no mixer, no procedural layer.
+      const { preloadMon } = await import('/pokemon-battle-draft-v2/src/engine/character/monModel.ts');
+      const src = await preloadMon(id); const rest = new Map(); src.scene.traverse(o => rest.set(o.name, o));
+      m.root.traverse(o => { const r = rest.get(o.name); if (o.isBone && r) { o.position.copy(r.position); o.quaternion.copy(r.quaternion); o.scale.copy(r.scale); } });
+      if (q.get('pose') === 'skeleton') { m.root.updateMatrixWorld(true); const seen = new Set(); m.root.traverse(o => { if (o.isSkinnedMesh && !seen.has(o.skeleton)) { seen.add(o.skeleton); o.skeleton.pose(); } }); }
+      scene.add(m.root); m.root.rotation.y = 0.5;
+      window.__audit.push({ id, grade: 'bind' }); b.textContent = id + ' · bind'; info.textContent = 'bind pose';
+      return;
+    }
     const body = new MonBody(m); cell.body = body; scene.add(body.root);
     body.root.rotation.y = 0.5;
     if (act) setInterval(() => body.act(act.split('|')), 2600);

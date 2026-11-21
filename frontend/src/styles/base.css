@@ -25,7 +25,9 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.005em; }
 .stage canvas { display: block; width: 100%; height: 100%; }
 .stage--fallback canvas { display: none; }
 .ui { position: fixed; inset: 0; z-index: var(--z-ui); pointer-events: none; }
-.ui :is(button, a, input, select, textarea, label, .panel, .card, nav, form, details, .draft, .drawer, .battle, .scoreboard, .roombar, .interactive) { pointer-events: auto; }
+.ui :is(button, a, input, select, textarea, label, .panel, .card, nav, form, details, dialog, .draft, .drawer, .battle, .scoreboard, .roombar, .interactive, .scroller) { pointer-events: auto; }
+/* Every scrolling region must take the pointer, or wheel and touch fall through to the 3D stage. */
+.scroller { overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
 .screen { position: absolute; inset: 0; padding: var(--screen-pad); }
 .screen-wrap { position: absolute; inset: 0; animation: screen-in var(--dur-4) var(--ease-out) both; }
 @keyframes screen-in { from { opacity: 0; transform: translateY(12px); } }

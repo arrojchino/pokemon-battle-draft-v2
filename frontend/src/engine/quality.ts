@@ -59,6 +59,10 @@ export function initialTier(gl: WebGL2RenderingContext | WebGLRenderingContext |
 export class AdaptiveQuality {
   scale = 1;                  // multiplies the DPR, 0.7..1 (stays 1 while the render scale is fixed)
   private acc = 0; private frames = 0; private cool = 0;
+  /** Set after a step down: stepping back up would only bounce. */
+  private settled = false;
+  /** While true (in battle), only the resolution adapts: a tier change rebuilds and recompiles. */
+  hold = false;
   readonly samples = new Float32Array(240); private si = 0; private filled = 0;
   constructor(private onTierDown: () => boolean, private onTierUp: () => boolean, public tiers = true, public resolution = true) {}
 
@@ -73,10 +77,10 @@ export class AdaptiveQuality {
     if (avg > 19.5) {
       this.cool = 2.5;
       if (this.resolution && this.scale > 0.75) { this.scale = Math.max(0.7, this.scale - 0.1); return true; }
-      if (this.tiers && this.onTierDown()) { if (this.resolution) this.scale = 0.9; return true; }
+      if (this.tiers && !this.hold && this.onTierDown()) { this.settled = true; if (this.resolution) this.scale = 0.9; return true; }
     } else if (avg < 10.5 && this.resolution && this.scale < 1) {
       this.cool = 4; this.scale = Math.min(1, this.scale + 0.05); return true;
-    } else if (avg < 9 && this.scale >= 1 && this.tiers) {
+    } else if (avg < 9 && this.scale >= 1 && this.tiers && !this.hold && !this.settled) {
       this.cool = 8; if (this.onTierUp()) return true;
     }
     return false;
