@@ -86,6 +86,8 @@ const CARD_FRAG = /* glsl */`
   }`;
 
 const tmp = new THREE.Vector3();
+const tmp3 = new THREE.Vector3();
+const ZERO3 = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
 const smooth = (x: number) => x * x * (3 - 2 * x);
 
@@ -219,7 +221,7 @@ class Hologram {
     } else this.ballT = 1;
     // 3D model: the same species comes back as it was (revived or switched back in); a new one loads
     // while the projection stands in for it.
-    const dex = artId <= 1025 && hasModel(artId) ? artId : 0;
+    const dex = hasModel(artId) ? artId : 0;
     if (this.body && this.bodyDex !== dex) { this.body.dispose(); this.body = null; this.bodyDex = 0; }
     this.card.visible = !this.body; this.beam.visible = !this.body;
     if (this.body) { this.body.reset(); this.body.root.rotation.x = 0; this.bodyIn = instant ? 1 : 0; }
@@ -408,7 +410,7 @@ class Orb {
   readonly head = new THREE.Vector3();
   readonly mat: THREE.ShaderMaterial;
   onArrive: (() => void) | null = null;
-  static N = 24;
+  static N = 36;
   constructor() {
     this.pos = new Float32Array(Orb.N * 3);
     const g = new THREE.BufferGeometry();
@@ -419,9 +421,9 @@ class Orb {
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
       uniforms: { uColor: { value: new THREE.Color('#ffffff') }, uScale: { value: 1 }, uSize: { value: 1 } },
       vertexShader: /* glsl */`attribute float aI; varying float vI; uniform float uScale, uSize;
-        void main() { vI = aI; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = mix(64.0, 8.0, aI) * uSize * uScale / -mv.z; gl_Position = projectionMatrix * mv; }`,
+        void main() { vI = aI; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = mix(72.0, 10.0, aI) * uSize * uScale / -mv.z; gl_Position = projectionMatrix * mv; }`,
       fragmentShader: /* glsl */`uniform vec3 uColor; varying float vI;
-        void main() { float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard; float a = smoothstep(0.5, 0.0, d) * (1.0 - vI * 0.9); gl_FragColor = vec4(mix(vec3(1.0), uColor, 0.4 + vI * 0.6) * 2.4 * a, 1.0); }`,
+        void main() { float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard; float a = smoothstep(0.5, 0.0, d) * pow(1.0 - vI, 1.6); gl_FragColor = vec4(mix(vec3(1.0), uColor, 0.62 + vI * 0.38) * 2.2 * a, 1.0); }`,
     });
     this.mesh = new THREE.Points(g, this.mat);
     this.mesh.frustumCulled = false; this.mesh.visible = false; this.mesh.renderOrder = 7;
@@ -433,13 +435,23 @@ class Orb {
     for (let i = 0; i < Orb.N; i++) this.pos.set([from.x, from.y, from.z], i * 3);
     this.head.copy(from);
   }
+  private prev = new THREE.Vector3();
   update(dt: number) {
     if (!this.mesh.visible) return;
     this.t = Math.min(1, this.t + dt / this.dur);
-    this.pos.copyWithin(3, 0, (Orb.N - 1) * 3);
+    this.prev.copy(this.head);
     const p = this.t;
     this.head.lerpVectors(this.from, this.to, p); this.head.y += Math.sin(p * Math.PI) * this.arc;
-    this.pos[0] = this.head.x; this.pos[1] = this.head.y; this.pos[2] = this.head.z;
+    // Several trail points per frame, spaced along the path: a fast orb covers ~0.1 m a frame, and one
+    // point per frame left a row of dots instead of a tail.
+    const steps = THREE.MathUtils.clamp(Math.ceil(this.prev.distanceTo(this.head) / 0.035), 1, Orb.N - 1);
+    this.pos.copyWithin(steps * 3, 0, (Orb.N - steps) * 3);
+    for (let k = 0; k < steps; k++) {
+      const u = 1 - k / steps;
+      this.pos[k * 3] = this.prev.x + (this.head.x - this.prev.x) * u;
+      this.pos[k * 3 + 1] = this.prev.y + (this.head.y - this.prev.y) * u;
+      this.pos[k * 3 + 2] = this.prev.z + (this.head.z - this.prev.z) * u;
+    }
     (this.mesh.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     if (this.t >= 1) {
       if (this.onArrive) { const cb = this.onArrive; this.onArrive = null; cb(); }
@@ -562,12 +574,33 @@ export class BattleStage {
     if (!this.reduced()) this.cam.attack(side, style, lead + delay, tgt, big);
     // Contact moves strike when the rush connects; everything else releases as the effect starts.
     this.holos[side].attack(r.kind === 'dash' ? 'contact' : selfMove ? 'self' : 'ranged', r.kind === 'dash' ? lead + delay : Math.max(0.25, lead));
-    if (lead > 0) this.later(lead, () => this.play(r, side, tgt, color)); else this.play(r, side, tgt, color);
+    if (lead > 0 && r.kind !== 'dash' && !selfMove && !this.reduced()) this.charge(side, tgt, type, lead);
+    if (lead > 0) this.later(lead, () => this.play(r, side, tgt, color, type)); else this.play(r, side, tgt, color, type);
   }
 
-  private play(r: Recipe, s: 0 | 1, t: 0 | 1, color: string) {
+  /** Where ranged moves leave the attacker: chest height, a little toward the target. */
+  private castPoint(s: 0 | 1, t: 0 | 1, out = new THREE.Vector3()) {
+    const c = this.center(s, out);
+    const dir = tmp3.copy(this.home(t)).sub(this.home(s)).setY(0).normalize();
+    return c.addScaledVector(dir, 0.32).setY(c.y + 0.12);
+  }
+  /** Anticipation: energy in the move's colour gathers at the cast point while the attacker winds up. */
+  private charge(s: 0 | 1, t: 0 | 1, type: TypeName, dur: number) {
+    const P = this.particles, color = TYPE_HEX[type];
+    const at = this.castPoint(s, t, new THREE.Vector3());
+    P.emitter(dur * 0.9, 150, () => {
+      const p = tmp.copy(at).add(tmp2.randomDirection().multiplyScalar(0.55 + Math.random() * 0.35));
+      P.emit(p, ZERO3, { color, size: 0.05, sizeEnd: 0.11, ttl: 0.34, drag: 1.2, home: { x: at.x, y: at.y, z: at.z, k: 6 } });
+    });
+    this.rings.fire(at, color, { s0: 0.9, s1: 0.08, dur: dur * 0.9 });
+    this.later(dur * 0.55, () => P.burst(at, 10, 0.5, { color: '#ffffff', size: 0.1, sizeEnd: 0.02, ttl: 0.3, drag: 3 }));
+    this.light(at, color, 7, dur + 0.15);
+  }
+
+  private play(r: Recipe, s: 0 | 1, t: 0 | 1, color: string, type: TypeName) {
     const A = this.home(s), B = this.home(t);
     const P = this.particles;
+    const burst = (at: THREE.Vector3, c: string, power: number) => this.impactBurst(at, c, power, type);
     switch (r.kind) {
       case 'dash': {
         this.holos[s].dash(B, { fast: r.fast, spin: r.impact === 'spin', vanish: r.vanish });
@@ -581,7 +614,7 @@ export class BattleStage {
           });
           if (r.aura === 'electric') this.later(delay * 0.5, () => P.lightning(this.center(s), B, 0.15, ac, 0.2, 40));
         }
-        this.later(delay, () => this.contact(r, t, color));
+        this.later(delay, () => this.contact(r, t, color, type));
         if (r.drain) this.later(delay + 0.2, () => { this.snd('heal', s, 0.7); P.stream(B, A, 0.45, { color: '#7dffb0', size: 0.05, rate: 140, speed: 3.2, spread: 0.2 }); this.later(0.5, () => this.holos[s].heal()); });
         break;
       }
@@ -593,18 +626,20 @@ export class BattleStage {
             this.snd('slash', s, 0.6);
             const from = A.clone();
             this.debris.throw('shard', from, this.ballistic(from, to, 0.5), 0.09, { ttl: 0.5, groundY: -5 });
-            this.later(0.5, () => this.impactBurst(to, color, 0.6));
+            this.later(0.5, () => burst(to, color, 0.6));
             return;
           }
           const o = this.orb();
           this.snd('orb', s, n > 1 ? 0.5 : 1);
           o.fire(A, to, r.seeds ? '#9cff6a' : color, { dur: 0.55, arc: r.arc ?? 0.3, size: r.size ?? 1 }, () => {
             this.snd('orbHit', t, n > 1 ? 0.5 : 1);
-            this.impactBurst(to, color, Math.min(1.4, 0.5 + (r.size ?? 1) * 0.4));
+            burst(to, color, Math.min(1.4, 0.5 + (r.size ?? 1) * 0.4));
             if (r.splash) P.burst(to, 30, 2.5, { color, size: 0.08, ttl: 0.8, gravity: 6, rise: 0.8 });
             if (r.star) this.rings.fire(to, color, { s0: 0.2, s1: 1.2, dur: 0.45 });
           });
           if (k === 0) this.light(A, color, 8, 0.6, () => o.head);
+          const trail = r.seeds ? '#9cff6a' : color, ts = Math.min(0.2, 0.08 + (r.size ?? 1) * 0.05);
+          P.emitter(0.52, n > 1 ? 70 : 150, () => P.emit(o.head, tmp2.randomDirection().multiplyScalar(0.22), { color: trail, size: ts, sizeEnd: 0.015, ttl: 0.32, drag: 2.5 }));
           if (r.star) P.emitter(0.55, 70, () => P.emit(o.head, tmp2.randomDirection().multiplyScalar(0.3), { color, shape: Shape.Star, size: 0.09, ttl: 0.5, spin: 3 }));
         });
         if (r.drain) this.later(impactDelay(r) + 0.15, () => { P.stream(B, A, 0.45, { color: '#ff9bd2', size: 0.05, rate: 140, speed: 3.2, spread: 0.2 }); this.later(0.5, () => this.holos[s].heal()); });
@@ -626,7 +661,7 @@ export class BattleStage {
           this.light(from, look.color, 10, 0.8);
           this.later(0.35, () => this.light(to, look.color, 12, 0.6));
         });
-        if (!r.reverse) this.later(impactDelay(r), () => this.impactBurst(B, look.color, r.big ? 1.2 : 0.8));
+        if (!r.reverse) this.later(impactDelay(r), () => burst(B, look.color, r.big ? 1.2 : 0.8));
         else this.later(0.75, () => this.holos[s].heal());
         break;
       }
@@ -640,7 +675,7 @@ export class BattleStage {
           this.kickScreen(0.25, color, 0.05);
         });
         this.later(impactDelay(r), () => {
-          this.impactBurst(B, color, 1);
+          burst(B, color, 1);
           if (r.shards) for (let k = 0; k < 7; k++) this.debris.throw('shard', B, tmp.randomDirection().multiplyScalar(2.2).setY(2 + Math.random() * 2), 0.07, { ttl: 1 });
         });
         break;
@@ -653,7 +688,7 @@ export class BattleStage {
         this.light(B, '#ffe45a', 22, 0.5);
         this.snd('zap', t, r.small ? 0.6 : 1);
         this.kickScreen(0.2, '#fff4b0', r.small ? 0.04 : 0.12);
-        this.later(impactDelay(r), () => this.impactBurst(B, '#ffe45a', 0.9));
+        this.later(impactDelay(r), () => burst(B, '#ffe45a', 0.9));
         break;
       }
       case 'rings': {
@@ -663,7 +698,7 @@ export class BattleStage {
         this.snd('rings', r.travel ? s : t);
         if (r.distort) { this.later(0.15, () => this.holos[t].distort(1)); this.kickScreen(0.35, color, 0.05); }
         this.light(r.travel ? A : B, color, 9, 0.7);
-        if (r.travel) this.later(impactDelay(r), () => this.impactBurst(B, color, 0.7));
+        if (r.travel) this.later(impactDelay(r), () => burst(B, color, 0.7));
         break;
       }
       case 'swirl': {
@@ -696,7 +731,7 @@ export class BattleStage {
             const p = tmp.set(B.x + (Math.random() - 0.5) * 1.4, 2.4 + Math.random() * 0.8, B.z + (Math.random() - 0.5) * 1.0);
             P.emit(p, tmp2.set(0, -2.2, 0), { color: '#ffd04a', shape: Shape.Coin, size: 0.14, sizeEnd: 0.13, ttl: 1.1, gravity: 2.2, spin: 12 });
           });
-          this.later(0.55, () => { this.impactBurst(B, '#ffd04a', 1); this.light(B, '#ffd04a', 14, 0.8); });
+          this.later(0.55, () => { burst(B, '#ffd04a', 1); this.light(B, '#ffd04a', 14, 0.8); });
           break;
         }
         const kind: DebrisKind = r.debris === 'hammer' ? 'meteor' : r.debris;
@@ -749,7 +784,7 @@ export class BattleStage {
   }
 
   /** Physical contact: the hit itself, flavoured by impact style and aura. */
-  private contact(r: Extract<Recipe, { kind: 'dash' }>, t: 0 | 1, color: string) {
+  private contact(r: Extract<Recipe, { kind: 'dash' }>, t: 0 | 1, color: string, type?: TypeName) {
     const B = this.center(t);
     const big = !!r.big;
     this.snd(r.impact === 'slash' || r.impact === 'spin' ? 'slash' : r.impact === 'bite' ? 'bite' : r.impact === 'quake' ? 'meteorHit' : 'punch', t, big ? 1.2 : 1);
@@ -776,7 +811,7 @@ export class BattleStage {
     if (r.aura === 'ice') for (let k = 0; k < 6; k++) this.debris.throw('shard', B, tmp.randomDirection().multiplyScalar(2).setY(2.5), 0.06, { ttl: 0.9 });
     if (r.aura === 'stars') this.particles.burst(B, 24, 2.2, { color: '#ffc4ea', shape: Shape.Star, size: 0.12, ttl: 0.7, spin: 4 });
     if (r.aura === 'ghost') this.particles.burst(B, 26, 1.6, { color: '#9a6bff', size: 0.1, sizeEnd: 0.02, ttl: 0.8, rise: 1 });
-    this.impactBurst(B, color, big ? 1.1 : 0.7);
+    this.impactBurst(B, color, big ? 1.1 : 0.7, type);
   }
 
   private quakeAt(t: 0 | 1, color: string, power: number, from?: THREE.Vector3) {
@@ -812,10 +847,87 @@ export class BattleStage {
     }
   }
 
-  private impactBurst(at: THREE.Vector3, color: string, power: number) {
+  private impactBurst(at: THREE.Vector3, color: string, power: number, type?: TypeName) {
     this.particles.burst(at, Math.round(20 + 30 * power), 2 + power * 1.8, { color, size: 0.06 + 0.03 * power, sizeEnd: 0.01, ttl: 0.55, drag: 2.5 });
     this.particles.burst(at, 10, 1.2, { color: '#ffffff', shape: Shape.Star, size: 0.12 * power, ttl: 0.25, spin: 4 });
     this.light(at, color, 5 + power * 5, 0.4);
+    if (type) this.elementBurst(at, type, power);
+  }
+
+  /** What each element leaves behind where it lands: embers, spray, sparks, leaves, shards, bubbles... */
+  private elementBurst(at: THREE.Vector3, type: TypeName, power: number) {
+    const P = this.particles, n = (k: number) => Math.round(k * (0.6 + 0.6 * power));
+    const dir = () => tmp2.randomDirection();
+    switch (type) {
+      case 'Fire':
+        P.burst(at, n(14), 0.9, { color: '#ff6a1f', size: 0.3, sizeEnd: 0.06, ttl: 0.45, drag: 3 });
+        P.burst(at, n(26), 1.5, { color: '#ffc04a', size: 0.08, sizeEnd: 0.015, ttl: 1.0, gravity: -2.2, drag: 1.6 });
+        break;
+      case 'Water':
+        P.burst(at, n(36), 3.2, { color: '#9ad6ff', size: 0.07, sizeEnd: 0.03, ttl: 0.9, gravity: 8, rise: 0.7 });
+        this.rings.fire(at, '#cfeeff', { s0: 0.2, s1: 1.1, dur: 0.4 });
+        break;
+      case 'Electric':
+        for (let k = 0; k < 3; k++) P.lightning(at, tmp.copy(at).addScaledVector(dir(), 0.7 + 0.3 * power), 0.12, '#fff4a0', 0.16, 26);
+        P.burst(at, n(20), 4, { color: '#fff8c8', size: 0.035, sizeEnd: 0.01, ttl: 0.3, drag: 4 });
+        break;
+      case 'Grass':
+        P.burst(at, n(24), 2.2, { color: '#8cff7a', shape: Shape.Leaf, size: 0.12, sizeEnd: 0.08, ttl: 1, spin: 8, gravity: 2, drag: 2, rise: 0.6 });
+        break;
+      case 'Ice':
+        for (let k = 0; k < n(6); k++) this.debris.throw('shard', at, tmp.copy(dir()).multiplyScalar(2).setY(1.5 + Math.random() * 1.5), 0.05, { ttl: 0.9 });
+        P.burst(at, n(22), 2, { color: '#e8fbff', shape: Shape.Star, size: 0.07, ttl: 0.8, gravity: 1.5, drag: 2, spin: 3 });
+        break;
+      case 'Poison':
+        P.burst(at, n(18), 1, { color: '#c46bff', size: 0.05, sizeEnd: 0.16, ttl: 1.1, gravity: -1.3, drag: 2 });
+        P.burst(at, n(14), 2.6, { color: '#a8ff6a', size: 0.05, sizeEnd: 0.02, ttl: 0.7, gravity: 7, rise: 0.5 });
+        break;
+      case 'Ghost':
+        P.burst(at, n(20), 0.9, { color: '#9a6bff', size: 0.16, sizeEnd: 0.02, ttl: 1.1, gravity: -1.4, drag: 1.2 });
+        this.rings.fire(at, '#6b3fd6', { s0: 0.1, s1: 1.2, dur: 0.5 });
+        break;
+      case 'Psychic':
+        this.rings.fire(at, '#ff7ad9', { s0: 0.1, s1: 1.5, dur: 0.5 });
+        this.rings.fire(at, '#ffc2f0', { s0: 0.1, s1: 0.9, dur: 0.4, delay: 0.08 });
+        P.burst(at, n(14), 1.6, { color: '#ff8ae0', shape: Shape.Ring, size: 0.16, ttl: 0.6, drag: 2 });
+        break;
+      case 'Fairy':
+        P.burst(at, n(24), 2, { color: '#ffc4ea', shape: Shape.Star, size: 0.12, ttl: 0.9, spin: 4, drag: 2, rise: 0.3 });
+        break;
+      case 'Dragon':
+        P.burst(at, n(26), 3, { color: '#8f6bff', size: 0.08, sizeEnd: 0.01, ttl: 0.6, drag: 2.5 });
+        this.rings.fire(at, '#7a4dff', { s0: 0.2, s1: 1.4, dur: 0.45 });
+        this.slashes.fire(at, '#c9b2ff', 1, 0.6);
+        break;
+      case 'Dark':
+        P.burst(at, n(16), 1.1, { color: '#7a5aa6', size: 0.22, sizeEnd: 0.05, ttl: 0.8, drag: 2.5, rise: 0.4 });
+        this.slashes.fire(at, '#b9a3e0', 1, 0.55);
+        break;
+      case 'Steel':
+        P.burst(at, n(28), 4.6, { color: '#f4f8ff', size: 0.035, sizeEnd: 0.008, ttl: 0.5, gravity: 9 });
+        P.burst(at, 4, 0.4, { color: '#ffffff', shape: Shape.Star, size: 0.3, ttl: 0.18, spin: 2 });
+        break;
+      case 'Rock':
+        for (let k = 0; k < n(5); k++) this.debris.throw('rock', at, tmp.copy(dir()).multiplyScalar(1.8).setY(1.5 + Math.random() * 1.5), 0.06, { ttl: 1.1 });
+        P.burst(at, n(16), 1.5, { color: '#d9c08a', size: 0.12, sizeEnd: 0.04, ttl: 0.8, gravity: 2, drag: 2 });
+        break;
+      case 'Ground':
+        P.burst(at, n(24), 1.7, { color: '#c9a66b', size: 0.17, sizeEnd: 0.06, ttl: 0.9, gravity: 1.5, drag: 2.5, rise: 0.3 });
+        break;
+      case 'Fighting':
+        P.burst(at, n(10), 0.9, { color: '#ffb36b', shape: Shape.Star, size: 0.28, ttl: 0.25, spin: 6 });
+        this.rings.fire(at, '#ffffff', { s0: 0.1, s1: 1, dur: 0.25 });
+        break;
+      case 'Flying':
+        P.burst(at, n(20), 3.6, { color: '#eef6ff', size: 0.05, sizeEnd: 0.01, ttl: 0.45, drag: 3 });
+        P.burst(at, n(8), 1.4, { color: '#ffffff', shape: Shape.Leaf, size: 0.11, ttl: 1, spin: 5, gravity: 1.2, drag: 2 });
+        break;
+      case 'Bug':
+        P.burst(at, n(24), 2.4, { color: '#c6e35a', size: 0.06, sizeEnd: 0.01, ttl: 0.6, drag: 2.5 });
+        break;
+      default:
+        P.burst(at, n(12), 2, { color: '#ffffff', size: 0.07, ttl: 0.4, drag: 3 });
+    }
   }
 
   hit(side: 0 | 1, lost: number, crit: boolean, effect: 'super' | 'resist' | 'immune' | 'normal', color: string) {

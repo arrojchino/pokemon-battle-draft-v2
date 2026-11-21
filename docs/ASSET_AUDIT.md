@@ -45,70 +45,74 @@ Partners are on screen the longest, so only models with a full battle clip set q
 
 ## Draft pool (38 sets)
 
+Every one of the 38 species battles as an animated 3D model. Grades as measured by `qa/models.html` with the shipped plan:
+
 | Grade | A | B | C | F |
 | --- | ---: | ---: | ---: | ---: |
-| Species | 6 | 6 | 22 | 4 |
+| Species | 5 | 33 | 0 | 0 |
 
-30 of the 38 species battle as 3D models; the other 8 keep the artwork projection (4 missing from the API, 3 broken files, and Rotom-Wash's form).
+B here mostly means the Pokémon HOME set: authored idle, physical attack, special attack (and roar for most), 512 px textures, no damage or faint clips (the stage flinches and topples those procedurally).
 
-| Pokémon | Dex | Grade | Triangles | Texture | Bones | Clips | In battle |
-| --- | ---: | :---: | ---: | ---: | ---: | ---: | --- |
-| Gholdengo | 1000 | A | 5,368 | 1024 px | 240 | 71 | artwork (body, coin stack and board sit apart even in the bind pose: broken file) |
-| Great Tusk | 984 | B | 9,982 | 1024 px | 244 | 84 | model, own clips plus the procedural layer |
-| Iron Valiant | 1006 | C | 6,156 | 512 px | 0 | 0 | model, static mesh (no rig) |
-| Kingambit | 983 | A | 10,693 | 1024 px | 169 | 46 | model with its own battle clips |
-| Clodsire | 980 | C | 7,448 | 1024 px | 65 | 0 | model with the procedural layer |
-| Tinkaton | 959 | C | 16,674 | 1024 px | 150 | 0 | model with the procedural layer |
-| Dondozo | 977 | F | - | - | - | - | artwork (not in the API) |
-| Annihilape | 979 | A | 9,937 | 1024 px | 213 | 48 | model with its own battle clips |
-| Meowscarada | 908 | C | 6,392 | 1024 px | 170 | 0 | model with the procedural layer |
-| Skeledirge | 911 | A | 9,798 | 1024 px | 201 | 54 | model with its own battle clips (two stray meshes dropped) |
-| Quaquaval | 914 | C | 12,220 | 1024 px | 157 | 0 | artwork (clips stripped, the rest pose collapses the body) |
-| Garganacl | 934 | A | 5,700 | 1024 px | 84 | 47 | model with its own battle clips |
-| Baxcalibur | 998 | B | 7,194 | 256 px | 92 | 1 | model, own clips plus the procedural layer |
-| Dragapult | 887 | B | 13,646 | 1024 px | 210 | 4 | model, own clips plus the procedural layer |
-| Corviknight | 823 | C | 15,033 | 1024 px | 115 | 0 | model with the procedural layer |
-| Rotom-Wash | 479 | C | 3,078 | 256 px | 9 | 0 | artwork (alternate form; the API has no model for it) |
-| Garchomp | 445 | C | 6,433 | 512 px | 36 | 0 | model with the procedural layer |
-| Azumarill | 184 | C | 4,226 | 512 px | 31 | 0 | model with the procedural layer |
-| Volcarona | 637 | C | 1,892 | 128 px | 0 | 0 | model, static mesh (no rig) |
-| Breloom | 286 | C | 11,774 | 32 px | 0 | 0 | model, static mesh (no rig) |
-| Gengar | 94 | C | 4,308 | 256 px | 31 | 0 | model with the procedural layer |
-| Serperior | 497 | C | 4,395 | 256 px | 40 | 0 | artwork (bind pose is a straight vertical pole, no clips) |
-| Grimmsnarl | 861 | F | - | - | - | - | artwork (not in the API) |
-| Hydreigon | 635 | C | 5,838 | 256 px | 71 | 0 | model with the procedural layer |
-| Maushold | 925 | C | 60,286 | 1024 px | 0 | 0 | model, static mesh (no rig) |
-| Ditto | 132 | C | 3,072 | 1024 px | 18 | 1 | model, own clips plus the procedural layer |
-| Sneasler | 903 | B | 5,400 | 512 px | 102 | 3 | model, own clips plus the procedural layer |
-| Toxapex | 748 | C | 1,506 | 1024 px | 0 | 0 | model, static mesh (no rig) |
-| Clefable | 36 | C | 4,681 | 256 px | 42 | 0 | model with the procedural layer |
-| Scizor | 212 | B | 5,494 | 256 px | 48 | 1 | model, own clips plus the procedural layer |
-| Iron Hands | 992 | F | - | - | - | - | artwork (not in the API) |
-| Sinistcha | 1013 | F | - | - | - | - | artwork (not in the API) |
-| Mimikyu | 778 | C | 340 | 1024 px | 12 | 1 | model, own clip plus the procedural layer |
-| Hatterene | 858 | C | 16,480 | 1024 px | 155 | 0 | model with the procedural layer |
-| Froslass | 478 | C | 4,866 | 256 px | 46 | 0 | model with the procedural layer |
-| Pawmot | 923 | B | 9,790 | 1024 px | 238 | 1 | model, own clips plus the procedural layer |
-| Kilowattrel | 941 | A | 7,476 | 1024 px | 88 | 59 | model with its own battle clips |
-| Sableye | 302 | C | 2,588 | 1024 px | 282 | 1 | model, own clips plus the procedural layer |
+| Pokémon | Dex | Grade | Source | Triangles | Texture | Clips | Why this source |
+| --- | ---: | :---: | --- | ---: | ---: | --- | --- |
+| Gholdengo | 1000 | B | Pokémon HOME | 9,584 | 512 px | 3 | API file shows its coin board apart |
+| Great Tusk | 984 | B | Pokémon 3D API | 9,982 | 1024 px | 84 | own clips |
+| Iron Valiant | 1006 | B | Pokémon HOME | 18,564 | 512 px | 3 | API: static rig |
+| Kingambit | 983 | A | Pokémon 3D API | 10,693 | 1024 px | 46 (battle set) | own battle set |
+| Clodsire | 980 | B | Pokémon HOME | 7,072 | 512 px | 3 | API: static rig |
+| Tinkaton | 959 | B | Pokémon HOME | 25,271 | 512 px | 3 | API: static rig |
+| Dondozo | 977 | B | Pokémon HOME | 12,878 | 512 px | 3 | not in the API |
+| Annihilape | 979 | A | Pokémon 3D API | 9,937 | 1024 px | 48 (battle set) | own battle set |
+| Meowscarada | 908 | B | Pokémon HOME | 22,456 | 512 px | 3 | API: static rig |
+| Skeledirge | 911 | A | Pokémon 3D API | 9,798 | 1024 px | 54 (battle set) | own battle set, two stray meshes dropped |
+| Quaquaval | 914 | B | Pokémon HOME | 30,670 | 512 px | 3 | API body collapses |
+| Garganacl | 934 | A | Pokémon 3D API | 5,700 | 1024 px | 47 (battle set) | own battle set |
+| Baxcalibur | 998 | B | Pokémon HOME | 7,710 | 512 px | 3 | API: 1 clip |
+| Dragapult | 887 | B | Pokémon HOME | 14,962 | 512 px | 4 | API: 4 clips |
+| Corviknight | 823 | B | Pokémon HOME | 15,300 | 512 px | 4 | API: static rig |
+| Rotom-Wash | 479 (form) | B | Pokémon HOME | 6,138 | 512 px | 4 | API has the base form only |
+| Garchomp | 445 | B | Pokémon HOME | 6,522 | 512 px | 3 | API: static rig |
+| Azumarill | 184 | B | Pokémon HOME | 4,436 | 512 px | 4 | API: static rig |
+| Volcarona | 637 | B | Pokémon HOME | 4,772 | 512 px | 4 | API: static rig |
+| Breloom | 286 | B | Pokémon HOME | 5,474 | 512 px | 4 | API: static rig |
+| Gengar | 94 | B | Pokémon HOME | 5,238 | 512 px | 4 | API: static rig |
+| Serperior | 497 | B | Pokémon HOME | 6,006 | 512 px | 3 | API bind pose is a straight pole |
+| Grimmsnarl | 861 | B | Pokémon HOME | 16,698 | 512 px | 4 | not in the API |
+| Hydreigon | 635 | B | Pokémon HOME | 6,198 | 512 px | 4 | API: static rig |
+| Maushold | 925 | B | Pokémon HOME | 20,788 | 512 px | 3 | API: static rig |
+| Ditto | 132 | B | Pokémon HOME | 3,604 | 512 px | 3 | API: static rig |
+| Sneasler | 903 | B | Pokémon HOME | 5,686 | 512 px | 3 | API: 3 clips |
+| Toxapex | 748 | B | Pokémon HOME | 11,756 | 512 px | 4 | API: static rig |
+| Clefable | 36 | B | Pokémon HOME | 4,802 | 512 px | 4 | API: static rig |
+| Scizor | 212 | B | Pokémon HOME | 5,562 | 512 px | 4 | API: 1 clip |
+| Iron Hands | 992 | B | Pokémon HOME | 20,848 | 512 px | 3 | not in the API |
+| Sinistcha | 1013 | B | Pokémon HOME | 17,576 | 512 px | 4 | not in the API |
+| Mimikyu | 778 | B | Pokémon HOME | 6,786 | 512 px | 4 | API: static rig |
+| Hatterene | 858 | B | Pokémon HOME | 16,964 | 512 px | 4 | API: static rig |
+| Froslass | 478 | B | Pokémon HOME | 5,094 | 512 px | 4 | API: static rig |
+| Pawmot | 923 | B | Pokémon HOME | 10,016 | 512 px | 3 | API: 1 clip |
+| Kilowattrel | 941 | A | Pokémon 3D API | 7,476 | 1024 px | 59 (battle set) | own battle set |
+| Sableye | 302 | B | Pokémon HOME | 4,242 | 512 px | 4 | API: static rig |
 
 ## Decisions
 
-- **Artwork instead of a model** (`PLAN` in `monModel.ts`): Gholdengo, Serperior and Quaquaval are broken files (parts apart in the bind pose, a straight vertical pole, a collapsed body). Mimikyu, Volcarona and Toxapex are rough (few triangles or no rig) but recognisable, so they battle as models: a rough 3D Pokémon reads better than a missing one. Grimmsnarl, Dondozo, Iron Hands and Sinistcha are not in the API. Rotom-Wash uses an alternate-form artwork id, and the API has no model for that form. These ten species appear as the holographic artwork projection.
-- **Static rigs stay as models.** Most C-grade pool species only exist in the API as static rigs. With materials fixed and the procedural layer on top they read as living Pokémon, and they keep their 3D silhouette from every camera angle, which a flat card cannot.
-- **Garchomp's Legends Z-A model** (`models/opt/za/445.glb`) was tried and dropped; the regular model is used.
+- **Two sources.** The Pokémon 3D API keeps the six species where it has Scarlet/Violet clip sets (five full battle sets, plus Great Tusk's 84 clips). Everything else uses its Pokémon HOME model (`FROM_HOME` in `monModel.ts`): the four species the API lacks, the three it ships broken, Rotom-Wash (the API only has the base form) and every species it only has as a static rig or with one to four clips. A HOME model with an authored idle and two attacks beats a static rig with procedural motion.
+- **The broken API files were not broken in the same way at the source.** Gholdengo's "parts apart" is its coin board and coins, which the game hides until an attack: HOME's clips toggle them through `CusAnimVis_*` nodes, so the board now appears when Gholdengo attacks. Serperior and Quaquaval are complete in HOME.
+- **Fitting happens in the idle pose for real.** Stopping an animation mixer restores the bind pose, which the old fit measured by mistake; the box is now taken while the idle is applied, over visible meshes only. Serperior (a straight pole in its bind pose) and the HOME props stopped shrinking their Pokémon.
+- **Garchomp's Legends Z-A model** (`models/opt/za/445.glb`) was tried and dropped; HOME's is used.
 
 ## Limits
 
-- C-grade pool species move through the procedural layer, not authored clips. Iron Valiant, Breloom, Maushold, Volcarona and Toxapex have no rig at all, so they only move as a whole body (send-out, hop, rush, recoil, topple on faint). Raising them needs better sources; the API has nothing better for these species.
-- Partner models are heavy downloads: 3.4 to 15 MB each, mostly animation data. Each player's partner is fetched on demand and cached for the session; the artwork card stands in until it arrives.
-- Licensing: no model is bundled or redistributed by this repository. They are fetched at runtime from the Pokémon 3D API, which sources them from Sketchfab and credits them as property of Nintendo, Creatures Inc. and GAME FREAK. This is an unofficial, non-commercial fan project.
+- HOME textures are 512 px (often half-width and mirrored), below the API's 1024 px battle sets; the clips and blinking eyes are worth more on stage than the extra resolution.
+- HOME clips cover idle, physical attack, special attack and roar only. Damage and faint stay procedural (flinch, topple) for those 32 species.
+- Downloads: a HOME species is 0.3 to 1.3 MB of GLB, a few small PNGs and three or four gzipped clip files; the API battle sets are 2.4 to 11 MB. Team Preview fetches and compiles all twelve Pokémon of a match.
+- Licensing: no model, texture or clip is bundled or redistributed by this repository. They are fetched at runtime from the Pokémon 3D API and from public Pokémon HOME exports on GitHub (`Lilothestitch16/Pokemon-HOME-GLB-Models`, `Lilothestitch16/Pokemon-HOME-Unity-Models`); `homeManifest.ts` holds paths and texture transforms only. The assets are property of Nintendo, Creatures Inc. and GAME FREAK. This is an unofficial, non-commercial fan project.
 
 ## Visual regression checklist
 
 Run the dev server (`cd frontend && npx vite --port 5170 --strictPort --host 127.0.0.1`) and check:
 
-1. `http://127.0.0.1:5170/pokemon-battle-draft-v2/qa/models.html?ids=658,149,150,249,160,330,909,183,999,987,848,983,811,875&cols=7&h=420`: every partner loads with a battle set (grade A or B) and smooth shading, no see-through bodies, feet on the floor. Without `ids` the sheet shows the draft pool; `act=attack01` loops an action on every model.
+1. `http://127.0.0.1:5170/pokemon-battle-draft-v2/qa/models.html?ids=658,149,150,249,160,330,909,183,999,987,848,983,811,875&cols=7&h=420` (`&use=home` or `&use=model` forces a source for comparison): every partner loads with a battle set (grade A or B) and smooth shading, no see-through bodies, feet on the floor. Without `ids` the sheet shows the draft pool; `act=attack01` loops an action on every model.
 2. The title screen shows the partner with smooth shading and no console errors (`window.__WORLD__.stats()` reports fps, draw calls and triangles).
 3. In the console, drive the stage without a live match: `__WORLD__.setLayout({mode:'arena', mine:'greninja', theirs:'kingambit'})`, then `__WORLD__.battle.switchIn(0, 445, 'Garchomp', '#5b6cff', false)` and `__WORLD__.battle.switchIn(1, 983, 'Kingambit', '#e04848', false)`: a Poké Ball arcs in, opens in a flash and each Pokémon grows in facing its opponent.
 4. `__WORLD__.battle.move(0, 'Dragon Claw', 'Dragon', 'Physical', 1)`, then `__WORLD__.battle.hit(1, 0.45, true, 'super', '#7b5bff')`: the attacker strikes as the slash lands, the target flinches with its damage clip and a flash.

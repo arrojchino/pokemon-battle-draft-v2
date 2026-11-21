@@ -4,6 +4,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { assetUrl, pokemonModel } from '../../assets.js';
 import { ProceduralRig } from './procedural.js';
+import { loadHome, layerOf, type Blink } from './home.js';
 
 /**
  * Runtime 3D Pokémon from the community Pokémon 3D API: Draco-compressed GLB with WebP textures, fetched
@@ -16,19 +17,33 @@ import { ProceduralRig } from './procedural.js';
  * (see procedural.ts) that brings static models to life. `qa/models.html` shows the result for any id.
  */
 
-export type Plan = { folder?: string; use?: 'model' | 'art'; metal?: RegExp; /** Stray meshes to drop (effect geometry left in the file). */ hide?: RegExp };
+export type Plan = {
+  folder?: string;
+  /** model = Pokémon 3D API (default); home = the Pokémon HOME export (home.ts); art = official artwork. */
+  use?: 'model' | 'home' | 'art';
+  metal?: RegExp;
+  /** Stray meshes to drop (effect geometry left in the file). */
+  hide?: RegExp;
+};
 /**
- * Per-species decisions from the asset audit (docs/ASSET_AUDIT.md). `art` = the model fails the quality
- * bar or does not exist, so the Pokémon is shown as its official artwork instead.
+ * Per-species decisions from the asset audit (docs/ASSET_AUDIT.md). `art` = no usable model, so the
+ * Pokémon is shown as its official artwork instead.
  */
 export const PLAN: Record<number, Plan> = {
-  1000: { use: 'art' },               // Gholdengo: parts sit apart even in the bind pose (broken file)
   911: { hide: /^Object_21[02]$/ },   // Skeledirge: a stray effect strip props it up, its song bird lies loose on the floor
-  497: { use: 'art' },                // Serperior: bind pose is a straight vertical pole, no clips
-  914: { use: 'art' },                // Quaquaval: clips stripped, rest pose collapses the body
-  861: { use: 'art' }, 977: { use: 'art' }, 992: { use: 'art' }, 1013: { use: 'art' }, // not in the API
 };
-export const hasModel = (dex: number) => Number.isInteger(dex) && dex > 0 && dex <= 1025 && PLAN[dex]?.use !== 'art';
+/** Species shown with their Pokémon HOME model (home.ts): authored idle, attack and roar clips, blinking eyes. */
+const FROM_HOME = [
+  861, 977, 992, 1013, // not in the Pokémon 3D API
+  1000, 497, 914, // broken there: props shown apart (Gholdengo), a straight pole (Serperior), a collapsed body (Quaquaval)
+  10009, // Rotom-Wash: the API only has the base form
+  445, 94, 635, 823, 908, 959, 980, 858, 478, 184, 36, 1006, 286, 925, 637, 748, 778, 132, 302, // static or rigless there
+  998, 887, 212, 903, 923, // one to four clips there
+];
+for (const dex of FROM_HOME) PLAN[dex] = { ...PLAN[dex], use: 'home' };
+/** National Dex numbers use the API unless planned otherwise; alternate forms (artwork ids above 1025) need a plan. */
+export const hasModel = (dex: number) =>
+  Number.isInteger(dex) && dex > 0 && (dex <= 1025 ? PLAN[dex]?.use !== 'art' : PLAN[dex]?.use === 'home');
 
 let loader: GLTFLoader | null = null;
 function gltfLoader() {
@@ -42,7 +57,7 @@ function gltfLoader() {
   return loader;
 }
 
-type Source = { scene: THREE.Object3D; clips: THREE.AnimationClip[] };
+type Source = { scene: THREE.Object3D; clips: THREE.AnimationClip[]; blink?: Blink };
 const sources = new Map<number, Promise<Source>>();
 
 export type MonModel = {
@@ -54,6 +69,8 @@ export type MonModel = {
   radius: number;
   /** This instance's own materials. */
   materials: THREE.Material[];
+  /** Eye-texture blink (HOME models). */
+  blink?: Blink;
 };
 
 /**
@@ -95,6 +112,11 @@ function smoothNormals(g: THREE.BufferGeometry) {
 /** Download a species once (later calls share the request); resolves when it is in memory. */
 export function preloadMon(dex: number, onProgress?: (loaded: number, total: number) => void): Promise<Source> {
   let p = sources.get(dex);
+  if (!p && PLAN[dex]?.use === 'home') {
+    p = loadHome(dex, onProgress);
+    sources.set(dex, p);
+    p.catch(() => sources.delete(dex));
+  }
   if (!p) {
     p = gltfLoader().loadAsync(pokemonModel(dex, PLAN[dex]?.folder), e => onProgress?.(e.loaded, e.total || e.loaded)).then(g => {
       // Once per download: every instance shares this geometry and these clips.
@@ -173,13 +195,24 @@ function upgradeMaterial(src: THREE.Material, metal: RegExp | undefined): THREE.
   if (m.map) m.map.anisotropy = 8;
   // glTF asks for flat shading when a mesh has no normals; preloadMon has given every such mesh smooth ones.
   m.flatShading = false;
+  // A second texture layer (an eye's iris) shows wherever the main texture is transparent.
+  const layer = layerOf.get(src);
   m.onBeforeCompile = shader => {
     shader.uniforms.uRimColor = MON_RIM.color; shader.uniforms.uRimStrength = MON_RIM.strength;
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 uRimColor; uniform float uRimStrength;')
       .replace('#include <opaque_fragment>', 'outgoingLight += uRimColor * pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 3.0) * uRimStrength;\n#include <opaque_fragment>');
+    if (layer && m.map) {
+      shader.uniforms.uLayer = { value: layer }; shader.uniforms.uLayerM = { value: layer.matrix };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform mat3 uLayerM; varying vec2 vLayerUv;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvLayerUv = (uLayerM * vec3(uv, 1.0)).xy;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform sampler2D uLayer; varying vec2 vLayerUv;')
+        .replace('#include <map_fragment>', 'vec4 sampledDiffuseColor = texture2D(map, vMapUv);\nvec4 layerColor = texture2D(uLayer, vLayerUv);\nsampledDiffuseColor = vec4(mix(layerColor.rgb, sampledDiffuseColor.rgb, sampledDiffuseColor.a), max(sampledDiffuseColor.a, layerColor.a));\ndiffuseColor *= sampledDiffuseColor;');
+    }
   };
-  m.customProgramCacheKey = () => 'mon-rim';
+  m.customProgramCacheKey = () => (layer ? 'mon-rim-layer' : 'mon-rim');
   return m;
 }
 
@@ -203,15 +236,18 @@ function instance(src: Source, height: number, metal?: RegExp): MonModel {
   model.updateMatrixWorld(true);
   // Measure in the idle pose: some models (single-clip ones especially) have a bind pose far from how
   // they actually stand, which would throw the height and centre off.
+  // Only what shows in that pose counts (HOME models hide their props until an attack brings them out).
+  // Measure before the mixer stops: stopping restores the bind pose.
   const pose = findClip(src.clips, ['battlewait01_loop', 'defaultwait01_loop']) ?? src.clips[0];
+  let box: THREE.Box3;
   if (pose) {
     const mx = new THREE.AnimationMixer(model);
-    mx.clipAction(pose).play(); mx.update(0);
-    model.updateMatrixWorld(true);
+    // A little into the loop: frame 0 can still show props the clip hides one frame later.
+    mx.clipAction(pose).play(); mx.update(Math.min(0.5, pose.duration / 2));
+    box = visibleBox(model);
     mx.stopAllAction(); mx.uncacheRoot(model);
-  }
+  } else box = visibleBox(model);
   measureStrikes(model, src.clips);
-  const box = new THREE.Box3().setFromObject(model, true);
   const size = box.getSize(new THREE.Vector3());
   const c = box.getCenter(new THREE.Vector3());
   // Fit the height; wide (wings) and long (tails, serpents) bodies may extend further before they shrink.
@@ -220,7 +256,21 @@ function instance(src: Source, height: number, metal?: RegExp): MonModel {
   model.position.multiplyScalar(s).add(new THREE.Vector3(-c.x * s, -box.min.y * s, -c.z * s));
   const root = new THREE.Group();
   root.add(model);
-  return { root, clips: src.clips, height: size.y * s, radius: Math.max(size.x, size.z) * s * 0.5, materials };
+  return { root, clips: src.clips, height: size.y * s, radius: Math.max(size.x, size.z) * s * 0.5, materials, blink: src.blink };
+}
+
+/** Bounds of the meshes that are actually drawn (visible all the way up, with at least one visible material). */
+function visibleBox(root: THREE.Object3D) {
+  const box = new THREE.Box3(), part = new THREE.Box3();
+  root.updateMatrixWorld(true);
+  root.traverse(o => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    for (let p: THREE.Object3D | null = m; p; p = p.parent) if (!p.visible) return;
+    if (!(Array.isArray(m.material) ? m.material : [m.material]).some(x => x.visible)) return;
+    box.union(part.setFromObject(m, true));
+  });
+  return box.isEmpty() ? box.setFromObject(root, true) : box;
 }
 
 /**
@@ -321,6 +371,11 @@ export class MonBody {
   private tint = 0; private tintColor = new THREE.Color('#000000');
   private opacity = 1;
   private dirty = false;
+  /** HOME eye blink: each eye's texture (this instance's own copy) and its UV offset at rest. */
+  private eyes: { tex: THREE.Texture; x: number; y: number }[] = [];
+  private blinkIn = 1 + Math.random() * 3;
+  private blinkAt = -1;
+  private eyeFrame = -1;
 
   constructor(private model: MonModel, idle: 'default' | 'battle' = 'default') {
     this.root = model.root; this.height = model.height; this.radius = model.radius; this.idleKind = idle;
@@ -336,7 +391,29 @@ export class MonBody {
     for (const mat of model.materials) {
       const m = mat as THREE.MeshStandardMaterial;
       this.base.set(mat, { color: m.color ? m.color.clone() : null, emissive: m.emissive ? m.emissive.clone() : null, opacity: m.opacity, transparent: m.transparent });
+      if (m.map && model.blink?.eyes.includes(m.name.slice(m.name.indexOf('-') + 1))) {
+        m.map = m.map.clone();
+        this.eyes.push({ tex: m.map, x: m.map.offset.x, y: m.map.offset.y });
+      }
     }
+  }
+
+  /** Blink now and then (open, half, shut, half, open); eyes stay shut while asleep. */
+  private updateEyes(dt: number) {
+    const b = this.model.blink!;
+    let k = 0; // 0 open, 1 half, 2 shut
+    if (this.proc.drowsy) k = 2;
+    else if (this.blinkAt >= 0) {
+      this.blinkAt += dt;
+      const f = Math.floor(this.blinkAt * 30);
+      k = f === 0 || f === 3 ? 1 : f < 3 ? 2 : 0;
+      if (f > 3) { this.blinkAt = -1; this.blinkIn = 1.8 + Math.random() * 4.5; }
+    } else if ((this.blinkIn -= dt) <= 0) this.blinkAt = 0;
+    if (k === this.eyeFrame) return;
+    this.eyeFrame = k;
+    const [du, dv] = k === 0 ? [0, 0] : k === 1 ? b.half : b.shut;
+    // Unity UV moves; the GLB's UVs are flipped vertically, so v moves the other way.
+    for (const e of this.eyes) e.tex.offset.set(e.x + du, e.y - dv);
   }
 
   private idleClip(kind: 'default' | 'battle' | 'sleep') {
@@ -441,6 +518,7 @@ export class MonBody {
       this.mixer.update(dt);
     }
     this.proc.update(dt);
+    if (this.eyes.length) this.updateEyes(dt);
     if (this.flash > 0) { this.flash = Math.max(0, this.flash - dt * 3.2); this.dirty = true; }
     if (!this.dirty) return;
     this.dirty = this.flash > 0;

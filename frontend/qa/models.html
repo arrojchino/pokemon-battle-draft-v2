@@ -13,9 +13,9 @@ canvas{position:fixed;inset:0;pointer-events:none}
 // loader and MonBody and reports what the asset really contains, so models can be graded and regressions
 // spotted. ?ids=25,133 picks species, ?src=regular|za picks the folder, ?act=attack01 loops an action.
 import * as THREE from 'three';
-import { loadMonModel, MonBody, auditModel } from '/pokemon-battle-draft-v2/src/engine/character/monModel.ts';
+import { loadMonModel, MonBody, auditModel, PLAN } from '/pokemon-battle-draft-v2/src/engine/character/monModel.ts';
 const q = new URLSearchParams(location.search);
-const ids = (q.get('ids') || '1000,984,1006,983,980,959,977,979,908,911,914,934,998,887,823,479,445,184,637,286,94,497,861,635,925,132,903,748,36,212,992,1013,778,858,478,923,941,302').split(',').map(Number);
+const ids = (q.get('ids') || '1000,984,1006,983,980,959,977,979,908,911,914,934,998,887,823,10009,445,184,637,286,94,497,861,635,925,132,903,748,36,212,992,1013,778,858,478,923,941,302').split(',').map(Number);
 const act = q.get('act');
 document.documentElement.style.setProperty('--cols', q.get('cols') || '8');
 document.documentElement.style.setProperty('--h', (q.get('h') || '200') + 'px');
@@ -25,6 +25,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.N
 const pm = new THREE.PMREMGenerator(renderer); const envScene = new THREE.Scene(); envScene.background = new THREE.Color('#3a4a7a');
 const env = pm.fromScene(envScene, 0.04).texture;
 const cells = []; window.__audit = [];
+if (q.get('use')) for (const id of ids) PLAN[id] = { ...(PLAN[id] || {}), use: q.get('use') };
 for (const id of ids) {
   const el = document.createElement('div'); el.className = 'cell';
   const b = document.createElement('b'); b.textContent = String(id); const info = document.createElement('i'); info.textContent = 'loading';
