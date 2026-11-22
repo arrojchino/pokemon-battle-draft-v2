@@ -10,6 +10,7 @@ import './styles/hub.css';
 import './styles/match.css';
 import './styles/battle.css';
 import './styles/battle-fx.css';
+import './styles/battle-hud.css';
 import './styles/pokedex.css';
 import './styles/settings.css';
 

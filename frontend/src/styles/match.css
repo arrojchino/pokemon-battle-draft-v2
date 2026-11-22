@@ -214,3 +214,30 @@
   .roombar .iconbtn--text { font-size: 0; gap: 0; padding-inline: 9px; }
   .scoreboard { width: min(780px, calc(100vw - 460px)); }
 }
+
+/* ---------- draft sizing: both teams and their Take buttons fit under the scoreboard ---------- */
+/* The Take button sits in each team's header, so it never covers the second row of cards. */
+.draft__take { white-space: nowrap; }
+@media (min-width: 761px) {
+  .draft { padding-bottom: 14px; }
+  .draft__head { margin-bottom: 8px; gap: 2px; }
+  .draft__sub { font-size: 13px; max-width: 96ch; }
+  .draft__col { gap: 8px; padding: 10px 12px 12px; }
+  .draft__colhead { grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; }
+  .draft__colhead h3 { font-size: 22px; }
+  .draft .tsum { gap: 4px; }
+  .draft .tsum__roles > div { padding: 3px 2px; }
+  .draft .tsum__row { min-height: 18px; }
+  .draft__grid { gap: 8px; }
+  /* Art follows the screen height instead of the card width: the sets keep their full text. */
+  .draft .pcard--compact .pcard__art { aspect-ratio: auto; height: clamp(56px, 9vh, 112px); }
+  .draft .pcard--compact .pcard__frame { gap: 3px; padding: 7px 8px 9px; }
+  .draft .pcard__meta { gap: 0; }
+  .draft .pcard__moves li { padding: 2px 6px; }
+  .draft .cardback { aspect-ratio: 5 / 4; }
+}
+@media (max-width: 760px) {
+  .draft__colhead { grid-template-columns: auto 1fr; }
+  .draft__take { grid-column: 1 / -1; }
+  .draft .pcard--compact .pcard__art { aspect-ratio: 2 / 1; }
+}

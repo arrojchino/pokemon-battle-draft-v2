@@ -251,7 +251,7 @@ function instance(src: Source, height: number, metal?: RegExp): MonModel {
   // taller standing, so fitting its crouch made the standing partner far too big).
   // Only what shows in that pose counts (HOME models hide their props until an attack brings them out).
   // Measure before the mixer stops: stopping restores the bind pose.
-  const pose = findClip(src.clips, ['defaultwait01_loop', 'battlewait01_loop']) ?? src.clips[0];
+  const pose = findClip(src.clips, ['defaultwait01_loop', 'battlewait01_loop']) ?? fallbackIdle(src.clips);
   let box: THREE.Box3;
   if (pose) {
     const mx = new THREE.AnimationMixer(model);
@@ -332,7 +332,8 @@ function measureStride(model: THREE.Object3D, clips: THREE.AnimationClip[]): num
   model.updateMatrixWorld(true);
   const scale = new THREE.Vector3();
   for (const clip of clips) {
-    if (!/(walk01_loop|run01_loop)$/.test(clip.name) || paces.has(clip)) continue;
+    const key = clipKey(clip.name);
+    if (!(isClip(key, 'walk01_loop') || isClip(key, 'run01_loop')) || paces.has(clip)) continue;
     let best: { track: THREE.KeyframeTrack; dx: number; dz: number } | null = null;
     for (const track of clip.tracks) {
       if (!track.name.endsWith('.position') || track.values.length < 6) continue;
@@ -356,9 +357,41 @@ function measureStride(model: THREE.Object3D, clips: THREE.AnimationClip[]): num
 }
 
 /** First clip whose name ends with one of the Scarlet/Violet action names (defaultwait01_loop, glad01, attack01…). */
+/**
+ * A clip's game name without the exporter's decoration: `Normal|battlewait01_loop.001` → `battlewait01_loop`,
+ * `Normal|walk01_loop w/ run In Place` → `walk01_loop`, `down01_start ` → `down01_start`,
+ * `pm1082_00_00_00300_roar01.gfbanm` → `pm1082_00_00_00300_roar01`.
+ */
+export function clipKey(name: string): string {
+  const base = name.slice(name.lastIndexOf('|') + 1).trim();
+  return (/^[A-Za-z0-9_]+/.exec(base)?.[0] ?? base).toLowerCase();
+}
+/** Whether a clip is `want`, alone or after a prefix (`home_battlewait01_loop`), never inside another word (`rangeattack01` is not `attack01`). */
+const isClip = (key: string, want: string) => key === want || (key.endsWith(want) && key[key.length - want.length - 1] === '_');
+/**
+ * The first of `names` this model has. Exports are inconsistent (suffixes like `.001`, notes after a space,
+ * prefixes): names are compared on `clipKey`, and among copies the plainest name wins.
+ */
 export function findClip(clips: THREE.AnimationClip[], names: readonly string[]): THREE.AnimationClip | null {
-  for (const n of names) { const c = clips.find(x => x.name.endsWith(n)); if (c) return c; }
+  for (const n of names) {
+    const want = n.toLowerCase();
+    let best: THREE.AnimationClip | null = null, bestScore = Infinity;
+    for (const c of clips) {
+      if (!isClip(clipKey(c.name), want)) continue;
+      const plain = c.name.slice(c.name.lastIndexOf('|') + 1);
+      const score = (plain.toLowerCase() === clipKey(c.name) ? 0 : 1000) + c.name.length;
+      if (score < bestScore) { best = c; bestScore = score; }
+    }
+    if (best) return best;
+  }
   return null;
+}
+/** Last resort for a model with none of the named idles: anything that is a wait or idle, else a static pose; never an attack. */
+export function fallbackIdle(clips: THREE.AnimationClip[]): THREE.AnimationClip | null {
+  return findClip(clips, ['battlewait01_loop', 'defaultwait01_loop', 'defaultidle01', 'static pose'])
+    ?? clips.find(c => /wait|idle/i.test(clipKey(c.name)))
+    ?? clips.find(c => !/attack|damage|down|roar|stun|jump|run|walk|land|eat|sleep|rest/i.test(clipKey(c.name)))
+    ?? null;
 }
 const hasBattleSet = (clips: THREE.AnimationClip[]) => !!(findClip(clips, ['battlewait01_loop', 'defaultwait01_loop']) && findClip(clips, ['attack01', 'rangeattack01']) && findClip(clips, ['damage01']) && findClip(clips, ['down01_start', 'down01']));
 
@@ -484,7 +517,7 @@ export class MonBody {
     const c = this.model.clips;
     if (kind === 'sleep') return findClip(c, ['sleep01_loop']);
     if (kind === 'rest') return findClip(c, ['rest01_loop']);
-    return findClip(c, kind === 'battle' ? ['battlewait01_loop', 'defaultwait01_loop'] : ['defaultwait01_loop', 'battlewait01_loop']) ?? c[0] ?? null;
+    return findClip(c, kind === 'battle' ? ['battlewait01_loop', 'defaultwait01_loop'] : ['defaultwait01_loop', 'battlewait01_loop']) ?? fallbackIdle(c) ?? c[0] ?? null;
   }
 
   /**

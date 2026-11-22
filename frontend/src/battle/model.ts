@@ -114,6 +114,29 @@ const STAT: Record<string, string> = { atk: 'Attack', def: 'Defense', spa: 'Sp. 
 const STATUS: Record<string, string> = { brn: 'was burned', par: 'is paralyzed', slp: 'fell asleep', psn: 'was poisoned', tox: 'was badly poisoned', frz: 'was frozen solid' };
 const WEATHER: Record<string, string> = { RainDance: 'It started to rain.', SunnyDay: 'The sunlight turned harsh.', Sandstorm: 'A sandstorm kicked up.', Snowscape: 'It started to snow.', Snow: 'It started to snow.', none: 'The weather cleared.' };
 const clean = (s: string) => s.replace(/^(move|item|ability):\s*/, '');
+/**
+ * How the games word a volatile effect starting (`-start`), from the simulator's effect id. Unknown effects fall
+ * back to "Name: Effect!" with the id spaced into words.
+ */
+export function startText(who: string, raw: string): string {
+  const e = clean(raw), id = e.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const boost = /^(protosynthesis|quarkdrive)(atk|def|spa|spd|spe)$/.exec(id);
+  if (boost) return `${boost[1] === 'protosynthesis' ? 'Protosynthesis' : 'Quark Drive'} raised ${who}'s ${STAT[boost[2]]}!`;
+  const perish = /^perish(\d)$/.exec(id);
+  if (perish) return `${who}'s perish count fell to ${perish[1]}.`;
+  const stock = /^stockpile(\d)$/.exec(id);
+  if (stock) return `${who} stockpiled ${stock[1]}!`;
+  const known: Record<string, string> = {
+    confusion: `${who} became confused!`, substitute: `${who} put in a substitute!`, taunt: `${who} fell for the taunt!`,
+    encore: `${who} must do an encore!`, leechseed: `${who} was seeded!`, yawn: `${who} grew drowsy!`, saltcure: `${who} is being salt cured!`,
+    focusenergy: `${who} is getting pumped!`, curse: `${who} was cursed!`, disable: `${who}'s move was disabled!`, torment: `${who} was subjected to torment!`,
+    healblock: `${who} was prevented from healing!`, charge: `${who} began charging power!`, flashfire: `The power of ${who}'s Fire-type moves rose!`,
+    destinybond: `${who} is hoping to take its attacker down with it!`, magnetrise: `${who} levitated with electromagnetism!`, aquaring: `${who} surrounded itself with a veil of water!`,
+    ingrain: `${who} planted its roots!`, attract: `${who} fell in love!`, nightmare: `${who} began having a nightmare!`, slowstart: `${who} can't get it going!`,
+    smackdown: `${who} fell straight down!`, tarshot: `${who} became weaker to fire!`, throatchop: `${who} can't use sound-based moves!`, embargo: `${who} can't use items anymore!`,
+  };
+  return known[id] ?? `${who}: ${e.replace(/([a-z])([A-Z])/g, '$1 $2')}!`;
+}
 
 export class BattleModel {
   state: BattleState;
@@ -267,10 +290,11 @@ export class BattleModel {
       case '-enditem': { const m = this.mon(args[0]); m.item = null; m.revealed.item = true; this.log(kw.eat !== undefined ? `${this.cap(this.name(m))} ate its ${args[1]}.` : `${this.cap(this.name(m))}'s ${args[1]} ${from === 'Knock Off' || kw.from?.includes('Knock Off') ? 'was knocked off' : 'was used up'}.`); break; }
       case '-item': { const m = this.mon(args[0]); m.item = args[1] ?? m.item; m.revealed.item = true; this.log(`${this.cap(this.name(m))} has ${args[1]}${from ? ` (${from})` : ''}.`); break; }
       case '-ability': { const m = this.mon(args[0]); m.revealed.ability = args[1] ?? m.revealed.ability; this.log(`[${this.cap(this.name(m))}'s ${args[1]}]`); break; }
-      case '-start': { const m = this.mon(args[0]); const e = clean(args[1]); if (!/typechange|typeadd/.test(e)) this.log(`${this.cap(this.name(m))}: ${e}${kw.silent !== undefined ? '' : '!'}`); break; }
+      case '-start': { const m = this.mon(args[0]); const e = clean(args[1]); if (!/typechange|typeadd/.test(e) && kw.silent === undefined) this.log(startText(this.cap(this.name(m)), args[1])); break; }
       case '-end': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))}'s ${clean(args[1])} ended.`); break; }
       case '-activate': { if (args[0]?.includes(':') && args[1]?.startsWith('ability: ')) this.mon(args[0]).revealed.ability = clean(args[1]);
-        if (args[0] && args[1]) this.log(`${clean(args[1])} activated${args[0].includes(':') ? ` for ${this.name(this.mon(args[0]))}` : ''}.`); break; }
+        // Protosynthesis and Quark Drive announce themselves in the -start that follows (which stat rose).
+        if (args[0] && args[1] && !/^ability: (Protosynthesis|Quark Drive)$/.test(args[1])) this.log(`${clean(args[1])} activated${args[0].includes(':') ? ` for ${this.name(this.mon(args[0]))}` : ''}.`); break; }
       case '-hitcount': this.log(`Hit ${args[1]} time${args[1] === '1' ? '' : 's'}!`); break;
       case '-prepare': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))} is preparing ${args[1]}…`); break; }
       case 'cant': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))} can't move${args[1] ? ` (${clean(args[1])})` : ''}!`); break; }

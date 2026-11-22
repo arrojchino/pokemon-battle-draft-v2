@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import type { GameAction, Pokemon, PublicRoom, RivalPreview } from '@shared';
 import { useReducedMotion } from '../../../app/settings.js';
 import { Icon } from '../../primitives.js';
@@ -6,6 +6,33 @@ import { PokemonCard, PokemonChip, Sprite, TeamSummary } from '../../pokemon.js'
 import type { MatchModel } from './model.js';
 
 type Act = (a: GameAction) => void;
+
+/** Smallest scale the draft shrinks to on desktop: below this the set text stops being comfortable to read. */
+const MIN_FIT = 0.8;
+/**
+ * Fits the draft's columns to the screen height on desktop: when the two teams are taller than the space
+ * under the scoreboard, they are scaled down (never below `MIN_FIT`; past that it scrolls). Phones keep a
+ * single column that scrolls naturally.
+ */
+function useFitHeight(ref: RefObject<HTMLElement | null>, deps: unknown[]) {
+  useLayoutEffect(() => {
+    const el = ref.current, cols = el?.querySelector<HTMLElement>('.draft__cols');
+    if (!el || !cols) return;
+    const fit = () => {
+      cols.style.zoom = '';
+      // Phones (either way up) scroll one column instead: shrinking that far would make the sets unreadable.
+      if (window.innerWidth <= 760 || window.innerHeight < 560) return;
+      const pad = parseFloat(getComputedStyle(el).paddingBottom) || 0;
+      const avail = el.clientHeight - cols.offsetTop - pad;
+      const z = Math.max(MIN_FIT, Math.min(1, avail / cols.offsetHeight));
+      if (z < 0.995) cols.style.zoom = z.toFixed(3);
+    };
+    fit();
+    const ro = new ResizeObserver(fit); ro.observe(el);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
 
 /**
  * The draft. Only the toss winner receives the two dealt teams; the rival sees them face down and never
@@ -17,10 +44,12 @@ export function DraftBoard({ room, m, act }: { room: PublicRoom; m: MatchModel; 
   const reduced = useReducedMotion();
   const canPick = room.tossWinner === m.me && !!room.candidates;
   const take = (i: 0 | 1) => { if (chosen !== null) return; setChosen(i); window.setTimeout(() => act({ type: 'pick', team: i }), reduced ? 0 : 650); };
+  const box = useRef<HTMLElement>(null);
+  useFitHeight(box, [room.candidates, canPick]);
 
   if (!room.candidates) {
     return (
-      <section className="draft draft--sealed" aria-label="Team draft">
+      <section ref={box} className="draft draft--sealed" aria-label="Team draft">
         <header className="draft__head">
           <p className="eyebrow"><span className="jp">ドラフト</span> {m.oppName} is choosing</p>
           <p className="draft__sub">Two teams were dealt face down. {m.oppName} takes one and the other six are yours. Their pick stays hidden; in battle you only see what their Pokémon reveal.</p>
@@ -38,7 +67,7 @@ export function DraftBoard({ room, m, act }: { room: PublicRoom; m: MatchModel; 
   }
 
   return (
-    <section className={`draft ${chosen !== null ? 'has-choice' : ''}`} aria-label="Team draft">
+    <section ref={box} className={`draft ${chosen !== null ? 'has-choice' : ''}`} aria-label="Team draft">
       <header className="draft__head">
         <p className="eyebrow"><span className="jp">ドラフト</span> {canPick ? 'You won the toss · choose your six' : `${m.oppName} is choosing`}</p>
         <p className="draft__sub">The other team goes to {m.oppName}, who cannot see these cards or your choice. Sets are fixed: what you see is what you battle with.</p>
@@ -49,9 +78,9 @@ export function DraftBoard({ room, m, act }: { room: PublicRoom; m: MatchModel; 
             <div className="draft__colhead">
               <h3>Team {i ? 'B' : 'A'}</h3>
               <TeamSummary team={team} />
+              {canPick && <button className="btn btn--primary btn--lg draft__take" disabled={chosen !== null} onClick={() => take(i as 0 | 1)}><Icon name="check" />{chosen === i ? 'Taken' : `Take Team ${i ? 'B' : 'A'}`}</button>}
             </div>
             <div className="draft__grid">{team.map((p, k) => <PokemonCard key={p.name} p={p} index={k + i * 6} compact />)}</div>
-            {canPick && <button className="btn btn--primary btn--xl" disabled={chosen !== null} onClick={() => take(i as 0 | 1)}><Icon name="check" />{chosen === i ? 'Taken' : `Take Team ${i ? 'B' : 'A'}`}</button>}
           </div>
         ))}
       </div>

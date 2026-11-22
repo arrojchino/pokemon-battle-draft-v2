@@ -242,7 +242,7 @@ class Hologram {
     const dex = hasModel(artId) ? artId : 0;
     if (this.body && this.bodyDex !== dex) { this.body.dispose(); this.body = null; this.bodyDex = 0; }
     this.h = this.body ? this.body.height : monSize(artId); this.applySize();
-    this.card.visible = !this.body; this.beam.visible = !this.body;
+    this.card.visible = !this.body; this.beam.visible = !this.body; this.base.visible = !this.body;
     if (this.body) { this.body.reset(); this.body.root.rotation.x = 0; this.bodyIn = instant ? 1 : 0; }
     else if (dex) {
       void loadMonModel(dex, monSize(dex)).then(m => {
@@ -251,7 +251,8 @@ class Hologram {
         this.h = m.height; this.applySize();
         this.body.root.position.y = PLATFORM_Y;
         this.group.add(this.body.root);
-        this.card.visible = false; this.beam.visible = false;
+        // The emitter disc and beam belong to the projection; a 3D Pokémon stands on its own shadow.
+        this.card.visible = false; this.beam.visible = false; this.base.visible = false;
         // Arriving after the ball opened (a slow download): grow in with a flash of its own.
         if (this.ballT >= 1) { this.bodyIn = instant ? 1 : 0; if (!instant) this.body.hit('#ffffff', 1); }
         if (this.asleep) this.body.setIdle('sleep');
@@ -313,6 +314,10 @@ class Hologram {
     this.body?.setTint(asleep ? null : color, 0.28);
     if (asleep !== this.asleep) { this.asleep = asleep; this.body?.setIdle(asleep ? 'sleep' : 'battle'); }
   }
+  /** Out of its ball and fully revealed (the projection, or the model once it has grown in). */
+  get settled() { return this.present && this.ballT >= 1 && this.revealT >= 1 && (!this.body || this.bodyIn >= 0.99); }
+  /** Footprint radius, for shots that frame the Pokémon whole. */
+  get footprint() { return this.body ? this.body.radius : this.h * 0.4; }
   hide() { this.group.visible = false; this.present = false; this.dashT = 1; this.ballT = 1; this.ball.visible = false; for (const g of this.ghosts) g.visible = false; }
 
   update(dt: number, t: number, camera: THREE.Camera, reduced: boolean, foeCenter: THREE.Vector3) {
@@ -580,6 +585,8 @@ export class BattleStage {
   private switchTint: [string, string] = ['#ffffff', '#ffffff'];
   switchIn(side: 0 | 1, artId: number, name: string, tint: string, instant: boolean) {
     const reduced = this.reduced();
+    // The battle's first send-outs (nobody on the field yet): both Pokémon are presented together.
+    if (!instant && !this.holos[0].present && !this.holos[1].present) this.cam.openingStart();
     this.switchTint[side] = tint;
     void this.holos[side].show(artId, name, tint, instant || reduced);
     if (instant) return;
@@ -1774,6 +1781,8 @@ export class BattleStage {
       this.walls[s].mesh.position.y = h.cy; this.walls[s].mesh.scale.setScalar(k);
     }
     this.cam.setHeights(this.holos[0].height, this.holos[1].height);
+    this.cam.setFrame((this.camera as THREE.PerspectiveCamera).aspect ?? 16 / 9, this.holos[0].footprint, this.holos[1].footprint);
+    if (this.cam.isOpening && this.holos[0].settled && this.holos[1].settled) this.cam.openingEnd();
     for (const o of this.orbs) o.update(dt);
     this.particles.update(dt);
     this.rings.update(dt, this.camera);

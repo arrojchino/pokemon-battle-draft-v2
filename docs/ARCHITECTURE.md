@@ -96,6 +96,12 @@ client: WsTransport.onBattle -> BattleController (queue + per-line pacing) -> Ba
 
 `engine/battle/moveFx.ts` maps every pool move to a recipe and an impact delay. The model uses the same delay to pace `|move|` lines, and the stage defers the hit reaction until the animation lands, so damage numbers, HP drain and the impact always coincide. `BattleCamera.ts` also holds the field geometry (`ARENA`) shared by the stage, the partners' slots and the shots.
 
+Opening: the first send-outs of a battle start `BattleCamera.openingStart()`. The face-off shot looks across the line between the two Pokémon (yours on the left), and its distance and sideways shift are solved each frame from both bodies' footprints and heights and the screen's aspect, so neither is cut off; it holds until both are out (`settled`), then 2.2 s more, and glides into the establishing shot. Per-side switch close-ups are skipped while it plays.
+
+Messages: `BattleController` keeps the messages said since the last pause in one box (`snapshot.caption`, at most three). A `|move|` line keeps its animation timing; the reading time still owed (`readTime`: length-based, shorter for asides) is added to the next pause, so the hit still lands on impact. Bare HP figures stay in the log (`inBox`). `startText` words volatile effects the way the games do.
+
+Clips: `findClip` compares clip names on `clipKey` (exporter decoration such as `.001`, notes after a space and stray spaces removed) with a `_` boundary, so `down01_start` never matches `jumpdown01_start` and `attack01` never matches `rangeattack01`; `fallbackIdle` never returns an attack.
+
 The client never learns a result before the server records it: the end banner's Continue button waits for the room state, and series scoring always comes from `reduce()`.
 
 ## Backend (`backend/src/index.ts`, `backend/src/battle.ts`)

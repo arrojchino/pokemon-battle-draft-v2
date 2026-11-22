@@ -1,0 +1,129 @@
+/* ============================================================
+   Battle HUD: the active Pokémon plates, turn badge and message box.
+   Placement follows the modern games: the rival top right under the scoreboard, yours bottom left
+   by the commands. Loaded after battle.css and battle-fx.css, so it only restyles; layout and
+   behaviour stay where they were.
+   ============================================================ */
+
+/* ---------- plates ---------- */
+.plate2 {
+  --t1: #888; --cut: 18px;
+  /* No position here: the rival's plate is absolutely placed by battle.css, yours is relative (battle-fx.css). */
+  gap: 7px; padding: 12px 18px 10px 20px; isolation: isolate;
+  background:
+    linear-gradient(115deg, color-mix(in srgb, var(--t1) 30%, transparent) 0 3px, transparent 3px),
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--t1) 22%, transparent), transparent 55%),
+    linear-gradient(180deg, rgba(22, 28, 52, 0.92), rgba(8, 10, 22, 0.94));
+  backdrop-filter: blur(14px) saturate(1.2);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 18px 40px -18px rgba(0, 0, 0, 0.9);
+  animation: plate-in 0.5s var(--ease-out) both;
+}
+/* The rival's plate is cut on its left corner, yours on its right, so they read as a pair facing each other. */
+.plate2--theirs { clip-path: polygon(var(--cut) 0, 100% 0, 100% 100%, 0 100%, 0 var(--cut)); padding-left: 24px; }
+.plate2--mine { clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%); padding-right: 24px; }
+/* A type-coloured accent edge on the outside of each plate. */
+.plate2::after {
+  content: ''; position: absolute; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; z-index: -1;
+  background: linear-gradient(180deg, var(--t1), color-mix(in srgb, var(--t1) 30%, transparent)); box-shadow: 0 0 14px var(--t1);
+}
+.plate2--mine::after { left: 6px; }
+.plate2--theirs::after { right: 6px; }
+@keyframes plate-in { from { opacity: 0; transform: translateY(6px); } }
+.plate2:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.plate2 header { gap: 7px; flex-wrap: nowrap; min-width: 0; }
+.plate2 header strong {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 800 19px/1.05 var(--font-display); letter-spacing: 0.035em; text-transform: none; color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+.plate2__lv {
+  margin-left: auto; flex: none; display: inline-flex; align-items: baseline; gap: 2px; padding: 2px 7px 1px;
+  font: 800 13px/1 var(--font-display); letter-spacing: 0.02em; color: #fff;
+  background: rgba(255, 255, 255, 0.07); border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.plate2__lv small { font-size: 9px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-3); }
+
+/* Status: the games' own colours, as a small pill beside the name. */
+.stat-chip { flex: none; padding: 3px 7px 2px; border-radius: 4px; font: 800 10px/1 var(--font-display); letter-spacing: 0.12em; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.25); }
+.stat-chip--brn { background: #e8622c; } .stat-chip--par { background: #e6c31d; color: #1a1606; }
+.stat-chip--psn, .stat-chip--tox { background: #a24bc4; } .stat-chip--slp { background: #7c8aa6; } .stat-chip--frz { background: #5cc8e6; color: #06202a; }
+
+/* ---------- HP ---------- */
+.plate2 .hp { grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; }
+.hp__tag {
+  padding: 2px 5px 1px; border-radius: 3px; font: 900 10px/1 var(--font-display); letter-spacing: 0.06em;
+  color: #2a1a00; background: linear-gradient(180deg, #ffe07a, #f2b31c); box-shadow: 0 0 10px -2px rgba(242, 179, 28, 0.6);
+}
+.plate2 .hp__track {
+  height: 11px; border-radius: 999px; transform: none;
+  background: linear-gradient(180deg, #05070f, #11162a); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 2px 3px rgba(0, 0, 0, 0.6);
+}
+.plate2 .hp__track i { border-radius: inherit; }
+/* A sheen across the top half of the bar. */
+.plate2 .hp__fill::after { content: ''; position: absolute; inset: 1px 2px 50% 2px; border-radius: inherit; background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0)); }
+.plate2 .hp__ghost { background: linear-gradient(180deg, #fff, #ffd8de); opacity: 0.8; transition: transform 1.2s var(--ease) 0.45s; }
+.plate2 .hp__fill { transition: transform 0.7s var(--ease-out), background 0.5s; }
+.hp__num { min-width: 0; font: 600 12px/1 var(--font-display); color: var(--text-3); letter-spacing: 0.02em; }
+.hp__num b { font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+/* Yours: the exact figures stand under the bar, large, like the games. */
+.plate2--mine .hp { grid-template-areas: 'tag track track' '. . num'; grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 3px; }
+.plate2--mine .hp__tag { grid-area: tag; } .plate2--mine .hp__track { grid-area: track; }
+.plate2--mine .hp__num { grid-area: num; font-size: 13px; } .plate2--mine .hp__num b { font-size: 19px; }
+
+/* ---------- types, boosts and the party ---------- */
+.plate2__row { min-height: 18px; gap: 5px; }
+.boost { padding: 2px 6px 1px; border-radius: 4px; font: 800 10px/1.2 var(--font-display); letter-spacing: 0.04em; }
+.boost--up { color: #9ff4ff; background: rgba(80, 200, 255, 0.12); box-shadow: inset 0 0 0 1px rgba(143, 240, 255, 0.4); }
+.boost--down { color: #ffa3b0; background: rgba(255, 80, 110, 0.12); box-shadow: inset 0 0 0 1px rgba(255, 143, 159, 0.4); }
+/* Six Poké Balls: full, statused (amber band), fainted (empty), not yet seen (outline). */
+.plate2__team { gap: 4px; }
+.plate2__team i {
+  width: 11px; height: 11px; transform: none; border-radius: 50%;
+  background: linear-gradient(180deg, #ff4a5a 0 45%, #11131c 45% 55%, #f4f6ff 55%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 6px rgba(255, 74, 90, 0.35);
+}
+.plate2__team i.is-status { background: linear-gradient(180deg, #ffb23d 0 45%, #11131c 45% 55%, #f4f6ff 55%); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 6px rgba(255, 178, 61, 0.4); }
+.plate2__team i.is-out { background: #2a2f44; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12); opacity: 0.7; }
+.plate2__team i.is-unseen { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28); }
+.plate2__team span { font: 700 9.5px var(--font-display); letter-spacing: 0.18em; color: var(--text-3); }
+
+/* ---------- turn badge ---------- */
+.arena__turn { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 12px 3px; border-radius: 999px; color: var(--gold);
+  background: linear-gradient(180deg, rgba(255, 199, 61, 0.16), rgba(255, 199, 61, 0.05)); box-shadow: inset 0 0 0 1px rgba(255, 199, 61, 0.35);
+  font: 700 11px/1 var(--font-display); letter-spacing: 0.22em; text-transform: uppercase; }
+.arena__turn small { font: inherit; }
+.arena__turn b { font: 800 16px/1 var(--font-display); letter-spacing: 0; color: #fff; font-variant-numeric: tabular-nums; }
+.arena__chip { border-radius: 999px; }
+
+/* ---------- message box ---------- */
+.msgbox { display: grid; gap: 5px; align-content: center; min-height: 64px; padding: 2px 4px; }
+.msgbox .msg { font: 600 17px/1.4 var(--font-body); letter-spacing: 0.005em; }
+.msgbox .msg::before { width: 4px; }
+.msgbox .msg.is-past { font-size: 13.5px; color: var(--text-3); animation: none; }
+.msgbox .msg.is-past::before { opacity: 0.45; }
+.msgbox .msg.is-now { color: #fff; animation: msg-in var(--dur-2) var(--ease-out) both; }
+/* The newest line types in left to right at a quick pace (18 ms a character, never more than about 0.8 s). */
+.msgbox .msg.is-now .msg__text { animation: msg-type calc(var(--chars, 20) * 12ms + 120ms) steps(var(--chars, 20), end) both; }
+@keyframes msg-type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.msgbox .msg--super.is-now { color: #ffd27a; }
+.msgbox .msg--crit.is-now { color: var(--gold); text-shadow: 0 0 18px rgba(255, 199, 61, 0.45); }
+.msgbox .msg--ko.is-now { color: #ff7d8e; }
+@media (prefers-reduced-motion: reduce) { .msgbox .msg.is-now .msg__text, .plate2 { animation: none; } }
+:root[data-motion='reduced'] .msgbox .msg.is-now .msg__text { animation: none; }
+
+@media (max-width: 900px) {
+  /* Both plates side by side under the scoreboard (battle.css), clear of the command dock: battle-fx.css made
+     yours relative for the damage numbers, which dropped it behind the dock on phones. */
+  .arena .plate2--mine { position: absolute; top: 128px; left: 8px; width: calc(50% - 12px); }
+  .plate2 { padding: 8px 12px 7px 14px; gap: 5px; --cut: 12px; }
+  .plate2--theirs { padding-left: 16px; } .plate2--mine { padding-right: 16px; }
+  .plate2 header strong { font-size: 14px; }
+  .plate2__lv { font-size: 11px; padding: 1px 5px; }
+  .plate2 .hp__track { height: 8px; }
+  .plate2--mine .hp { grid-template-areas: 'tag track num'; } .plate2--mine .hp__num b { font-size: 13px; }
+  .hp__tag { font-size: 8px; padding: 1px 3px; }
+  .plate2__team i { width: 8px; height: 8px; }
+  .msgbox { min-height: 44px; } .msgbox .msg { font-size: 14.5px; } .msgbox .msg.is-past { font-size: 12px; }
+}

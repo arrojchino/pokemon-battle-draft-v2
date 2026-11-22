@@ -105,11 +105,11 @@ export class StageFloor {
           glow += uAccent * ring(r, ${R} - 2.1, 0.03) * step(0.45, fract(atan(p.y, p.x) * 9.549)) * 0.32;
           // Pulse wave from the centre on events (coin landing, confirm, big hits).
           glow += uPulseColor * ring(r, uPulse * (${R} + 1.0), 0.35) * (1.0 - uPulse) * 2.2;
-          // Soft glow and ring under each Pokémon on the platform (xy = position, z = radius, w = intensity).
+          // A soft pool of light under each Pokémon (xy = position, z = radius, w = intensity); no outline ring.
           for (int i = 0; i < ${MAX_SLOTS}; i++) {
             vec4 s = uSlots[i];
             float dd = length(p - s.xy);
-            glow += uAccent * (ring(dd, s.z, 0.03) * 1.1 + smoothstep(s.z, 0.0, dd) * 0.1) * s.w;
+            glow += uAccent * smoothstep(s.z * 1.15, 0.0, dd) * 0.12 * s.w;
           }
           col += glow;
           col *= smoothstep(${R}, ${R} - 0.1, r) * 0.9 + 0.1;

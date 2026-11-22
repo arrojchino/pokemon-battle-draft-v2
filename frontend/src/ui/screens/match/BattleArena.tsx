@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { moveInfo, type TypeName } from '@shared';
-import type { BattleController } from '../../../battle/controller.js';
+import { inBox, type BattleController } from '../../../battle/controller.js';
 import { isRevival, setFor as setForSpecies, switchLocked, type BattleRequest, type LogEntry, type MonView, type RequestPokemon, type SideView } from '../../../battle/model.js';
 import { Icon } from '../../primitives.js';
 import { sound } from '../../../audio/sound.js';
@@ -16,8 +16,9 @@ function HpBar({ mon, exact }: { mon: MonView; exact: boolean }) {
   const tone = f > 0.5 ? 'ok' : f > 0.2 ? 'mid' : 'low';
   return (
     <div className={`hp hp--${tone}`}>
-      <div className="hp__track"><i className="hp__ghost" style={{ '--f': f } as CSSProperties} /><i className="hp__fill" style={{ '--f': f } as CSSProperties} /></div>
-      <span className="hp__num">{exact ? `${mon.hp}/${mon.maxhp}` : `${Math.round(f * 100)}%`}</span>
+      <span className="hp__tag" aria-hidden="true">HP</span>
+      <div className="hp__track" role="meter" aria-label="HP" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(f * 100)}><i className="hp__ghost" style={{ '--f': f } as CSSProperties} /><i className="hp__fill" style={{ '--f': f } as CSSProperties} /></div>
+      <span className="hp__num">{exact ? <><b>{mon.fainted ? 0 : mon.hp}</b>/{mon.maxhp}</> : <><b>{Math.round(f * 100)}</b>%</>}</span>
     </div>
   );
 }
@@ -75,9 +76,9 @@ function MonPlate({ mon, side, label, mine, foe, known = mine, foeKnown = !mine 
     <section {...tip} tabIndex={0} className={`plate2 ${mine ? 'plate2--mine' : 'plate2--theirs'}`} aria-label={`${label} active Pokémon`} style={{ '--t1': TYPE_COLORS[types[0] ?? 'Normal'] } as CSSProperties}>
       <header>
         <strong>{mon.species}</strong>
-        <span className="plate2__lv">Lv100</span>
         {mon.status && <span className={`stat-chip stat-chip--${mon.status}`}>{STATUS_LABEL[mon.status] ?? mon.status}</span>}
         {mon.tera && <TypeBadge type={mon.tera} tera size="sm" />}
+        <span className="plate2__lv"><small>Lv</small>100</span>
       </header>
       <HpBar mon={mon} exact={known} />
       <div className="pops" aria-hidden="true">{pops.map(p => <b key={p.id} className={`pop ${p.heal ? 'pop--heal' : ''}`} onAnimationEnd={() => done(p.id)}>{p.text}</b>)}</div>
@@ -87,6 +88,7 @@ function MonPlate({ mon, side, label, mine, foe, known = mine, foeKnown = !mine 
       </div>
       <div className="plate2__team" aria-label={`${label} team`}>
         {side.mons.map(m => <i key={m.key} title={m.species} className={m.fainted ? 'is-out' : m.status ? 'is-status' : ''} />)}
+        {Array.from({ length: Math.max(0, 6 - side.mons.length) }, (_, k) => <i key={`unseen${k}`} className="is-unseen" aria-hidden="true" />)}
         <span>{label}</span>
       </div>
     </section>
@@ -229,6 +231,23 @@ const TONES: [RegExp, Tone][] = [
 ];
 const toneOf = (text: string): Tone | null => TONES.find(([re]) => re.test(text))?.[1] ?? null;
 
+/**
+ * The message box: what has been said since the last pause, oldest first, the newest line typed in at a quick
+ * pace (a few hundred milliseconds at most) and coloured by what it means. Earlier lines stay, dimmed, so a
+ * fast sequence (a hit, "super effective", a stat drop) can be followed.
+ */
+function MessageBox({ lines, fallback }: { lines: LogEntry[]; fallback: string }) {
+  if (!lines.length) return <p className="actions__wait">{fallback}</p>;
+  return (
+    <div className="msgbox" aria-live="polite">
+      {lines.map((e, i) => {
+        const t = toneOf(e.text), now = i === lines.length - 1;
+        return <p key={e.id} className={`msg ${now ? 'is-now' : 'is-past'} ${t ? `msg--${t}` : ''}`} style={{ '--chars': Math.min(e.text.length, 70) } as CSSProperties}><span className="msg__text">{e.text}</span></p>;
+      })}
+    </div>
+  );
+}
+
 /** The big moments get a sound cue; the words themselves stay in the message box. */
 function useMomentCues(log: LogEntry[]) {
   const seen = useRef(log.length ? log[log.length - 1].id : 0);
@@ -260,7 +279,8 @@ export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, fin
   const me = s.mySide; const opp = (1 - me) as 0 | 1;
   const req = s.request;
   const choose = (c: string) => controller.choose(c);
-  const caption = [...s.log].reverse().find(e => e.kind !== 'turn');
+  const caption = [...s.log].reverse().find(inBox);
+  const lines = snap.caption.length ? snap.caption : caption ? [caption] : [];
   const ended = s.phase === 'ended' && !snap.busy;
   useMomentCues(s.log);
   const tone = caption ? toneOf(caption.text) : null;
@@ -271,7 +291,7 @@ export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, fin
       <MonPlate mon={snap.active[opp]} side={s.sides[opp]} label={theirsLabel} mine={false} foe={snap.active[me]} foeKnown={!spectating} />
       <MonPlate mon={snap.active[me]} side={s.sides[me]} label={mineLabel} mine known={!spectating} foe={snap.active[opp]} />
       <div className="arena__bar">
-        <span className="arena__turn">{s.phase === 'preview' ? 'Team preview' : `Turn ${s.turn || 1}`}</span>
+        <span className="arena__turn">{s.phase === 'preview' ? 'Team preview' : <><small>Turn</small><b>{s.turn || 1}</b></>}</span>
         <Timer deadline={snap.deadline} active={snap.canChoose} />
         {s.weather && <span className="arena__chip">{s.weather.replace(/([a-z])([A-Z])/g, '$1 $2')}</span>}
         {s.sides[me].conditions.map(c => <span key={'m' + c} className="arena__chip arena__chip--mine">{c}</span>)}
@@ -290,14 +310,12 @@ export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, fin
             {finished && <button className="btn btn--primary btn--xl" onClick={onContinue}><Icon name="arrow" />Continue</button>}
           </div>
         ) : spectating ? (
-          <p className={`actions__wait ${snap.busy ? `msg ${tone ? `msg--${tone}` : ''}` : ''}`} key={snap.busy ? caption?.id : s.phase} aria-live="polite">
-            {s.phase === 'idle' ? 'Preparing the arena…' : snap.busy ? caption?.text ?? '…'
-              : s.phase === 'preview' ? `${mineLabel} and ${theirsLabel} are choosing their leads…` : `${mineLabel} and ${theirsLabel} are choosing…`}
-          </p>
+          s.phase !== 'idle' && snap.busy ? <MessageBox lines={lines} fallback="…" />
+            : <p className="actions__wait" aria-live="polite">{s.phase === 'idle' ? 'Preparing the arena…' : s.phase === 'preview' ? `${mineLabel} and ${theirsLabel} are choosing their leads…` : `${mineLabel} and ${theirsLabel} are choosing…`}</p>
         ) : !req || s.phase === 'idle' ? (
           <p className="actions__wait">Preparing the arena…</p>
         ) : snap.busy ? (
-          <p className={`actions__wait msg ${tone ? `msg--${tone}` : ''}`} key={caption?.id} aria-live="polite">{caption?.text ?? '…'}</p>
+          <MessageBox lines={lines} fallback="…" />
         ) : req.wait || snap.choiceSent ? (
           <p className="actions__wait">{snap.choiceSent ? `Locked in. Waiting for ${theirsLabel}…` : `Waiting for ${theirsLabel}…`}</p>
         ) : req.teamPreview ? (

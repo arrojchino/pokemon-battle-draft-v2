@@ -227,7 +227,7 @@ export class World {
     this.listen(window, 'blur', () => { this.plaza.keys.clear(); this.steering = false; });
     this.listen(document, 'visibilitychange', () => (document.hidden ? this.stop() : this.start()));
     this.listen(canvas, 'webglcontextlost', e => { e.preventDefault(); this.stop(); this.events.emit('contextLost'); });
-    this.listen(canvas, 'webglcontextrestored', () => { this.start(); this.events.emit('contextRestored'); });
+    this.listen(canvas, 'webglcontextrestored', () => { this.restoreGpu(); this.start(); this.events.emit('contextRestored'); });
     this.director.cut(this.shotFor({ mode: 'title', featured: opts.preload[0] ?? DEFAULT_CHARACTER }));
     this.start();
     void this.preload(opts.preload);
@@ -332,6 +332,20 @@ export class World {
   }
   /** Multiplier on the tier's pixel ratio: the fixed render scale, or the adaptive one. */
   private pixelScale() { return this.renderScale === 'auto' ? this.adaptive.scale : this.renderScale; }
+
+  /**
+   * After a lost WebGL context comes back, three re-uploads everything it still has CPU data for (geometry,
+   * image textures, programs), but a render target's pixels lived only on the GPU. The prefiltered environment
+   * map is rendered once at start-up, so it came back empty: every Pokémon (all lit by it) went near black and
+   * vanished into the night stadium while the game kept running. Re-render it, and drop the shadow map so it is
+   * recreated at the right size. Context losses happen on Alt+Tab, minimising, GPU resets and memory pressure.
+   */
+  private restoreGpu() {
+    this.envRT?.dispose(); this.envRT = null;
+    this.buildEnvironmentMap();
+    if (this.key.shadow.map) { this.key.shadow.map.dispose(); this.key.shadow.map = null as unknown as THREE.WebGLRenderTarget; }
+    this.resize();
+  }
 
   private buildEnvironmentMap() {
     // Reflections for the Pokémon, the coin and the platform rim: the night sky plus four floodlight
