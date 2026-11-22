@@ -113,7 +113,7 @@ export class PeerTransport implements Transport {
       }
       if (msg.type === 'create' || msg.type === 'lobbies' || msg.type === 'quick') return;
       // The main plaza and spectating need the dedicated server; a peer host has neither.
-      if (msg.type === 'hub' || msg.type === 'hubMove' || msg.type === 'hubEmote' || msg.type === 'hubChat' || msg.type === 'watch' || msg.type === 'unwatch') return;
+      if (msg.type === 'hub' || msg.type === 'hubMove' || msg.type === 'hubEmote' || msg.type === 'hubChat' || msg.type === 'watch' || msg.type === 'unwatch' || msg.type === 'hubFeed') return;
       if (msg.type === 'choose' || msg.type === 'forfeit') { reply({ type: 'error', message: 'In-app battles need the dedicated server' }); return; }
       if (conn !== this.guestConn) { reply({ type: 'error', message: 'Not seated' }); return; }
       if (msg.type === 'move') { this.hear({ type: 'move', seat: 1, x: msg.x, z: msg.z, face: msg.face }); return; }

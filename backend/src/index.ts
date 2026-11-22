@@ -4,8 +4,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { BattleSession, type BattleTiming } from './battle.js';
 import { Hub } from './hub.js';
 import {
-  PROTOCOL_VERSION, createRoom, parseClientMessage, publicView, reduce, seatForToken, seatGuest,
-  type BattleMode, type CharacterId, type LiveBattle, type LobbySummary, type Pair, type RoomState, type Rng, type Seat, type ServerAction, type ServerMessage, type Visibility,
+  MAX_FEED_LINES, PROTOCOL_VERSION, createRoom, parseClientMessage, publicView, reduce, seatForToken, seatGuest,
+  type BattleMode, type CharacterId, type HubFeature, type LiveBattle, type LobbySummary, type Pair, type RoomState, type Rng, type Seat, type ServerAction, type ServerMessage, type Visibility,
 } from '../../shared/src/index.js';
 
 /**
@@ -38,6 +38,12 @@ const sockets = new Map<WebSocket, Meta | null>();
 const watchers = new Map<WebSocket, string>();
 const alive = new WeakSet<WebSocket>();
 const hub = new Hub(send);
+/** The plaza feed (v8): plaza members following the featured battle. Following is not watching (not counted). */
+const feedSubs = new Set<WebSocket>();
+let featured: { feature: HubFeature; id: number } | null = null;
+let featureKey = 'null';
+/** Following the feed is opt-in: one change a second, bursts of three. */
+const FEED_PER_SEC = 1;
 
 const rng: Rng = {
   coin: () => ((randomBytes(1)[0] & 1) === 0 ? 'heads' : 'tails'),
@@ -82,10 +88,36 @@ function relay(code: string, from: Seat, msg: ServerMessage) {
   const payload = JSON.stringify(msg);
   for (const [ws, meta] of sockets) if (meta && meta.room === code && meta.seat !== from && ws.readyState === WebSocket.OPEN) ws.send(payload);
 }
+/** Out of the plaza, and so out of its feed. */
+function leaveHub(ws: WebSocket) { hub.leave(ws); feedSubs.delete(ws); }
+
+/** The featured battle's public log so far, in messages of at most MAX_FEED_LINES lines (the first resets). */
+function sendFeedReplay(ws: WebSocket) {
+  const sess = featured ? sessions.get(featured.feature.code) : undefined;
+  if (!featured || !sess) return;
+  const log = sess.spectatorLog(), code = featured.feature.code;
+  for (let i = 0; i === 0 || i < log.length; i += MAX_FEED_LINES) send(ws, { type: 'hubFeed', code, id: sess.id, lines: log.slice(i, i + MAX_FEED_LINES), reset: i === 0 });
+}
+/**
+ * Pick the battle the plaza watches: the current one while it is still live, else the top of the live list
+ * (most watched, then latest turn). Plaza members hear every change; feed followers get the new battle's log.
+ */
+function refreshFeature() {
+  const live = liveBattles();
+  const next = (featured && live.find(l => l.code === featured!.feature.code)) || live[0] || null;
+  const sess = next ? sessions.get(next.code) : undefined;
+  const feature: HubFeature | null = next && sess ? { code: next.code, names: next.names, avatars: next.avatars, wins: next.wins, bestOf: next.bestOf } : null;
+  const key = JSON.stringify(feature);
+  const switched = (feature?.code ?? null) !== (featured?.feature.code ?? null) || (sess?.id ?? 0) !== (featured?.id ?? 0);
+  featured = feature && sess ? { feature, id: sess.id } : null;
+  if (key !== featureKey) { featureKey = key; hub.all({ type: 'hubFeature', feature }); }
+  if (switched) for (const ws of feedSubs) sendFeedReplay(ws);
+}
+
 function seat(ws: WebSocket, code: string, s: Seat) {
   const prev = sockets.get(ws);
   // A seat is the only place a socket is: it leaves the plaza and stops watching.
-  hub.leave(ws); stopWatching(ws);
+  leaveHub(ws); stopWatching(ws);
   sockets.set(ws, { room: code, seat: s });
   if (prev && prev.room !== code) broadcast(prev.room);
 }
@@ -151,6 +183,7 @@ function applyServer(code: string, action: ServerAction) {
   room.state = r.room; room.updatedAt = Date.now();
   broadcast(code);
   syncBattle(code);
+  refreshFeature();
 }
 
 /** Start or stop the simulator so it always matches the authoritative room state. */
@@ -170,6 +203,10 @@ function syncBattle(code: string) {
     watch(lines) {
       const payload = JSON.stringify({ type: 'battle', id: want, lines, reset: false, deadline: null } satisfies ServerMessage);
       for (const ws of watching(code)) ws.send(payload);
+      // The same public lines for the plaza, when this is the battle it watches.
+      if (featured?.feature.code !== code || featured.id !== want || !feedSubs.size) return;
+      const feed = JSON.stringify({ type: 'hubFeed', code, id: want, lines, reset: false } satisfies ServerMessage);
+      for (const ws of feedSubs) if (ws.readyState === WebSocket.OPEN) ws.send(feed);
     },
     status(status, turn) { applyServer(code, { type: 'battleStatus', status, turn }); },
     end(winner, turns) { setTimeout(() => applyServer(code, { type: 'battleEnd', winner, turns }), 0); },
@@ -190,7 +227,7 @@ function take(key: string, ratePerSec: number, burst: number): boolean {
 const server = http.createServer((req, res) => {
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-    res.end(JSON.stringify({ ok: true, rooms: rooms.size, battles: sessions.size, plaza: hub.size, watching: watchers.size, protocol: PROTOCOL_VERSION }));
+    res.end(JSON.stringify({ ok: true, rooms: rooms.size, battles: sessions.size, plaza: hub.size, watching: watchers.size, feed: feedSubs.size, protocol: PROTOCOL_VERSION }));
     return;
   }
   res.writeHead(404); res.end();
@@ -218,10 +255,19 @@ wss.on('connection', (ws, req) => {
 
     // The main plaza: for sockets that are neither seated nor watching.
     if (msg.type === 'hub') {
-      if (!msg.on) { hub.leave(ws); return; }
+      if (!msg.on) { leaveHub(ws); return; }
       if (meta) { send(ws, { type: 'error', message: 'Leave your room to enter the plaza' }); return; }
       stopWatching(ws);
-      if (!hub.enter(ws, msg.name, msg.avatar, msg.at)) send(ws, { type: 'error', message: 'The plaza is full, try again in a moment' });
+      const was = hub.has(ws);
+      if (!hub.enter(ws, msg.name, msg.avatar, msg.at)) { send(ws, { type: 'error', message: 'The plaza is full, try again in a moment' }); return; }
+      if (!was) send(ws, { type: 'hubFeature', feature: featured?.feature ?? null });
+      return;
+    }
+    if (msg.type === 'hubFeed') {
+      if (!hub.has(ws)) { send(ws, { type: 'error', message: 'Not in the plaza' }); return; }
+      if (!take(`feed:${id}`, FEED_PER_SEC, 3)) { send(ws, { type: 'error', message: 'Slow down' }); return; }
+      if (!msg.on) { feedSubs.delete(ws); return; }
+      if (!feedSubs.has(ws)) { feedSubs.add(ws); sendFeedReplay(ws); }
       return;
     }
     if (msg.type === 'hubMove') { hub.move(ws, msg); return; }
@@ -239,11 +285,12 @@ wss.on('connection', (ws, req) => {
       if (!room) { send(ws, { type: 'error', message: 'That room is gone' }); return; }
       if (meta) { send(ws, { type: 'error', message: 'Leave your room to watch another' }); return; }
       const code = room.state.code;
-      hub.leave(ws);
+      leaveHub(ws);
       if (watchers.get(ws) !== code) stopWatching(ws);
       watchers.set(ws, code);
       send(ws, { type: 'watching', code });
       broadcast(code);
+      refreshFeature();
       const sess = sessions.get(code);
       if (sess) send(ws, { type: 'battle', id: sess.id, lines: sess.spectatorLog(), reset: true, deadline: null });
       return;
@@ -294,13 +341,15 @@ wss.on('connection', (ws, req) => {
     room.state = r.room; room.updatedAt = Date.now();
     broadcast(meta.room);
     syncBattle(meta.room);
+    refreshFeature();
   });
 
   ws.on('close', () => {
     const meta = sockets.get(ws);
-    sockets.delete(ws); buckets.delete(id); buckets.delete(`chat:${id}`); buckets.delete(`emote:${id}`);
-    hub.leave(ws); stopWatching(ws);
+    sockets.delete(ws); buckets.delete(id); buckets.delete(`chat:${id}`); buckets.delete(`emote:${id}`); buckets.delete(`feed:${id}`);
+    leaveHub(ws); stopWatching(ws);
     if (meta) broadcast(meta.room);
+    refreshFeature();
   });
 });
 
@@ -317,6 +366,7 @@ const sweeper = setInterval(() => {
   const now = Date.now();
   for (const [c, room] of rooms) if (now - room.updatedAt > TTL_MS) { rooms.delete(c); sessions.get(c)?.destroy(); sessions.delete(c); }
   for (const [k, b] of buckets) if (now - b.at > 120_000) buckets.delete(k);
+  refreshFeature();
 }, 60_000);
 sweeper.unref();
 

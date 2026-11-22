@@ -28,7 +28,7 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 const a = client('a'); const b = client('b');
 await connect(a); await connect(b);
 await until(() => a.hello && b.hello, 'hello');
-assert.equal(a.hello.protocol, 7);
+assert.equal(a.hello.protocol, 8);
 
 // v2 create with avatar; v1-style join (no avatar field) must still work.
 a.send({ type: 'create', name: 'Ana\u0000‮', bestOf: 3, avatar: 'greninja' });

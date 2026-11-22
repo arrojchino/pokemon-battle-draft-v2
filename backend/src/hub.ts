@@ -71,6 +71,12 @@ export class Hub {
     return true;
   }
 
+  /** A message for everyone in the plaza. */
+  all(msg: ServerMessage) {
+    const payload = JSON.stringify(msg);
+    for (const w of this.members.keys()) if (w.readyState === WebSocket.OPEN) w.send(payload);
+  }
+
   private others(from: WebSocket, msg: ServerMessage) {
     const payload = JSON.stringify(msg);
     for (const w of this.members.keys()) if (w !== from && w.readyState === WebSocket.OPEN) w.send(payload);

@@ -40,7 +40,7 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 const a = client('a'), b = client('b'), c = client('c');
 await connect(a); await connect(b); await connect(c);
 await until(() => a.hello && b.hello && c.hello, 'hello');
-assert.equal(a.hello.protocol, 7);
+assert.equal(a.hello.protocol, 8);
 
 // ---- The main plaza
 a.send({ type: 'hub', on: true, name: 'Ana', avatar: 'greninja', at: { x: 1, z: 2, face: 0.5 } });

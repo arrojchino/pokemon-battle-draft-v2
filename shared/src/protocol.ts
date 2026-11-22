@@ -23,13 +23,19 @@ import { cleanChat, normalizeBestOf, type BattleMode, type ChatLine, type GameAc
  * v7: plaza gestures are the partner models' own clips (`happy`, `stretch`, `notice`, `nap`, `sit`, `rise`); the
  *     original emotes stay valid for older clients. Plazas are walk-only. Clients send the new gestures only to
  *     servers whose `hello.protocol` is at least GESTURES_SINCE.
+ * v8: the plaza feed. The server features one live battle for the main plaza (the most watched, then the latest
+ *     turn; it stays featured until it ends) and tells plaza members with `hubFeature` (null: none). A member who
+ *     opts in with `hubFeed` gets that battle's public stream as `hubFeed` lines, the same lines spectators get,
+ *     while staying in the plaza; it does not count as watching. Clients send `hubFeed` only to servers whose
+ *     `hello.protocol` is at least FEED_SINCE.
  * Servers accept every older client message unchanged, and older clients can read newer state.
  */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 export const LOBBIES_SINCE = 4;
 export const PLAZA_SINCE = 5;
 export const HUB_SINCE = 6;
 export const GESTURES_SINCE = 7;
+export const FEED_SINCE = 8;
 
 /**
  * Gestures a partner can play in a plaza. The first six (v7) are the models' own clips; `rise` gets up from a nap
@@ -62,6 +68,10 @@ export type LiveBattle = {
   code: string; names: [string, string]; avatars: [CharacterId | null, CharacterId | null];
   bestOf: 3 | 5; wins: [number, number]; turn: number; watchers: number;
 };
+/** The battle the main plaza is watching (v8): who is playing and the series so far. */
+export type HubFeature = { code: string; names: [string, string]; avatars: [CharacterId | null, CharacterId | null]; wins: [number, number]; bestOf: 3 | 5 };
+/** Lines in one `hubFeed` message at most (a replay of a long battle is split into several). */
+export const MAX_FEED_LINES = 400;
 const HUB_ID = /^m\d{1,9}$/;
 export const isHubId = (v: unknown): v is string => typeof v === 'string' && HUB_ID.test(v);
 
@@ -88,7 +98,9 @@ export type ClientMessage =
   | { type: 'hubChat'; text: string }
   /** v6 spectators: follow a room without a seat, or stop. */
   | { type: 'watch'; code: string }
-  | { type: 'unwatch' };
+  | { type: 'unwatch' }
+  /** v8: follow (or stop following) the plaza's featured battle without leaving the plaza. */
+  | { type: 'hubFeed'; on: boolean };
 
 export type ServerMessage =
   | { type: 'hello'; protocol: number }
@@ -109,7 +121,11 @@ export type ServerMessage =
   | { type: 'hubEmote'; id: string; emote: PlazaEmote }
   | { type: 'hubChat'; line: HubLine }
   /** v6 spectators: the room this socket now follows (null: none). Its state and battle stream follow. */
-  | { type: 'watching'; code: string | null };
+  | { type: 'watching'; code: string | null }
+  /** v8: the battle the plaza is watching changed (null: none on). */
+  | { type: 'hubFeature'; feature: HubFeature | null }
+  /** v8: public lines of the featured battle, for members following the feed. `reset`: the log so far, from its start. */
+  | { type: 'hubFeed'; code: string; id: number; lines: string[]; reset: boolean };
 
 export const MAX_NAME = 24;
 
@@ -164,6 +180,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     case 'hubChat': { const text = cleanChat(m.text); return text ? { type: 'hubChat', text } : null; }
     case 'watch': return isRoomCode(m.code) ? { type: 'watch', code: m.code } : null;
     case 'unwatch': return { type: 'unwatch' };
+    case 'hubFeed': return typeof m.on === 'boolean' && Object.keys(m).length === 2 ? { type: 'hubFeed', on: m.on } : null;
     default: return null;
   }
 }
@@ -191,9 +208,14 @@ function parseLive(v: unknown): LiveBattle | null {
     bestOf: normalizeBestOf(v.bestOf), wins: [n(v.wins[0]), n(v.wins[1])], turn: n(v.turn), watchers: n(v.watchers),
   };
 }
+function parseFeature(v: unknown): HubFeature | null {
+  if (!isObj(v) || !isRoomCode(v.code) || !Array.isArray(v.names) || !Array.isArray(v.avatars) || !Array.isArray(v.wins)) return null;
+  const n = (x: unknown) => (num(x) && x >= 0 ? Math.min(9, Math.floor(x)) : 0);
+  return { code: v.code, names: [cleanName(v.names[0], 'Player 1'), cleanName(v.names[1], 'Player 2')], avatars: [avatarOf(v.avatars[0]), avatarOf(v.avatars[1])], wins: [n(v.wins[0]), n(v.wins[1])], bestOf: normalizeBestOf(v.bestOf) };
+}
 const keep = <T,>(xs: unknown, f: (v: unknown) => T | null): T[] => (Array.isArray(xs) ? xs.map(f).filter((x): x is T => x !== null) : []);
 
-const SERVER_TYPES = new Set(['hello', 'joined', 'state', 'error', 'battle', 'lobbies', 'move', 'emote', 'hub', 'hubJoin', 'hubLeave', 'hubMove', 'hubEmote', 'hubChat', 'watching']);
+const SERVER_TYPES = new Set(['hello', 'joined', 'state', 'error', 'battle', 'lobbies', 'move', 'emote', 'hub', 'hubJoin', 'hubLeave', 'hubMove', 'hubEmote', 'hubChat', 'watching', 'hubFeature', 'hubFeed']);
 const isSeat = (v: unknown): v is Seat => v === 0 || v === 1;
 /** Chat lines from the authority: malformed lines are dropped, text is cleaned again. */
 function parseChat(v: unknown): ChatLine[] {
@@ -217,6 +239,12 @@ export function parseServerMessage(raw: unknown): ServerMessage | null {
   if (m.type === 'hubMove') return isHubId(m.id) && num(m.x) && num(m.z) && num(m.face) ? { type: 'hubMove', id: m.id, ...cleanSpot(m.x, m.z, m.face) } : null;
   if (m.type === 'hubEmote') return isHubId(m.id) && isPlazaEmote(m.emote) ? { type: 'hubEmote', id: m.id, emote: m.emote } : null;
   if (m.type === 'hubChat') { const line = parseHubLine(m.line); return line ? { type: 'hubChat', line } : null; }
+  if (m.type === 'hubFeature') return m.feature === null ? { type: 'hubFeature', feature: null } : (f => (f ? { type: 'hubFeature', feature: f } : null))(parseFeature(m.feature));
+  if (m.type === 'hubFeed') {
+    if (!isRoomCode(m.code) || !num(m.id) || !Array.isArray(m.lines) || m.lines.length > MAX_FEED_LINES || !m.lines.every(l => typeof l === 'string')) return null;
+    // Request lines are private to a player and never belong in a public stream: drop any that slip in.
+    return { type: 'hubFeed', code: m.code, id: m.id, lines: (m.lines as string[]).filter(l => !l.startsWith('|request|')), reset: m.reset === true };
+  }
   if (m.type === 'watching') return { type: 'watching', code: isRoomCode(m.code) ? m.code : null };
   if (m.type === 'move') return isSeat(m.seat) && num(m.x) && num(m.z) && num(m.face) ? { type: 'move', seat: m.seat, ...cleanSpot(m.x, m.z, m.face) } : null;
   if (m.type === 'emote') return isSeat(m.seat) && isPlazaEmote(m.emote) ? { type: 'emote', seat: m.seat, emote: m.emote } : null;
