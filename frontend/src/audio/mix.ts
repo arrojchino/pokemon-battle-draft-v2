@@ -7,8 +7,8 @@
  * calibrate each category's 100% so the default volumes give a balanced mix (measured with OfflineAudioContext
  * renders: see the audio QA notes in sound.ts).
  */
-export type Category = 'music' | 'ambience' | 'cries' | 'ui' | 'battle';
-export const CATEGORIES: readonly Category[] = ['music', 'ambience', 'cries', 'ui', 'battle'];
+export type Category = 'music' | 'cries' | 'ui' | 'battle';
+export const CATEGORIES: readonly Category[] = ['music', 'cries', 'ui', 'battle'];
 export type Profile = 'menu' | 'plaza' | 'battle' | 'watch';
 export const PROFILES: readonly Profile[] = ['menu', 'plaza', 'battle', 'watch'];
 
@@ -32,17 +32,23 @@ const BATTLE_CUES = ['coinFlip', 'coinLand', 'switchIn', 'dash', 'punch', 'slash
   'leaves', 'quake', 'meteor', 'meteorHit', 'coins', 'heal', 'shield', 'buff', 'debuff', 'hazard', 'status', 'hit', 'hitBig', 'crit', 'super', 'resist', 'miss', 'faint',
   'tera', 'stamp', 'ko', 'win', 'lose'] as const;
 
-/** Which volume slider each cue answers to. Footsteps are world foley (environment); the intro swell is music. */
+/** Which volume slider each cue answers to. Footsteps are world foley, with the effects; the intro swell is music. */
 export const CUE_CATEGORY: Record<Cue, Category> = {
   ...Object.fromEntries(UI_CUES.map(c => [c, 'ui'])),
   ...Object.fromEntries(BATTLE_CUES.map(c => [c, 'battle'])),
-  step: 'ambience', introSwell: 'music',
+  step: 'battle', introSwell: 'music',
 } as Record<Cue, Category>;
+/**
+ * Per-cue level inside its category. Footsteps moved from the old environment bed to the effects, which sit
+ * higher and pass a saturator; this keeps them where they were (offline render: -36.5 dB peak, -55.5 LUFS in the
+ * plaza at the default volumes) instead of getting louder.
+ */
+export const CUE_TRIM: Partial<Record<Cue, number>> = { step: 0.5 };
 export const ALL_CUES = Object.keys(CUE_CATEGORY) as Cue[];
 
-export type AudioMix = { master: number; music: number; ambience: number; cries: number; ui: number; battle: number; muted: boolean };
-/** Starting volumes: quiet music and ambience, cries clearly below the effects, nothing at full scale. */
-export const AUDIO_DEFAULTS: Readonly<AudioMix> = { master: 0.7, music: 0.3, ambience: 0.25, cries: 0.15, ui: 0.35, battle: 0.45, muted: false };
+export type AudioMix = { master: number; music: number; cries: number; ui: number; battle: number; muted: boolean };
+/** Starting volumes: quiet music, cries clearly below the effects, nothing at full scale. */
+export const AUDIO_DEFAULTS: Readonly<AudioMix> = { master: 0.7, music: 0.3, cries: 0.15, ui: 0.35, battle: 0.45, muted: false };
 
 /**
  * Linear gain of each category at 100%, calibrated by offline renders through the full mix at the default
@@ -50,14 +56,14 @@ export const AUDIO_DEFAULTS: Readonly<AudioMix> = { master: 0.7, music: 0.3, amb
  * menus and the plaza and a little lower in battle, cries about -23 LUFS momentary, big hits a few LU under
  * that, interface clicks clearly audible but well below both.
  */
-export const CATEGORY_TRIM: Record<Category, number> = { music: 4.5, ambience: 1.6, cries: 3.2, ui: 3.2, battle: 1 };
+export const CATEGORY_TRIM: Record<Category, number> = { music: 4.5, cries: 3.2, ui: 3.2, battle: 1 };
 
 /** Level of each category per profile (multiplies the player's volumes). */
 export const PROFILE_MIX: Record<Profile, Record<Category, number>> = {
-  menu: { music: 0.8, ambience: 0.55, cries: 0.5, ui: 1, battle: 1 },
-  plaza: { music: 0.75, ambience: 1, cries: 0.7, ui: 1, battle: 1 },
-  battle: { music: 0.45, ambience: 0.6, cries: 1, ui: 0.85, battle: 1 },
-  watch: { music: 0.4, ambience: 0.6, cries: 0.9, ui: 0.9, battle: 0.9 },
+  menu: { music: 0.8, cries: 0.5, ui: 1, battle: 1 },
+  plaza: { music: 0.75, cries: 0.7, ui: 1, battle: 1 },
+  battle: { music: 0.45, cries: 1, ui: 0.85, battle: 1 },
+  watch: { music: 0.4, cries: 0.9, ui: 0.9, battle: 0.9 },
 };
 
 /**
@@ -81,11 +87,14 @@ export function categoryGain(mix: AudioMix, cat: Category, profile: Profile): nu
 }
 export const gainToDb = (g: number) => (g > 0 ? 20 * Math.log10(g) : -Infinity);
 
-/** Saved settings fields to a mix (each clamped to 0..1, defaults when missing or invalid). */
-export function mixFromSettings(s: { volume?: unknown; musicVolume?: unknown; ambienceVolume?: unknown; criesVolume?: unknown; uiVolume?: unknown; battleVolume?: unknown; muted?: unknown }): AudioMix {
+/**
+ * Saved settings fields to a mix (each clamped to 0..1, defaults when missing or invalid). Settings saved before
+ * the environment sound was removed still carry `ambienceVolume`; it is simply not read.
+ */
+export function mixFromSettings(s: { volume?: unknown; musicVolume?: unknown; criesVolume?: unknown; uiVolume?: unknown; battleVolume?: unknown; muted?: unknown }): AudioMix {
   const d = AUDIO_DEFAULTS;
   return {
-    master: clamp01(s.volume, d.master), music: clamp01(s.musicVolume, d.music), ambience: clamp01(s.ambienceVolume, d.ambience),
+    master: clamp01(s.volume, d.master), music: clamp01(s.musicVolume, d.music),
     cries: clamp01(s.criesVolume, d.cries), ui: clamp01(s.uiVolume, d.ui), battle: clamp01(s.battleVolume, d.battle), muted: s.muted === true,
   };
 }
@@ -101,14 +110,14 @@ export const REPEAT_WINDOW = 0.35;
 export const REPEAT_FALLOFF = 0.8;
 
 /** Voices per category at once; extra cues are skipped unless they are in PRIORITY. */
-export const MAX_VOICES: Record<Category, number> = { ui: 4, battle: 9, ambience: 6, music: 2, cries: 2 };
+export const MAX_VOICES: Record<Category, number> = { ui: 4, battle: 9, music: 2, cries: 2 };
 export const PRIORITY: ReadonlySet<Cue> = new Set<Cue>(['ko', 'win', 'lose', 'faint', 'error', 'confirm', 'introSwell']);
 
 /** Cues that briefly lower the music (dB) while they ring out. Cries duck it too (see CRY_DUCK). */
 export const DUCK: Partial<Record<Cue, number>> = {
   hitBig: -3, ko: -5, meteorHit: -3, quake: -3, faint: -3, tera: -3, win: -7, lose: -7, introSwell: -9, joinLobby: -3, watchStart: -3,
 };
-export const CRY_DUCK = { music: -4, ambience: -2 };
+export const CRY_DUCK = { music: -4 };
 
 /** Reverb send per category (post fader), so tails follow the volume sliders. */
-export const REVERB_SEND: Record<Category, number> = { music: 0.16, ambience: 0, cries: 0.14, ui: 0.06, battle: 0.2 };
+export const REVERB_SEND: Record<Category, number> = { music: 0.16, cries: 0.14, ui: 0.06, battle: 0.2 };

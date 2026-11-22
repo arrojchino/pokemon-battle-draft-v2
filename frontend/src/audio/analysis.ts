@@ -5,7 +5,7 @@
  * Loudness follows ITU-R BS.1770: K-weighting (a +4 dB shelf above ~1.5 kHz and a 38 Hz high-pass), mean
  * square over 400 ms windows (100 ms hop), channels summed, -0.691 dB offset. `lufs` is the loudest
  * 400 ms window (momentary max), the right yardstick for short sounds like cries and hits; `lufsInt` is the
- * gated integrated loudness used for music and ambience beds.
+ * gated integrated loudness used for the music beds.
  */
 export type Coeffs = { b0: number; b1: number; b2: number; a1: number; a2: number };
 export type FilterType = 'lowpass' | 'highpass' | 'highshelf' | 'peaking';

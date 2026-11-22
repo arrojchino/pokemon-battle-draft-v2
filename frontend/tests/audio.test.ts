@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ALL_CUES, AUDIO_DEFAULTS, CATEGORIES, CATEGORY_TRIM, CRY_POLICY, CUE_CATEGORY, PROFILES, PROFILE_MIX,
+  ALL_CUES, AUDIO_DEFAULTS, CATEGORIES, CATEGORY_TRIM, CRY_POLICY, CUE_CATEGORY, CUE_TRIM, MAX_VOICES, PROFILES, PROFILE_MIX, REVERB_SEND,
   categoryGain, gainToDb, mixFromSettings, type AudioMix,
 } from '../src/audio/mix.js';
 import { CRY, measure, processCry, softClip } from '../src/audio/analysis.js';
@@ -18,14 +18,22 @@ describe('audio mix math', () => {
   it('routes every cue to a category, including the new plaza and dialog cues', () => {
     for (const c of ALL_CUES) expect(CATEGORIES).toContain(CUE_CATEGORY[c]);
     for (const c of ['step', 'prompt', 'dialogOpen', 'dialogMove', 'dialogSelect', 'dialogClose', 'npcGreet', 'chatSend', 'chatIn', 'joinLobby', 'watchStart', 'plazaReturn', 'introSwell', 'notify'] as const) expect(ALL_CUES).toContain(c);
-    expect(CUE_CATEGORY.step).toBe('ambience');
+    // Footsteps play with the effects now that there is no environment bed, trimmed to stay quiet.
+    expect(CUE_CATEGORY.step).toBe('battle');
+    expect(CUE_TRIM.step).toBeLessThan(1);
     expect(CUE_CATEGORY.introSwell).toBe('music');
     expect(CUE_CATEGORY.hitBig).toBe('battle');
     expect(CUE_CATEGORY.hover).toBe('ui');
   });
 
   it('starts from the suggested defaults', () => {
-    expect(AUDIO_DEFAULTS).toEqual({ master: 0.7, music: 0.3, ambience: 0.25, cries: 0.15, ui: 0.35, battle: 0.45, muted: false });
+    expect(AUDIO_DEFAULTS).toEqual({ master: 0.7, music: 0.3, cries: 0.15, ui: 0.35, battle: 0.45, muted: false });
+  });
+
+  it('has no environment category anywhere in the mix', () => {
+    expect(CATEGORIES).toEqual(['music', 'cries', 'ui', 'battle']);
+    for (const table of [CATEGORY_TRIM, MAX_VOICES, REVERB_SEND, ...Object.values(PROFILE_MIX)]) expect(Object.keys(table)).not.toContain('ambience');
+    expect(Object.values(CUE_CATEGORY)).not.toContain('ambience');
   });
 
   it('multiplies master, category volume, trim and profile level', () => {
@@ -42,9 +50,9 @@ describe('audio mix math', () => {
     for (const c of CATEGORIES) expect(categoryGain({ ...AUDIO_DEFAULTS, muted: true }, c, 'plaza')).toBe(0);
     expect(categoryGain({ ...AUDIO_DEFAULTS, master: 0 }, 'ui', 'menu')).toBe(0);
     expect(categoryGain({ ...AUDIO_DEFAULTS, cries: 0 }, 'cries', 'battle')).toBe(0);
-    const wild: AudioMix = { master: 7, music: -1, ambience: Number.NaN, cries: 2, ui: 0.5, battle: 1, muted: false };
+    const wild: AudioMix = { master: 7, music: -1, cries: 2, ui: Number.NaN, battle: 1, muted: false };
     expect(categoryGain(wild, 'music', 'plaza')).toBe(0);
-    expect(categoryGain(wild, 'ambience', 'plaza')).toBe(0);
+    expect(categoryGain(wild, 'ui', 'plaza')).toBe(0);
     expect(categoryGain(wild, 'cries', 'battle')).toBeCloseTo(1 * 1 * CATEGORY_TRIM.cries * PROFILE_MIX.battle.cries, 10);
   });
 
@@ -55,12 +63,12 @@ describe('audio mix math', () => {
     expect(CRY_POLICY.menu.gap).toBeGreaterThan(CRY_POLICY.plaza.gap);
     expect(CRY_POLICY.plaza.gap).toBeGreaterThan(CRY_POLICY.battle.gap);
     expect(CRY_POLICY.menu.cooldown).toBeGreaterThan(CRY_POLICY.battle.cooldown);
-    // Ambience sits under the music in every profile and drops in battle.
-    expect(categoryGain(AUDIO_DEFAULTS, 'ambience', 'battle')).toBeLessThan(categoryGain(AUDIO_DEFAULTS, 'ambience', 'plaza'));
   });
 
   it('reads saved settings with defaults for missing or invalid fields', () => {
     expect(mixFromSettings({})).toEqual(AUDIO_DEFAULTS);
+    // A save from before the environment sound was removed: its volume is ignored, nothing else changes.
+    expect(mixFromSettings({ ambienceVolume: 0.9 } as Record<string, unknown>)).toEqual(AUDIO_DEFAULTS);
     expect(mixFromSettings({ volume: 0.8, muted: true })).toEqual({ ...AUDIO_DEFAULTS, master: 0.8, muted: true });
     expect(mixFromSettings({ musicVolume: 1.5, criesVolume: -2, uiVolume: 'loud', battleVolume: 0.6 }))
       .toEqual({ ...AUDIO_DEFAULTS, music: 1, cries: 0, battle: 0.6 });

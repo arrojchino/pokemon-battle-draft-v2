@@ -40,7 +40,7 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 const a = client('a'), b = client('b'), c = client('c');
 await connect(a); await connect(b); await connect(c);
 await until(() => a.hello && b.hello && c.hello, 'hello');
-assert.equal(a.hello.protocol, 8);
+assert.equal(a.hello.protocol, 9);
 
 // ---- The main plaza
 a.send({ type: 'hub', on: true, name: 'Ana', avatar: 'greninja', at: { x: 1, z: 2, face: 0.5 } });
@@ -68,6 +68,32 @@ await until(() => from(b.emotes, a.hub.you).length === 1, 'emote relayed');
 assert.deepEqual(from(b.emotes, a.hub.you)[0], { type: 'hubEmote', id: a.hub.you, emote: 'twirl' });
 await wait(120);
 assert.equal(from(b.moves, beto).length, 0, 'nobody hears their own moves');
+
+// v9: Sit and Nap are held poses. Everyone there sees them live, and someone walking in later reads them on the member.
+const ana2 = a.hub.you;
+a.send({ type: 'hubEmote', emote: 'sit' });
+await until(() => from(b.emotes, ana2).some(e => e.emote === 'sit'), 'an emote from a reaches b');
+const dd = client('dd'); await connect(dd); await until(() => dd.hello, 'dd hello');
+dd.send({ type: 'hub', on: true, name: 'Dani', avatar: 'lucario', at: null });
+await until(() => dd.hub, 'd walks in after a sat down');
+assert.equal(dd.hub.members.find(m => m.id === ana2).pose, 'sit', 'a late joiner sees the sitting partner');
+assert.equal(dd.hub.members.find(m => m.id === beto).pose, null, 'standing partners carry no pose');
+await wait(600);
+a.send({ type: 'hubEmote', emote: 'rise' });
+await until(() => from(dd.emotes, ana2).some(e => e.emote === 'rise'), 'getting up reaches the late joiner too');
+await wait(600);
+a.send({ type: 'hubEmote', emote: 'nap' });
+await until(() => from(dd.emotes, ana2).some(e => e.emote === 'nap'), 'nap relayed');
+const e2 = client('e'); await connect(e2); await until(() => e2.hello, 'e hello');
+e2.send({ type: 'hub', on: true, name: 'Eli', avatar: 'pikachu', at: null });
+await until(() => e2.hub, 'e walks in after a lay down');
+assert.equal(e2.hub.members.find(m => m.id === ana2).pose, 'nap', 'a nap is remembered as well');
+await wait(600);
+a.send({ type: 'hubEmote', emote: 'rise' });
+await until(() => from(e2.emotes, ana2).some(e => e.emote === 'rise'), 'rise after the nap');
+const leftIds = [dd.hub.you, e2.hub.you];
+dd.ws.close(); e2.ws.close();
+await until(() => leftIds.every(id => a.leaves.includes(id)), 'dd and e leave');
 
 // Chat: cleaned, numbered, for everyone there (the speaker too); a newcomer reads the recent lines.
 a.send({ type: 'hubChat', text: '  hola\u0000  plaza ' });

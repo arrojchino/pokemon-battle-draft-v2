@@ -1,5 +1,6 @@
 import { POOL, TYPE_NAMES, moveInfo, type Pokemon, type TypeName } from '@shared';
 import { impactLead, recipeFor } from '../engine/battle/moveFx.js';
+import { isLang, translate, type MessageKey } from '../i18n/core.js';
 
 /**
  * Client-side battle model. Pure: feed it simulator protocol lines (one player's stream, see
@@ -36,7 +37,17 @@ export type BattleRequest = {
 };
 
 export type LogKind = 'turn' | 'move' | 'info' | 'good' | 'bad' | 'faint' | 'switch' | 'win' | 'error';
-export type LogEntry = { id: number; text: string; kind: LogKind };
+/** `key`: the dictionary key the text came from. Match on it rather than on the words, which follow the language. */
+export type LogEntry = { id: number; text: string; kind: LogKind; key?: MessageKey };
+type Params = Record<string, string | number>;
+/**
+ * A log message in the game's language. i18n/index.ts mirrors the language on `<html lang>`; reading it there keeps
+ * this module pure (it never loads the settings store, so Node tests run it as is, in English).
+ */
+function tr(key: MessageKey, params?: Params): string {
+  const l = typeof document === 'undefined' ? '' : document.documentElement.lang;
+  return translate(isLang(l) ? l : 'en', key, params);
+}
 
 export type Effectiveness = 'super' | 'resist' | 'immune' | 'normal';
 export type BattleFx =
@@ -67,7 +78,7 @@ export type BattleState = {
 
 export const emptyState = (mySide: SideId): BattleState => ({
   mySide, phase: 'idle', turn: 0, weather: null, field: [], log: [], request: null, winner: null, winnerSide: null,
-  sides: [{ name: 'Player 1', mons: [], active: null, conditions: [] }, { name: 'Player 2', mons: [], active: null, conditions: [] }],
+  sides: [{ name: tr('model.player', { n: 1 }), mons: [], active: null, conditions: [] }, { name: tr('model.player', { n: 2 }), mons: [], active: null, conditions: [] }],
 });
 
 /** Line → command + args. Kwargs like `[from] item: Life Orb` are split out. */
@@ -110,32 +121,39 @@ function parseCondition(c: string): { hp: number; maxhp: number; status: string 
 }
 const asType = (t: string | undefined): TypeName | null => ((TYPE_NAMES as readonly string[]).includes(t ?? '') ? (t as TypeName) : null);
 
-const STAT: Record<string, string> = { atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed', accuracy: 'accuracy', evasion: 'evasiveness' };
-const STATUS: Record<string, string> = { brn: 'was burned', par: 'is paralyzed', slp: 'fell asleep', psn: 'was poisoned', tox: 'was badly poisoned', frz: 'was frozen solid' };
-const WEATHER: Record<string, string> = { RainDance: 'It started to rain.', SunnyDay: 'The sunlight turned harsh.', Sandstorm: 'A sandstorm kicked up.', Snowscape: 'It started to snow.', Snow: 'It started to snow.', none: 'The weather cleared.' };
+const STAT: Record<string, MessageKey> = { atk: 'model.statAtk', def: 'model.statDef', spa: 'model.statSpa', spd: 'model.statSpd', spe: 'model.statSpe', accuracy: 'model.statAccuracy', evasion: 'model.statEvasion' };
+/** A stat's name as the log says it (the simulator id when unknown). */
+const statName = (id: string) => (STAT[id] ? tr(STAT[id]) : id);
+const STATUS: Record<string, MessageKey> = { brn: 'model.statusBrn', par: 'model.statusPar', slp: 'model.statusSlp', psn: 'model.statusPsn', tox: 'model.statusTox', frz: 'model.statusFrz' };
+const WEATHER: Record<string, MessageKey> = { RainDance: 'model.weatherRain', SunnyDay: 'model.weatherSun', Sandstorm: 'model.weatherSand', Snowscape: 'model.weatherSnow', Snow: 'model.weatherSnow', none: 'model.weatherClear' };
+const START: Record<string, MessageKey> = {
+  confusion: 'model.startConfusion', substitute: 'model.startSubstitute', taunt: 'model.startTaunt', encore: 'model.startEncore', leechseed: 'model.startLeechSeed',
+  yawn: 'model.startYawn', saltcure: 'model.startSaltCure', focusenergy: 'model.startFocusEnergy', curse: 'model.startCurse', disable: 'model.startDisable',
+  torment: 'model.startTorment', healblock: 'model.startHealBlock', charge: 'model.startCharge', flashfire: 'model.startFlashFire', destinybond: 'model.startDestinyBond',
+  magnetrise: 'model.startMagnetRise', aquaring: 'model.startAquaRing', ingrain: 'model.startIngrain', attract: 'model.startAttract', nightmare: 'model.startNightmare',
+  slowstart: 'model.startSlowStart', smackdown: 'model.startSmackDown', tarshot: 'model.startTarShot', throatchop: 'model.startThroatChop', embargo: 'model.startEmbargo',
+};
 const clean = (s: string) => s.replace(/^(move|item|ability):\s*/, '');
 /**
  * How the games word a volatile effect starting (`-start`), from the simulator's effect id. Unknown effects fall
  * back to "Name: Effect!" with the id spaced into words.
  */
-export function startText(who: string, raw: string): string {
+export function startText(who: string, raw: string, plain = who): string {
+  const l = startLine(who, raw, plain);
+  return tr(l.key, l.params);
+}
+/** `startText` as a dictionary key and its parameters: `who` starts a sentence, `plain` is the name as is. */
+function startLine(who: string, raw: string, plain: string): { key: MessageKey; params: Params } {
   const e = clean(raw), id = e.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const p = { Who: who, who: plain };
   const boost = /^(protosynthesis|quarkdrive)(atk|def|spa|spd|spe)$/.exec(id);
-  if (boost) return `${boost[1] === 'protosynthesis' ? 'Protosynthesis' : 'Quark Drive'} raised ${who}'s ${STAT[boost[2]]}!`;
+  if (boost) return { key: 'model.startBoost', params: { ...p, ability: boost[1] === 'protosynthesis' ? 'Protosynthesis' : 'Quark Drive', stat: statName(boost[2]) } };
   const perish = /^perish(\d)$/.exec(id);
-  if (perish) return `${who}'s perish count fell to ${perish[1]}.`;
+  if (perish) return { key: 'model.perish', params: { ...p, n: perish[1] } };
   const stock = /^stockpile(\d)$/.exec(id);
-  if (stock) return `${who} stockpiled ${stock[1]}!`;
-  const known: Record<string, string> = {
-    confusion: `${who} became confused!`, substitute: `${who} put in a substitute!`, taunt: `${who} fell for the taunt!`,
-    encore: `${who} must do an encore!`, leechseed: `${who} was seeded!`, yawn: `${who} grew drowsy!`, saltcure: `${who} is being salt cured!`,
-    focusenergy: `${who} is getting pumped!`, curse: `${who} was cursed!`, disable: `${who}'s move was disabled!`, torment: `${who} was subjected to torment!`,
-    healblock: `${who} was prevented from healing!`, charge: `${who} began charging power!`, flashfire: `The power of ${who}'s Fire-type moves rose!`,
-    destinybond: `${who} is hoping to take its attacker down with it!`, magnetrise: `${who} levitated with electromagnetism!`, aquaring: `${who} surrounded itself with a veil of water!`,
-    ingrain: `${who} planted its roots!`, attract: `${who} fell in love!`, nightmare: `${who} began having a nightmare!`, slowstart: `${who} can't get it going!`,
-    smackdown: `${who} fell straight down!`, tarshot: `${who} became weaker to fire!`, throatchop: `${who} can't use sound-based moves!`, embargo: `${who} can't use items anymore!`,
-  };
-  return known[id] ?? `${who}: ${e.replace(/([a-z])([A-Z])/g, '$1 $2')}!`;
+  if (stock) return { key: 'model.stockpile', params: { ...p, n: stock[1] } };
+  const key = START[id];
+  return key ? { key, params: p } : { key: 'model.startOther', params: { ...p, effect: e.replace(/([a-z])([A-Z])/g, '$1 $2') } };
 }
 
 export class BattleModel {
@@ -168,13 +186,17 @@ export class BattleModel {
     return m;
   }
   private name(m: MonView) {
-    if (this.spectator) return `${this.state.sides[sideOf(m.key)].name}'s ${m.species}`;
-    return sideOf(m.key) === this.state.mySide ? m.species : `the opposing ${m.species}`;
+    if (this.spectator) return tr('model.monOf', { trainer: this.state.sides[sideOf(m.key)].name, mon: m.species });
+    return sideOf(m.key) === this.state.mySide ? m.species : tr('model.monOpposing', { mon: m.species });
   }
+  /** A Pokémon as the log names it: `who` as is, `Who` capitalized to start a sentence. */
+  private w(m: MonView) { const who = this.name(m); return { who, Who: this.cap(who) }; }
   /** Whose side of the field, as the log says it. */
-  private whose(side: SideId) { return this.spectator ? `${this.state.sides[side].name}'s` : side === this.state.mySide ? 'your' : "the opponent's"; }
+  private whose(side: SideId) { return this.spectator ? tr('model.sideOf', { trainer: this.state.sides[side].name }) : side === this.state.mySide ? tr('model.sideYours') : tr('model.sideOpponent'); }
   private cap(s: string) { return s.charAt(0).toUpperCase() + s.slice(1); }
-  private log(text: string, kind: LogKind = 'info') { this.state.log.push({ id: ++this.seq, text, kind }); if (this.state.log.length > 400) this.state.log.splice(0, 100); }
+  private log(text: string, kind: LogKind = 'info', key?: MessageKey) { this.state.log.push({ id: ++this.seq, text, kind, key }); if (this.state.log.length > 400) this.state.log.splice(0, 100); }
+  /** Log a dictionary message (in the current language), keeping its key on the entry. */
+  private say(key: MessageKey, params: Params = {}, kind: LogKind = 'info') { this.log(tr(key, params), kind, key); }
 
   /** Apply one line. Returns the stage effects it produced (often none). */
   apply(line: string): BattleFx[] {
@@ -192,7 +214,7 @@ export class BattleModel {
       case 'player': if (args[1]) s.sides[args[0] === 'p2' ? 1 : 0].name = args[1]; break;
       case 'poke': { const side = s.sides[args[0] === 'p2' ? 1 : 0]; const sp = speciesOf(args[1]); if (!side.mons.some(m => m.species === sp)) this.mon(`${args[0]}: ${sp}`, args[1], true); break; }
       case 'teampreview': s.phase = 'preview'; break;
-      case 'start': s.phase = 'active'; this.log('The battle begins!', 'turn'); break;
+      case 'start': s.phase = 'active'; this.say('model.battleBegins', {}, 'turn'); break;
       case 'request': {
         try { s.request = JSON.parse(line.slice(9)) as BattleRequest; } catch { s.request = null; }
         // Our own HP is exact in the request: keep the bench in sync (the log only covers the active slot).
@@ -212,7 +234,8 @@ export class BattleModel {
         const prev = s.sides[side].mons.find(x => x.key === s.sides[side].active);
         if (prev && prev !== m) { prev.boosts = {}; prev.transformed = null; }
         s.sides[side].active = m.key;
-        this.log(side === s.mySide && !this.spectator ? `Go! ${m.species}!` : `${s.sides[side].name} sent out ${m.species}!`, 'switch');
+        if (side === s.mySide && !this.spectator) this.say('model.go', { mon: m.species }, 'switch');
+        else this.say('model.sentOut', { trainer: s.sides[side].name, mon: m.species }, 'switch');
         fx.push({ kind: 'switch', side, mon: m });
         break;
       }
@@ -222,18 +245,18 @@ export class BattleModel {
         const info = moveInfo(args[1]);
         if (args[1] !== 'Struggle' && !m.revealed.moves.includes(args[1])) m.revealed.moves.push(args[1]);
         this.pendingCrit = false; this.pendingEffect = 'normal';
-        this.log(`${this.cap(this.name(m))} used ${args[1]}!`, 'move');
+        this.say('model.used', { ...this.w(m), move: args[1] }, 'move');
         const target = args[2] ? sideOf(args[2]) : null;
         if (kw.still === undefined || kw.miss !== undefined) fx.push({ kind: 'move', side: sideOf(args[0]), move: args[1], type: info?.type ?? 'Normal', category: info?.category ?? 'Status', target });
-        if (kw.miss !== undefined && args[2]) { this.log(`${this.cap(this.name(this.mon(args[2])))} avoided the attack!`); fx.push({ kind: 'miss', side: sideOf(args[2]) }); }
+        if (kw.miss !== undefined && args[2]) { this.say('model.avoided', this.w(this.mon(args[2]))); fx.push({ kind: 'miss', side: sideOf(args[2]) }); }
         break;
       }
-      case '-crit': this.pendingCrit = true; this.log('A critical hit!', 'good'); break;
-      case '-supereffective': this.pendingEffect = 'super'; this.log("It's super effective!", 'good'); break;
-      case '-resisted': this.pendingEffect = 'resist'; this.log("It's not very effective…"); break;
-      case '-immune': { const m = this.mon(args[0]); this.log(`It doesn't affect ${this.name(m)}…`); fx.push({ kind: 'hit', side: sideOf(args[0]), lost: 0, remaining: m.hp / m.maxhp, crit: false, effect: 'immune', indirect: false }); break; }
-      case '-miss': { if (args[1]) { this.log(`${this.cap(this.name(this.mon(args[1])))} avoided the attack!`); fx.push({ kind: 'miss', side: sideOf(args[1]) }); } break; }
-      case '-fail': this.log('But it failed!'); break;
+      case '-crit': this.pendingCrit = true; this.say('model.crit', {}, 'good'); break;
+      case '-supereffective': this.pendingEffect = 'super'; this.say('model.superEffective', {}, 'good'); break;
+      case '-resisted': this.pendingEffect = 'resist'; this.say('model.resisted'); break;
+      case '-immune': { const m = this.mon(args[0]); this.say('model.immune', this.w(m)); fx.push({ kind: 'hit', side: sideOf(args[0]), lost: 0, remaining: m.hp / m.maxhp, crit: false, effect: 'immune', indirect: false }); break; }
+      case '-miss': { if (args[1]) { this.say('model.avoided', this.w(this.mon(args[1]))); fx.push({ kind: 'miss', side: sideOf(args[1]) }); } break; }
+      case '-fail': this.say('model.failed'); break;
       case '-damage': case '-sethp': {
         const m = this.mon(args[0]);
         const before = m.hp / m.maxhp;
@@ -243,8 +266,9 @@ export class BattleModel {
         const lost = Math.max(0, before - after);
         if (cmd === '-damage') {
           const pct = Math.round(lost * 100);
-          const who = this.cap(this.name(m));
-          this.log(from ? `${who} was hurt by ${from}${pct ? ` (${pct}%)` : ''}.` : `${who} lost ${pct}% of its health.`, sideOf(args[0]) === s.mySide ? 'bad' : 'good');
+          const who = this.w(m), tone: LogKind = sideOf(args[0]) === s.mySide ? 'bad' : 'good';
+          if (from) this.say(pct ? 'model.hurtByPct' : 'model.hurtBy', { ...who, from, pct }, tone);
+          else this.say('model.lostHealth', { ...who, pct }, tone);
           fx.push({ kind: 'hit', side: sideOf(args[0]), lost, remaining: after, crit: this.pendingCrit, effect: this.pendingEffect, indirect: !!from });
         }
         this.pendingCrit = false; this.pendingEffect = 'normal';
@@ -255,21 +279,21 @@ export class BattleModel {
         const c = parseCondition(args[1]); m.hp = c.hp; m.maxhp = c.maxhp; m.status = c.status;
         const revived = m.fainted && !c.fainted;
         if (revived) m.fainted = false;
-        this.log(revived ? `${this.cap(this.name(m))} was revived and is ready to fight again!` : `${this.cap(this.name(m))} restored HP${from ? ` (${from})` : ''}.`, sideOf(args[0]) === s.mySide ? 'good' : 'info');
+        this.say(revived ? 'model.revived' : from ? 'model.restoredFrom' : 'model.restored', { ...this.w(m), from }, sideOf(args[0]) === s.mySide ? 'good' : 'info');
         // A revived Pokémon waits on the bench: no healing effect on whoever is on the field.
         if (!revived) fx.push({ kind: 'heal', side: sideOf(args[0]), gained: Math.max(0, m.hp / m.maxhp - before) });
         break;
       }
-      case 'faint': { const m = this.mon(args[0]); m.hp = 0; m.fainted = true; this.log(`${this.cap(this.name(m))} fainted!`, 'faint'); fx.push({ kind: 'faint', side: sideOf(args[0]) }); break; }
-      case '-status': { const m = this.mon(args[0]); m.status = args[1]; this.log(`${this.cap(this.name(m))} ${STATUS[args[1]] ?? `is ${args[1]}`}!`); fx.push({ kind: 'status', side: sideOf(args[0]), status: args[1] }); break; }
-      case '-curestatus': { const m = this.mon(args[0]); m.status = null; this.log(`${this.cap(this.name(m))} recovered.`); break; }
+      case 'faint': { const m = this.mon(args[0]); m.hp = 0; m.fainted = true; this.say('model.fainted', this.w(m), 'faint'); fx.push({ kind: 'faint', side: sideOf(args[0]) }); break; }
+      case '-status': { const m = this.mon(args[0]); m.status = args[1]; this.say(STATUS[args[1]] ?? 'model.statusOther', { ...this.w(m), status: args[1] }); fx.push({ kind: 'status', side: sideOf(args[0]), status: args[1] }); break; }
+      case '-curestatus': { const m = this.mon(args[0]); m.status = null; this.say('model.recovered', this.w(m)); break; }
       case '-boost': case '-unboost': {
         const m = this.mon(args[0]); const n = Number(args[2]) || 0; const up = cmd === '-boost';
         m.boosts[args[1]] = Math.max(-6, Math.min(6, (m.boosts[args[1]] ?? 0) + (up ? n : -n)));
-        if (n) { this.log(`${this.cap(this.name(m))}'s ${STAT[args[1]] ?? args[1]} ${up ? 'rose' : 'fell'}${n >= 2 ? ' sharply' : ''}!`); fx.push({ kind: 'boost', side: sideOf(args[0]), up }); }
+        if (n) { this.say(up ? (n >= 2 ? 'model.boostUpSharp' : 'model.boostUp') : n >= 2 ? 'model.boostDownSharp' : 'model.boostDown', { ...this.w(m), stat: statName(args[1]) }); fx.push({ kind: 'boost', side: sideOf(args[0]), up }); }
         break;
       }
-      case '-setboost': { const m = this.mon(args[0]); m.boosts[args[1]] = Number(args[2]) || 0; this.log(`${this.cap(this.name(m))} maximized its ${STAT[args[1]] ?? args[1]}!`); fx.push({ kind: 'boost', side: sideOf(args[0]), up: true }); break; }
+      case '-setboost': { const m = this.mon(args[0]); m.boosts[args[1]] = Number(args[2]) || 0; this.say('model.maxed', { ...this.w(m), stat: statName(args[1]) }); fx.push({ kind: 'boost', side: sideOf(args[0]), up: true }); break; }
       case '-clearboost': case '-clearallboost': case '-clearnegativeboost': {
         if (cmd === '-clearallboost') s.sides.forEach(sd => sd.mons.forEach(m => (m.boosts = {})));
         else { const m = this.mon(args[0]); m.boosts = cmd === '-clearboost' ? {} : Object.fromEntries(Object.entries(m.boosts).filter(([, v]) => v > 0)); }
@@ -277,35 +301,35 @@ export class BattleModel {
       }
       case '-terastallize': {
         const m = this.mon(args[0]); const t = asType(args[1]); m.tera = t;
-        this.log(`${this.cap(this.name(m))} terastallized into the ${args[1]} type!`, 'good');
+        this.say('model.tera', { ...this.w(m), type: args[1] }, 'good');
         if (t) fx.push({ kind: 'tera', side: sideOf(args[0]), type: t });
         break;
       }
-      case '-transform': { const m = this.mon(args[0]); const t = this.mon(args[1]); m.transformed = t.species; this.log(`${this.cap(this.name(m))} transformed into ${t.species}!`); break; }
-      case '-weather': { if (kw.upkeep === undefined) { s.weather = args[0] === 'none' ? null : args[0]; this.log(WEATHER[args[0]] ?? `${args[0]} started.`); } break; }
-      case '-fieldstart': { const f = clean(args[0]); if (!s.field.includes(f)) s.field.push(f); this.log(`${f} took effect.`); break; }
-      case '-fieldend': { const f = clean(args[0]); s.field = s.field.filter(x => x !== f); this.log(`${f} ended.`); break; }
-      case '-sidestart': { const side = sideOf(args[0]); const c = clean(args[1]); if (!s.sides[side].conditions.includes(c)) s.sides[side].conditions.push(c); this.log(`${c} was set on ${this.whose(side)} side.`); break; }
-      case '-sideend': { const side = sideOf(args[0]); const c = clean(args[1]); s.sides[side].conditions = s.sides[side].conditions.filter(x => x !== c); this.log(`${c} ended on ${this.whose(side)} side.`); break; }
-      case '-enditem': { const m = this.mon(args[0]); m.item = null; m.revealed.item = true; this.log(kw.eat !== undefined ? `${this.cap(this.name(m))} ate its ${args[1]}.` : `${this.cap(this.name(m))}'s ${args[1]} ${from === 'Knock Off' || kw.from?.includes('Knock Off') ? 'was knocked off' : 'was used up'}.`); break; }
-      case '-item': { const m = this.mon(args[0]); m.item = args[1] ?? m.item; m.revealed.item = true; this.log(`${this.cap(this.name(m))} has ${args[1]}${from ? ` (${from})` : ''}.`); break; }
-      case '-ability': { const m = this.mon(args[0]); m.revealed.ability = args[1] ?? m.revealed.ability; this.log(`[${this.cap(this.name(m))}'s ${args[1]}]`); break; }
-      case '-start': { const m = this.mon(args[0]); const e = clean(args[1]); if (!/typechange|typeadd/.test(e) && kw.silent === undefined) this.log(startText(this.cap(this.name(m)), args[1])); break; }
-      case '-end': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))}'s ${clean(args[1])} ended.`); break; }
+      case '-transform': { const m = this.mon(args[0]); const t = this.mon(args[1]); m.transformed = t.species; this.say('model.transformed', { ...this.w(m), mon: t.species }); break; }
+      case '-weather': { if (kw.upkeep === undefined) { s.weather = args[0] === 'none' ? null : args[0]; this.say(WEATHER[args[0]] ?? 'model.weatherStart', { weather: args[0] }); } break; }
+      case '-fieldstart': { const f = clean(args[0]); if (!s.field.includes(f)) s.field.push(f); this.say('model.fieldStart', { field: f }); break; }
+      case '-fieldend': { const f = clean(args[0]); s.field = s.field.filter(x => x !== f); this.say('model.fieldEnd', { field: f }); break; }
+      case '-sidestart': { const side = sideOf(args[0]); const c = clean(args[1]); if (!s.sides[side].conditions.includes(c)) s.sides[side].conditions.push(c); this.say('model.sideStart', { condition: c, side: this.whose(side) }); break; }
+      case '-sideend': { const side = sideOf(args[0]); const c = clean(args[1]); s.sides[side].conditions = s.sides[side].conditions.filter(x => x !== c); this.say('model.sideEnd', { condition: c, side: this.whose(side) }); break; }
+      case '-enditem': { const m = this.mon(args[0]); m.item = null; m.revealed.item = true; this.say(kw.eat !== undefined ? 'model.ateItem' : from === 'Knock Off' || kw.from?.includes('Knock Off') ? 'model.itemKnocked' : 'model.itemUsed', { ...this.w(m), item: args[1] }); break; }
+      case '-item': { const m = this.mon(args[0]); m.item = args[1] ?? m.item; m.revealed.item = true; this.say(from ? 'model.hasItemFrom' : 'model.hasItem', { ...this.w(m), item: args[1], from }); break; }
+      case '-ability': { const m = this.mon(args[0]); m.revealed.ability = args[1] ?? m.revealed.ability; this.say('model.ability', { ...this.w(m), ability: args[1] }); break; }
+      case '-start': { const m = this.mon(args[0]); const e = clean(args[1]); if (!/typechange|typeadd/.test(e) && kw.silent === undefined) { const who = this.w(m), l = startLine(who.Who, args[1], who.who); this.say(l.key, l.params); } break; }
+      case '-end': { const m = this.mon(args[0]); this.say('model.effectEnd', { ...this.w(m), effect: clean(args[1]) }); break; }
       case '-activate': { if (args[0]?.includes(':') && args[1]?.startsWith('ability: ')) this.mon(args[0]).revealed.ability = clean(args[1]);
         // Protosynthesis and Quark Drive announce themselves in the -start that follows (which stat rose).
-        if (args[0] && args[1] && !/^ability: (Protosynthesis|Quark Drive)$/.test(args[1])) this.log(`${clean(args[1])} activated${args[0].includes(':') ? ` for ${this.name(this.mon(args[0]))}` : ''}.`); break; }
-      case '-hitcount': this.log(`Hit ${args[1]} time${args[1] === '1' ? '' : 's'}!`); break;
-      case '-prepare': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))} is preparing ${args[1]}…`); break; }
-      case 'cant': { const m = this.mon(args[0]); this.log(`${this.cap(this.name(m))} can't move${args[1] ? ` (${clean(args[1])})` : ''}!`); break; }
-      case 'turn': s.turn = Number(args[0]) || s.turn; this.log(`Turn ${s.turn}`, 'turn'); fx.push({ kind: 'turn', turn: s.turn }); break;
+        if (args[0] && args[1] && !/^ability: (Protosynthesis|Quark Drive)$/.test(args[1])) { if (args[0].includes(':')) this.say('model.activatedFor', { effect: clean(args[1]), ...this.w(this.mon(args[0])) }); else this.say('model.activated', { effect: clean(args[1]) }); } break; }
+      case '-hitcount': this.say(args[1] === '1' ? 'model.hitOne' : 'model.hitOther', { n: args[1] }); break;
+      case '-prepare': { const m = this.mon(args[0]); this.say('model.preparing', { ...this.w(m), move: args[1] }); break; }
+      case 'cant': { const m = this.mon(args[0]); this.say(args[1] ? 'model.cantMoveWhy' : 'model.cantMove', { ...this.w(m), reason: args[1] ? clean(args[1]) : '' }); break; }
+      case 'turn': s.turn = Number(args[0]) || s.turn; this.say('model.turn', { n: s.turn }, 'turn'); fx.push({ kind: 'turn', turn: s.turn }); break;
       case 'win': {
         s.phase = 'ended'; s.winner = args[0];
         s.winnerSide = s.sides[0].name === args[0] ? 0 : s.sides[1].name === args[0] ? 1 : null;
-        this.log(`${args[0]} won the battle!`, 'win'); fx.push({ kind: 'end', winner: s.winnerSide });
+        this.say('model.won', { name: args[0] }, 'win'); fx.push({ kind: 'end', winner: s.winnerSide });
         break;
       }
-      case 'tie': s.phase = 'ended'; this.log('The battle ended in a draw.', 'win'); fx.push({ kind: 'end', winner: null }); break;
+      case 'tie': s.phase = 'ended'; this.say('model.tie', {}, 'win'); fx.push({ kind: 'end', winner: null }); break;
       case 'error': this.log(line.slice(7).replace(/^\[[^\]]*\]\s*/, ''), 'error'); break;
       case '-message': this.log(args[0] ?? ''); break;
       default: break; // gen, tier, rule, gametype, teamsize, upkeep, -anim, -hint, -singleturn, -singlemove, j, l, etc.

@@ -220,7 +220,7 @@ class Hologram {
     this.crystal.scale.set(0.9 * b, 1.15 * b, 0.6 * b); this.crystal.position.y = this.cy;
   }
   /** Where the projection is right now (follows rushes). */
-  center(out = new THREE.Vector3()) { return this.card.getWorldPosition(out); }
+  center(out = new THREE.Vector3()) { return out.copy(this.card.position).add(this.group.position); }
 
   async show(artId: number, name: string, tint: string, instant: boolean) {
     const token = ++this.loadToken;
@@ -320,7 +320,11 @@ class Hologram {
   get footprint() { return this.body ? this.body.radius : this.h * 0.4; }
   hide() { this.group.visible = false; this.present = false; this.dashT = 1; this.ballT = 1; this.ball.visible = false; for (const g of this.ghosts) g.visible = false; }
 
-  update(dt: number, t: number, camera: THREE.Camera, reduced: boolean, foeCenter: THREE.Vector3) {
+  /**
+   * `camera` is the real camera (world space, for `lookAt`); `localCam` is its position in stage space (for
+   * aiming in stage coordinates); `foeWorld` is the opponent's centre in world space (the head follows it).
+   */
+  update(dt: number, t: number, camera: THREE.Camera, localCam: THREE.Vector3, reduced: boolean, foeWorld: THREE.Vector3) {
     if (!this.group.visible) { for (const g of this.ghosts) g.visible = false; return; }
     this.uniforms.uTime.value = t;
     // Poké Ball throw: an arc with backspin, then it pops open in a flash and the Pokémon comes out.
@@ -387,7 +391,7 @@ class Hologram {
       this.bodyIn = Math.min(1, this.bodyIn + dt / (reduced ? 0.15 : 0.4));
       const u = this.bodyIn, s = u >= 1 ? 1 : 1 + 2.7 * Math.pow(u - 1, 3) + 1.7 * Math.pow(u - 1, 2);
       this.body.root.scale.setScalar(Math.max(0.001, s));
-      tmp2.lerpVectors(this.foe, camera.position, this.side === 0 ? 0.3 : 0.4);
+      tmp2.lerpVectors(this.foe, localCam, this.side === 0 ? 0.3 : 0.4);
       const want = Math.atan2(tmp2.x - this.group.position.x, tmp2.z - this.group.position.z);
       this.yaw += Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw)) * (1 - Math.exp(-10 * dt));
       this.body.root.rotation.y = this.yaw + spin;
@@ -397,13 +401,13 @@ class Hologram {
       this.body.root.position.y = PLATFORM_Y - tp * 0.08;
       if (!this.dissolving) this.body.setOpacity(this.uniforms.uAlpha.value);
       // The head follows the opponent.
-      this.body.lookAt(this.dissolving || this.asleep ? null : foeCenter);
+      this.body.lookAt(this.dissolving || this.asleep ? null : foeWorld);
       this.body.update(dt);
     }
 
     // Afterimages trail the rush (the projection only).
     const moving = this.dashT < 1 && !reduced && !this.body;
-    this.trail.unshift(this.trail.pop()!.copy(this.card.getWorldPosition(tmp2)));
+    this.trail.unshift(this.center(this.trail.pop()!));
     this.ghosts.forEach((g, i) => {
       g.visible = moving;
       if (!moving) return;
@@ -505,13 +509,19 @@ export class BattleStage {
   private debris = new Debris();
   private shields: [Barrier, Barrier];
   private walls: [Barrier, Barrier];
-  private flashes = new Flashes(3);
+  private flashes: Flashes;
   /** Lightning ribbons, light flares, the wave, ground cracks and a smoke field (see makeFx). */
-  private fx = this.makeFx();
+  private fx: ReturnType<BattleStage['makeFx']>;
+  /** The camera's position in stage space, refreshed every update (equal to world space for the main stage). */
+  private localCam = new THREE.Vector3();
+  private foeWorld = new THREE.Vector3();
+  /** World size of one stage unit: 1 for the arena, about 0.2 for the plaza's miniature. */
+  readonly scale: number;
+  /** A secondary stage (the plaza's miniature): no hit-stop and no camera, screen or zoom impulses. */
+  readonly lite: boolean;
   private jobs: { at: number; fn: () => void }[] = [];
   private time = 0;
   private impactAt: [number, number] = [0, 0];
-  private foeCenter = new THREE.Vector3();
   private freeze = 0;
   /** Effects setting: point-light flash strength (0..1), and calm = no screen flashes, dimmer hologram flashes. */
   private lightAmt = 1;
@@ -523,7 +533,11 @@ export class BattleStage {
   /** Sound cue requests (cue, stereo pan, gain); the World forwards them to the app's sound engine. */
   onSound: ((cue: Cue, pan: number, gain?: number) => void) | null = null;
 
-  constructor(private camera: THREE.Camera, private reduced: () => boolean) {
+  constructor(private camera: THREE.Camera, private reduced: () => boolean, opts: { scale?: number; lite?: boolean } = {}) {
+    this.scale = opts.scale ?? 1;
+    this.lite = !!opts.lite;
+    this.flashes = new Flashes(3, this.scale);
+    this.fx = this.makeFx();
     this.holos = [new Hologram(0), new Hologram(1)];
     this.holos.forEach((h, i) => { h.place(ARENA.mon[i]); h.foe.copy(ARENA.mon[1 - i]); this.group.add(h.ballMesh); h.onOpen = s => this.ballOpened(s); });
     for (const h of this.holos) { this.group.add(h.group); for (const g of h.ghosts) this.group.add(g); }
@@ -569,6 +583,7 @@ export class BattleStage {
   private light(at: THREE.Vector3, color: string, peak = 8, dur = 0.45, follow: (() => THREE.Vector3) | null = null) { if (!this.reduced() && this.lightAmt > 0) this.flashes.fire(at, color, peak * this.lightAmt, dur, follow); }
   private ballistic(from: THREE.Vector3, to: THREE.Vector3, T: number, out = new THREE.Vector3()) { return out.subVectors(to, from).divideScalar(T).setY((to.y - from.y) / T + 4.9 * T); }
   private kickScreen(strength: number, color: string, flash = 0) {
+    if (this.lite) return;
     this.screenPunch = Math.max(this.screenPunch, strength);
     if (flash > 0 && !this.reduced() && !this.calm) { this.screenFlash.color.set(color); this.screenFlash.amt = Math.max(this.screenFlash.amt, flash); }
   }
@@ -675,14 +690,15 @@ export class BattleStage {
   private makeFx() {
     const smoke = new Particles({ smoke: true, max: 900 });
     smoke.mat.uniforms.uScale = this.particles.mat.uniforms.uScale; // follows setPixelScale
-    const fx = { smoke, bolts: new Bolts(24), flares: new Flares(6, () => this.camera), wave: new Wave(), cracks: new Cracks(3) };
+    const bolts = new Bolts(24); bolts.scale = this.scale;
+    const fx = { smoke, bolts, flares: new Flares(6, () => this.camera), wave: new Wave(), cracks: new Cracks(3) };
     for (const part of [smoke, fx.bolts, fx.flares, fx.wave, fx.cracks]) this.particles.attach(part);
     this.group.add(smoke.mesh, fx.bolts.group, fx.flares.group, fx.wave.mesh, fx.wave.warm, fx.cracks.group);
     // The orb and beam pools are hidden while idle too: warm their composer variant on the first frame as well.
     this.group.add(warmTwin(this.orbs[0].mesh), warmTwin(this.beams[0].mesh));
     return fx;
   }
-  /** Screen-plane axes of the camera right now (for shapes that must read on screen: the Fire Blast kanji). */
+  /** Screen-plane axes of the camera right now (for shapes that must read on screen: the Fire Blast burst). */
   private screenAxes() {
     const q = this.camera.quaternion;
     return { right: new THREE.Vector3(1, 0, 0).applyQuaternion(q), up: new THREE.Vector3(0, 1, 0).applyQuaternion(q), back: new THREE.Vector3(0, 0, 1).applyQuaternion(q) };
@@ -919,7 +935,7 @@ export class BattleStage {
     this.later(r.swirlSelf ? 0.2 : 0, () => {
       this.snd(r.shape === 'fire' ? 'fire' : r.shape === 'leaf' ? 'leaves' : 'water', s);
       if (r.blast) {
-        // Fire Blast: a roaring fireball flies at the target (it bursts into the kanji shape on impact).
+        // Fire Blast: a roaring fireball flies at the target (it bursts into a five-armed flame on impact).
         const o = this.orb();
         o.fire(A, B, '#ff7a22', { dur: impactDelay(r) - 0.02, arc: 0.12 * kM, size: 2.4 * kM }, () => { /* fireBlast() */ });
         PM.emitter(impactDelay(r) - 0.04, 260, () => PM.emit(tmp.copy(o.head).add(tmp2.randomDirection().multiplyScalar(0.06 * kM)), tmp2.randomDirection().multiplyScalar(0.35), { color: Math.random() < 0.3 ? '#fff0a0' : '#ff6a1f', size: 0.2, sizeEnd: 0.04, ttl: 0.28, drag: 2 }));
@@ -955,7 +971,7 @@ export class BattleStage {
     });
     else this.later(0.75, () => this.holos[s].heal());
   }
-  /** Fire Blast's signature: flame bursting out in five arms, the 大 shape, over the target. */
+  /** Fire Blast's signature: flame bursting out in five arms over the target. */
   private fireBlast(t: 0 | 1) {
     const k = this.fk(t), P = this.particles, { right, up, back } = this.screenAxes();
     // Head, both arms (slightly raised) and both legs, laid out on the screen plane.
@@ -1554,7 +1570,7 @@ export class BattleStage {
   private swordsDance(s: 0 | 1) {
     const k = this.fk(s), f = this.foot(s), h = this.holos[s], H = h.height;
     const R = Math.max(0.3, 0.6 * k), cy = ARENA.floorY + H * 0.55, sc = 0.62 * k;
-    const cam = this.camera.position, yaw = Math.atan2(cam.x - f.x, cam.z - f.z);
+    const cam = this.localCam, yaw = Math.atan2(cam.x - f.x, cam.z - f.z);
     const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     const crossAt = 0.62, crossY = ARENA.floorY + H + 0.3 * sc + 0.1;
     for (let i = 0; i < 4; i++) {
@@ -1589,7 +1605,7 @@ export class BattleStage {
   /** Shift Gear: two steel gears appear beside the user and grind against each other. */
   private shiftGear(s: 0 | 1) {
     const k = this.fk(s), P = this.px(k), A = this.home(s), f = this.foot(s), h = this.holos[s];
-    const cam = this.camera.position, yaw = Math.atan2(cam.x - A.x, cam.z - A.z);
+    const cam = this.localCam, yaw = Math.atan2(cam.x - A.x, cam.z - A.z);
     const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     const g = 0.5 * k, pitch = 0.87 * g, toCam = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
     const c1 = A.clone().addScaledVector(right, -0.32 * k).addScaledVector(toCam, 0.45 * k).setY(A.y + 0.22 * k);
@@ -1705,7 +1721,7 @@ export class BattleStage {
       if (heavy) {
         this.shake = Math.max(this.shake, 0.4 + strength * 0.6); this.onImpact?.(color);
         // Impact frames: a brief hit-stop on crits and super-effective hits only.
-        if (!this.reduced()) { this.freeze = crit ? 0.09 : effect === 'super' ? 0.06 : 0; this.fovPunch = Math.max(this.fovPunch, 2 + strength * 4); }
+        if (!this.reduced() && !this.lite) { this.freeze = crit ? 0.09 : effect === 'super' ? 0.06 : 0; this.fovPunch = Math.max(this.fovPunch, 2 + strength * 4); }
         this.kickScreen(0.3 + strength * 0.35, crit ? '#ffffff' : color, crit ? 0.08 : 0.04);
       }
     };
@@ -1765,7 +1781,8 @@ export class BattleStage {
     for (const o of hidden) o.visible = false;
     return done;
   }
-  setPixelScale(s: number) { for (const o of this.orbs) o.mat.uniforms.uScale.value = s; this.particles.mat.uniforms.uScale.value = s; }
+  /** Point sprites are sized in pixels: a miniature multiplies the render's pixel scale by its own scale. */
+  setPixelScale(s: number) { const k = s * this.scale; for (const o of this.orbs) o.mat.uniforms.uScale.value = k; this.particles.mat.uniforms.uScale.value = k; }
 
   update(dt: number) {
     // Hit-stop: a few frames of near-freeze sell heavy impacts.
@@ -1773,7 +1790,10 @@ export class BattleStage {
     this.time += dt;
     for (let i = this.jobs.length - 1; i >= 0; i--) if (this.jobs[i].at <= this.time) { const j = this.jobs[i]; this.jobs.splice(i, 1); j.fn(); }
     const reduced = this.reduced();
-    for (const h of this.holos) h.update(dt, this.time, this.camera, reduced, this.holos[1 - h.side].center(this.foeCenter));
+    // Billboards and aiming need the camera in stage space (the plaza's miniature is a scaled, moved group).
+    this.group.updateWorldMatrix(true, false);
+    this.localCam.copy(this.camera.position); this.group.worldToLocal(this.localCam);
+    for (const h of this.holos) h.update(dt, this.time, this.camera, this.localCam, reduced, this.group.localToWorld(this.holos[1 - h.side].center(this.foeWorld)));
     // Shields and screens fit the Pokémon behind them; the camera frames each one at its size.
     for (const s of [0, 1] as const) {
       const h = this.holos[s], k = Math.max(0.42, h.height / 1.2);

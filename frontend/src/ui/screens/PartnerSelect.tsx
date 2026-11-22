@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { CharacterId } from '@shared';
-import { ROSTER, characterById } from '../../characters/roster.js';
+import { ROSTER, characterById, quipKey } from '../../characters/roster.js';
 import { settings, useSettings } from '../../app/settings.js';
 import { useWorld } from '../../app/WorldProvider.js';
 import { sound } from '../../audio/sound.js';
 import { Icon, ScreenHeader } from '../primitives.js';
 import { Sprite, TypeBadge } from '../pokemon.js';
+import { useT } from '../../i18n/index.js';
 
 /**
  * Choose your partner: the Pokémon that stands beside you on the title screen, in lobbies, on the
@@ -13,6 +14,7 @@ import { Sprite, TypeBadge } from '../pokemon.js';
  * and cries when it arrives.
  */
 export function PartnerSelect({ onBack, onConfirm, confirmLabel }: { onBack: () => void; onConfirm: () => void; confirmLabel: string }) {
+  const t = useT();
   const s = useSettings();
   const { world, status } = useWorld();
   const [focus, setFocus] = useState<CharacterId>(s.partner);
@@ -76,15 +78,15 @@ export function PartnerSelect({ onBack, onConfirm, confirmLabel }: { onBack: () 
 
   return (
     <main className="screen shop" style={{ '--partner': c.accent } as CSSProperties}>
-      <ScreenHeader title="Choose your partner" eyebrow="Partner Pokémon" jp="相棒" onBack={onBack} />
-      <section className="panel shop__panel" aria-label="Partner Pokémon">
+      <ScreenHeader title={t('partner.title')} eyebrow={t('partner.eyebrow')} onBack={onBack} />
+      <section className="panel shop__panel" aria-label={t('partner.eyebrow')}>
         <div className="shop__tag" key={c.id} aria-live="polite">
-          <p className="eyebrow">No. <span className="num">{String(c.dex).padStart(4, '0')}</span><span className="shop__count num">{index + 1} / {ROSTER.length}</span></p>
+          <p className="eyebrow">{t('partner.no')} <span className="num">{String(c.dex).padStart(4, '0')}</span><span className="shop__count num">{index + 1} / {ROSTER.length}</span></p>
           <h2 className="shop__name">{c.name}</h2>
           <div className="shop__types">{c.types.map(t => <TypeBadge key={t} type={t} size="sm" />)}</div>
-          <q className="shop__quip">{c.quip}</q>
+          <q className="shop__quip">{t(quipKey(c.id))}</q>
         </div>
-        <div className="shop__grid" ref={grid} role="radiogroup" aria-label="Partner">
+        <div className="shop__grid" ref={grid} role="radiogroup" aria-label={t('partner.grid')}>
           {ROSTER.map((r, i) => (
             <button
               key={r.id}
@@ -101,12 +103,12 @@ export function PartnerSelect({ onBack, onConfirm, confirmLabel }: { onBack: () 
           ))}
         </div>
         <div className="shop__actions">
-          <button type="button" className="btn btn--ghost btn--xl" onClick={surprise} disabled={confirming} title="A random partner"><Icon name="dice" />Surprise me</button>
+          <button type="button" className="btn btn--ghost btn--xl" onClick={surprise} disabled={confirming} title={t('partner.randomTitle')}><Icon name="dice" />{t('partner.surprise')}</button>
           <button type="button" className="btn btn--primary btn--xl" onClick={confirm} disabled={confirming}>
             <Icon name="check" />{confirmLabel.replace('{name}', c.name)}
           </button>
         </div>
-        <p className="shop__keys" aria-hidden="true"><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> choose <kbd>Enter</kbd> confirm <kbd>Esc</kbd> back</p>
+        <p className="shop__keys" aria-hidden="true">{t.rich('partner.keys', { arrows: <><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></>, enter: <kbd>Enter</kbd>, esc: <kbd>Esc</kbd> })}</p>
       </section>
     </main>
   );

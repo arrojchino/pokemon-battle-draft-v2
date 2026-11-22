@@ -589,17 +589,19 @@ export class Barrier {
 export class Flashes {
   readonly group = new THREE.Group();
   private lights: { l: THREE.PointLight; t: number; dur: number; peak: number; follow: (() => THREE.Vector3) | null }[] = [];
-  constructor(n = 3) {
+  /** `scale`: world size of one stage unit. A light's reach is in world units, so it shrinks with the stage. */
+  constructor(n = 3, private scale = 1) {
     for (let i = 0; i < n; i++) {
       // Always visible at zero intensity: toggling visibility would change the light count and force
       // every lit material to recompile mid-battle.
-      const l = new THREE.PointLight('#ffffff', 0, 7, 2);
+      const l = new THREE.PointLight('#ffffff', 0, 7 * scale, 2);
       this.group.add(l); this.lights.push({ l, t: 1, dur: 1, peak: 0, follow: null });
     }
   }
   fire(at: THREE.Vector3, color: THREE.ColorRepresentation, peak = 14, dur = 0.45, follow: (() => THREE.Vector3) | null = null) {
     const it = this.lights.reduce((a, b) => (a.t / a.dur > b.t / b.dur ? a : b));
-    it.t = 0; it.dur = dur; it.peak = peak; it.follow = follow;
+    // The same illuminance at distances scaled by `scale`: the inverse-square law asks for scale squared.
+    it.t = 0; it.dur = dur; it.peak = peak * this.scale * this.scale; it.follow = follow;
     it.l.color.set(color); it.l.position.copy(at);
   }
   update(dt: number) {
@@ -644,6 +646,8 @@ export function warmTwin(src: THREE.Mesh | THREE.Points): THREE.Mesh | THREE.Poi
 }
 
 export class Bolts {
+  /** World size of one stage unit (a stage shown as a miniature): the ribbon width is in view space and must follow it. */
+  scale = 1;
   readonly group = new THREE.Group();
   private items: BoltItem[] = [];
   private sA = V(); private sB = V(); private sC = V();
@@ -757,7 +761,7 @@ export class Bolts {
       const tip = j.grow > 0 ? Math.min(1, j.t / j.grow) : 1;
       const env = Math.min(1, j.t / 0.025) * (u > 0.7 ? (1 - u) / 0.3 : 1);
       const a = this.calm ? env * 0.7 : env * (0.6 + 0.4 * Math.random()) * (1 + 0.8 * Math.exp(-(j.t - j.struck) * 40));
-      const w = j.width * (0.85 + 0.3 * Math.random());
+      const w = j.width * this.scale * (0.85 + 0.3 * Math.random());
       const U = it.mesh.material.uniforms;
       it.mesh.visible = true; U.uA.value = a; U.uW.value = w; U.uTip.value = tip; U.uTaper.value = j.taper;
       for (const x of j.kids) {

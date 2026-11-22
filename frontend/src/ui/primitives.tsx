@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { t as tr, useT } from '../i18n/index.js';
 
 export type IconName =
   | 'copy' | 'link' | 'gear' | 'close' | 'back' | 'arrow' | 'sun' | 'moon' | 'swords' | 'history' | 'external' | 'check' | 'leave' | 'spark' | 'user'
@@ -100,17 +101,18 @@ export function Slider({ value, onChange, label, min = 0, max = 1, step = 0.05, 
 }
 
 /** Capsule spinner for waits that have no measurable progress. */
-export const Spinner = ({ size = 28, label = 'Loading' }: { size?: number; label?: string }) => (
-  <span className="spinner" role="img" aria-label={label} style={{ '--size': `${size}px` } as CSSProperties} />
+export const Spinner = ({ size = 28, label }: { size?: number; label?: string }) => (
+  <span className="spinner" role="img" aria-label={label ?? tr('common.loading')} style={{ '--size': `${size}px` } as CSSProperties} />
 );
 
-/** Shared screen header: optional back button, eyebrow (with Japanese accent) and title, right-hand actions. */
-export function ScreenHeader({ title, eyebrow, jp, onBack, backLabel = 'Back', children }: { title: ReactNode; eyebrow?: ReactNode; jp?: string; onBack?: () => void; backLabel?: string; children?: ReactNode }) {
+/** Shared screen header: optional back button, eyebrow and title, right-hand actions. */
+export function ScreenHeader({ title, eyebrow, onBack, backLabel, children }: { title: ReactNode; eyebrow?: ReactNode; onBack?: () => void; backLabel?: string; children?: ReactNode }) {
+  const t = useT();
   return (
     <header className="screen-head">
-      {onBack && <button type="button" className="btn btn--ghost btn--sm screen-head__back" onClick={onBack}><Icon name="back" />{backLabel}</button>}
+      {onBack && <button type="button" className="btn btn--ghost btn--sm screen-head__back" onClick={onBack}><Icon name="back" />{backLabel ?? t('common.back')}</button>}
       <div className="screen-head__titles">
-        {(eyebrow || jp) && <p className="eyebrow">{jp && <span className="jp">{jp}</span>}{eyebrow}</p>}
+        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
         <h1>{title}</h1>
       </div>
       {children && <div className="screen-head__extra">{children}</div>}
@@ -120,6 +122,7 @@ export function ScreenHeader({ title, eyebrow, jp, onBack, backLabel = 'Back', c
 
 /** Accessible modal built on <dialog>: focus trap, Escape and backdrop close come from the platform. */
 export function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: ReactNode; wide?: boolean }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current; if (!d) return;
@@ -128,7 +131,7 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
   return (
     <dialog ref={ref} className={`modal ${wide ? 'modal--wide' : ''}`} onClose={onClose} onClick={e => { if (e.target === ref.current) onClose(); }} aria-label={title}>
       {open && <div className="modal__body">
-        <header className="modal__head"><h2>{title}</h2><button className="iconbtn" onClick={onClose} aria-label="Close"><Icon name="close" /></button></header>
+        <header className="modal__head"><h2>{title}</h2><button className="iconbtn" onClick={onClose} aria-label={t('common.close')}><Icon name="close" /></button></header>
         {children}
       </div>}
     </dialog>
@@ -137,6 +140,7 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
 
 /** Copy button with inline confirmation state. */
 export function CopyButton({ getText, label, className = 'btn' }: { getText: () => string; label: string; className?: string }) {
+  const t = useT();
   const [state, setState] = useState<'idle' | 'ok' | 'fail'>('idle');
   useEffect(() => { if (state === 'idle') return; const t = setTimeout(() => setState('idle'), 1800); return () => clearTimeout(t); }, [state]);
   return (
@@ -144,7 +148,7 @@ export function CopyButton({ getText, label, className = 'btn' }: { getText: () 
       const { copyText } = await import('../showdown/handoff.js');
       setState((await copyText(getText())) ? 'ok' : 'fail');
     }}>
-      <Icon name={state === 'ok' ? 'check' : 'copy'} />{state === 'ok' ? 'Copied' : state === 'fail' ? 'Copy blocked, select manually' : label}
+      <Icon name={state === 'ok' ? 'check' : 'copy'} />{state === 'ok' ? t('common.copied') : state === 'fail' ? t('common.copyBlocked') : label}
     </button>
   );
 }
@@ -161,6 +165,7 @@ const TOAST_ICON: Record<Toast['tone'], IconName> = { info: 'info', ok: 'check',
  * message replaces its earlier copy instead of stacking; errors stay a little longer; click to dismiss.
  */
 export function Toasts() {
+  const t = useT();
   const [items, setItems] = useState<Toast[]>([]);
   useEffect(() => {
     const on = (t: Toast) => {
@@ -172,9 +177,9 @@ export function Toasts() {
   const dismiss = (id: number) => setItems(v => v.filter(x => x.id !== id));
   return (
     <div className="toasts" role="status" aria-live="polite">
-      {items.map(t => (
-        <button type="button" key={t.id} className={`toast toast--${t.tone}`} onClick={() => dismiss(t.id)} title="Dismiss">
-          <Icon name={TOAST_ICON[t.tone]} size={16} /><span>{t.text}</span>
+      {items.map(it => (
+        <button type="button" key={it.id} className={`toast toast--${it.tone}`} onClick={() => dismiss(it.id)} title={t('common.dismiss')}>
+          <Icon name={TOAST_ICON[it.tone]} size={16} /><span>{it.text}</span>
         </button>
       ))}
     </div>

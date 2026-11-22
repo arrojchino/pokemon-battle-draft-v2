@@ -12,11 +12,14 @@ export const SHOWDOWN_URL = 'https://play.pokemonshowdown.com/';
 export const TEAMBUILDER_URL = 'https://play.pokemonshowdown.com/teambuilder';
 export const POKEPASTE_CREATE = 'https://pokepast.es/create';
 
-export type FormatOption = { id: string; label: string; note: string };
+import type { MessageKey } from '../i18n/core.js';
+
+/** `label` is Showdown's own format name (stays English); `note` is a dictionary key. */
+export type FormatOption = { id: string; label: string; note: MessageKey };
 export const FORMATS: FormatOption[] = [
-  { id: 'gen9customgame', label: '[Gen 9] Custom Game', note: 'Recommended. No tier bans or clauses beyond Team Preview, so every dealt team is legal. Challenge-only (not on the ladder).' },
-  { id: 'gen9ou', label: '[Gen 9] OU', note: 'Standard OU rules. Some dealt sets break them (for example Spore under the Sleep Moves Clause) and will be rejected.' },
-  { id: 'gen9anythinggoes', label: '[Gen 9] Anything Goes', note: 'Minimal bans, but Showdown still validates that sets are obtainable in Gen 9.' },
+  { id: 'gen9customgame', label: '[Gen 9] Custom Game', note: 'fmt.customGame' },
+  { id: 'gen9ou', label: '[Gen 9] OU', note: 'fmt.ou' },
+  { id: 'gen9anythinggoes', label: '[Gen 9] Anything Goes', note: 'fmt.ag' },
 ];
 
 /** Sets that Gen 9 OU's ruleset rejects (from config/formats.ts: Sleep Moves Clause + banlist). */

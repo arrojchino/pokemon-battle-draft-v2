@@ -4,8 +4,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { BattleSession, type BattleTiming } from './battle.js';
 import { Hub } from './hub.js';
 import {
-  MAX_FEED_LINES, PROTOCOL_VERSION, createRoom, parseClientMessage, publicView, reduce, seatForToken, seatGuest,
-  type BattleMode, type CharacterId, type HubFeature, type LiveBattle, type LobbySummary, type Pair, type RoomState, type Rng, type Seat, type ServerAction, type ServerMessage, type Visibility,
+  MAX_FEED_LINES, PROTOCOL_VERSION, createRoom, parseClientMessage, poseAfter, publicView, reduce, seatForToken, seatGuest,
+  type BattleMode, type CharacterId, type HubFeature, type LiveBattle, type LobbySummary, type Pair, type PlazaPose, type RoomState, type Rng, type Seat, type ServerAction, type ServerMessage, type Visibility,
 } from '../../shared/src/index.js';
 
 /**
@@ -21,9 +21,13 @@ const MAX_ROOMS = Number(process.env.MAX_ROOMS || 5000);
 const MAX_LISTED = 50;
 const MSG_PER_SEC = 20;
 const CREATES_PER_MIN = 10;
-/** Chat: one line a second on average, bursts of four. Emotes: a little faster. */
+/**
+ * Chat: one line a second on average, bursts of four. Emotes: clients send at most one every 700 ms plus the odd
+ * automatic `rise`, so the server allows a little more than that and a well-behaved client is never cut.
+ */
 const CHAT_PER_SEC = 1;
-const EMOTES_PER_SEC = 1.5;
+const EMOTES_PER_SEC = 2;
+const EMOTE_BURST = 4;
 const TIMING: BattleTiming = {
   decisionMs: Number(process.env.BATTLE_DECISION_SECONDS || 150) * 1000,
   previewMs: Number(process.env.BATTLE_PREVIEW_SECONDS || 90) * 1000,
@@ -121,6 +125,18 @@ function seat(ws: WebSocket, code: string, s: Seat) {
   sockets.set(ws, { room: code, seat: s });
   if (prev && prev.room !== code) broadcast(prev.room);
 }
+/**
+ * Held plaza poses per room and seat (v9). A trainer taking or retaking a seat comes back standing, and hears
+ * the other seat's pose (after `joined` and the room state, so it lands in a room the client knows).
+ */
+const poses = new Map<string, [PlazaPose | null, PlazaPose | null]>();
+function greetPose(ws: WebSocket, code: string, s: Seat) {
+  const held = poses.get(code);
+  if (!held) return;
+  held[s] = null;
+  const other = held[1 - s];
+  if (other) send(ws, { type: 'emote', seat: (1 - s) as Seat, emote: other });
+}
 
 /** Host a fresh room. Room creation is rate limited per client address. */
 function openRoom(ws: WebSocket, addr: string, name: string, avatar: CharacterId | null, bestOf: 3 | 5, mode: BattleMode, visibility: Visibility) {
@@ -133,6 +149,7 @@ function openRoom(ws: WebSocket, addr: string, name: string, avatar: CharacterId
   seat(ws, code, 0);
   send(ws, { type: 'joined', code, token, seat: 0 });
   broadcast(code);
+  greetPose(ws, code, 0);
 }
 
 /** Seat a guest in the room's open seat. */
@@ -144,6 +161,7 @@ function admit(ws: WebSocket, room: Room, name: string, avatar: CharacterId | nu
   seat(ws, room.state.code, r.seat);
   send(ws, { type: 'joined', code: room.state.code, token, seat: r.seat });
   broadcast(room.state.code);
+  greetPose(ws, room.state.code, r.seat);
 }
 
 /** Public rooms whose host is connected and whose second seat is open, longest-waiting first. */
@@ -271,7 +289,12 @@ wss.on('connection', (ws, req) => {
       return;
     }
     if (msg.type === 'hubMove') { hub.move(ws, msg); return; }
-    if (msg.type === 'hubEmote') { if (take(`emote:${id}`, EMOTES_PER_SEC, 3)) hub.emote(ws, msg.emote); return; }
+    if (msg.type === 'hubEmote') {
+      // Over the limit the gesture is not relayed, but a held pose is still recorded for whoever walks in later.
+      const ok = take(`emote:${id}`, EMOTES_PER_SEC, EMOTE_BURST);
+      hub.emote(ws, msg.emote, ok);
+      return;
+    }
     if (msg.type === 'hubChat') {
       if (!hub.has(ws)) { send(ws, { type: 'error', message: 'Not in the plaza' }); return; }
       if (!take(`chat:${id}`, CHAT_PER_SEC, 4)) { send(ws, { type: 'error', message: 'Slow down: one message a second' }); return; }
@@ -313,6 +336,7 @@ wss.on('connection', (ws, req) => {
       send(ws, { type: 'joined', code: room.state.code, token: msg.token, seat: s });
       room.updatedAt = Date.now();
       broadcast(room.state.code);
+      greetPose(ws, room.state.code, s);
       // A returning player gets the whole battle so far, so a refresh mid-battle resumes exactly.
       sessions.get(room.state.code)?.replay(s);
       return;
@@ -332,7 +356,10 @@ wss.on('connection', (ws, req) => {
     }
     if (msg.type === 'move') { relay(meta.room, meta.seat, { type: 'move', seat: meta.seat, x: msg.x, z: msg.z, face: msg.face }); return; }
     if (msg.type === 'emote') {
-      if (take(`emote:${id}`, EMOTES_PER_SEC, 3)) relay(meta.room, meta.seat, { type: 'emote', seat: meta.seat, emote: msg.emote });
+      const held = poses.get(meta.room) ?? [null, null];
+      held[meta.seat] = poseAfter(held[meta.seat], msg.emote);
+      poses.set(meta.room, held);
+      if (take(`emote:${id}`, EMOTES_PER_SEC, EMOTE_BURST)) relay(meta.room, meta.seat, { type: 'emote', seat: meta.seat, emote: msg.emote });
       return;
     }
     if (msg.type === 'chat' && !take(`chat:${id}`, CHAT_PER_SEC, 4)) { send(ws, { type: 'error', message: 'Slow down: one message a second' }); return; }
@@ -364,7 +391,7 @@ heartbeat.unref();
 
 const sweeper = setInterval(() => {
   const now = Date.now();
-  for (const [c, room] of rooms) if (now - room.updatedAt > TTL_MS) { rooms.delete(c); sessions.get(c)?.destroy(); sessions.delete(c); }
+  for (const [c, room] of rooms) if (now - room.updatedAt > TTL_MS) { rooms.delete(c); poses.delete(c); sessions.get(c)?.destroy(); sessions.delete(c); }
   for (const [k, b] of buckets) if (now - b.at > 120_000) buckets.delete(k);
   refreshFeature();
 }, 60_000);

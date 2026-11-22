@@ -18,7 +18,7 @@ import { mixFromSettings } from '../audio/mix.js';
 export function useAudio() {
   const s = useSettings();
   const { world } = useWorld();
-  useEffect(() => { sound.setMix(mixFromSettings(s)); }, [s.volume, s.musicVolume, s.ambienceVolume, s.criesVolume, s.uiVolume, s.battleVolume, s.muted]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { sound.setMix(mixFromSettings(s)); }, [s.volume, s.musicVolume, s.criesVolume, s.uiVolume, s.battleVolume, s.muted]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => world?.events.on('sound', e => {
     const { cue, pan, gain, pitch } = e as { cue: Cue; pan: number; gain?: number; pitch?: number };
     sound.play(cue, { pan, gain, pitch });

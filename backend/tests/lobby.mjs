@@ -32,7 +32,7 @@ const listed = (l, code) => l.lobbies.some(x => x.code === code);
 const [ana, beto, cleo, dani, eve, fox, gus] = ['ana', 'beto', 'cleo', 'dani', 'eve', 'fox', 'gus'].map(client);
 for (const c of [ana, beto, cleo, dani, eve, fox, gus]) await connect(c);
 await until(() => ana.hello, 'hello');
-assert.equal(ana.hello.protocol, 8);
+assert.equal(ana.hello.protocol, 9);
 
 // A v3-style create (no visibility) is private and never listed.
 ana.send({ type: 'create', name: 'Ana', bestOf: 3, avatar: 'greninja', mode: 'app' });

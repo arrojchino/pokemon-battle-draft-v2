@@ -1,5 +1,6 @@
 import type { CharacterId, TypeName } from '@shared';
 import { pokemonArt } from '../assets.js';
+import type { MessageKey } from '../i18n/core.js';
 
 export type Emote = 'idle' | 'greet' | 'excited' | 'surprised' | 'victory' | 'sad' | 'thinking' | 'bow' | 'twirl' | 'nod' | 'punch' | 'thumbs' | 'faceplant';
 
@@ -31,6 +32,9 @@ const partner = (id: CharacterId, name: string, dex: number, types: TypeName[], 
  * Lugia grade B for its 512 px textures (docs/ASSET_AUDIT.md). Dex numbers and types are the official
  * ones; quips are original.
  */
+/** The dictionary key of a partner's quip (the English `quip` field stays as the reference text). */
+export const quipKey = (id: CharacterId) => `quip.${id}` as MessageKey;
+
 export const ROSTER: Character[] = [
   partner('greninja', 'Greninja', 658, ['Water', 'Dark'], '#3d7bff', '#10275c', 'Already three moves ahead of you.', { select: 'nod', attack: 'punch' }),
   partner('dragonite', 'Dragonite', 149, ['Dragon', 'Flying'], '#ffa94d', '#7a4310', 'Gentle until the bell rings.', { tossWin: 'victory' }),

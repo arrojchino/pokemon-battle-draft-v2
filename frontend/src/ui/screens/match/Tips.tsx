@@ -2,6 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { moveInfo, type TypeName } from '@shared';
 import { defenseChart, liveTypes, moveVerdict, shortMult, typeVerdict, type Fighter, type Verdict } from '../../../battle/matchup.js';
 import { TYPE_COLORS, TypeBadge } from '../../pokemon.js';
+import { t as tr, useT, type MessageKey } from '../../../i18n/index.js';
+
+/** Display labels for status conditions and move categories (the ids themselves stay data). */
+export const STATUS_KEY: Record<string, MessageKey> = { brn: 'tips.statusBrn', par: 'tips.statusPar', psn: 'tips.statusPsn', tox: 'tips.statusTox', slp: 'tips.statusSlp', frz: 'tips.statusFrz' };
+export const CATEGORY_KEY: Record<'Physical' | 'Special' | 'Status', MessageKey> = { Physical: 'tips.catPhysical', Special: 'tips.catSpecial', Status: 'tips.catStatus' };
 
 /* ------------------------------------------------------------------ tooltip layer */
 
@@ -88,7 +93,7 @@ export function useMoveTips(userOf: (el: Element) => Fighter | null) {
 
 /* ------------------------------------------------------------------ cards */
 
-const pct = (a: number) => (a ? `${a}%` : 'Never misses');
+const pct = (a: number) => (a ? `${a}%` : tr('tips.neverMisses'));
 
 export function VerdictChip({ v, compact = false }: { v: Verdict | null; compact?: boolean }) {
   if (!v || (v.tone === 'x1' && compact) || (v.tone === 'status' && compact)) return null;
@@ -96,25 +101,26 @@ export function VerdictChip({ v, compact = false }: { v: Verdict | null; compact
 }
 
 export function MoveCard({ name, pp, maxpp, user, target, teraPreview }: { name: string; pp?: number; maxpp?: number; user: Fighter; target: Fighter | null; teraPreview: TypeName | null }) {
+  const t = useT();
   const m = moveInfo(name);
   if (!m) return <strong>{name}</strong>;
   const v = moveVerdict(name, user, target, teraPreview);
   const stabPower = v?.stab && m.power ? Math.floor(m.power * 1.5) : null;
   return (
     <div className="tipcard" style={{ '--t': TYPE_COLORS[m.type] } as CSSProperties}>
-      <header><strong>{m.name}</strong><TypeBadge type={m.type} size="sm" /><span className={`cat cat--${m.category.toLowerCase()}`}>{m.category}</span></header>
+      <header><strong>{m.name}</strong><TypeBadge type={m.type} size="sm" /><span className={`cat cat--${m.category.toLowerCase()}`}>{t(CATEGORY_KEY[m.category])}</span></header>
       <dl className="tipcard__stats">
-        <div><dt>Power</dt><dd>{m.power ? <>{m.power}{stabPower && <small> ({stabPower} STAB)</small>}</> : '—'}</dd></div>
-        <div><dt>Accuracy</dt><dd>{pct(m.accuracy)}</dd></div>
+        <div><dt>{t('tips.power')}</dt><dd>{m.power ? <>{m.power}{stabPower && <small> {t('tips.stabPower', { n: stabPower })}</small>}</> : '–'}</dd></div>
+        <div><dt>{t('tips.accuracy')}</dt><dd>{pct(m.accuracy)}</dd></div>
         {pp !== undefined && <div><dt>PP</dt><dd>{pp}/{maxpp}</dd></div>}
-        {m.priority !== 0 && <div><dt>Priority</dt><dd>{m.priority > 0 ? `+${m.priority}` : m.priority}</dd></div>}
+        {m.priority !== 0 && <div><dt>{t('tips.priority')}</dt><dd>{m.priority > 0 ? `+${m.priority}` : m.priority}</dd></div>}
       </dl>
       <p className="tipcard__desc">{m.desc}</p>
       {target && v && v.tone !== 'status' && (
-        <p className="tipcard__verdict">vs {target.species}: <VerdictChip v={v} /></p>
+        <p className="tipcard__verdict">{t('tips.vs', { name: target.species })} <VerdictChip v={v} /></p>
       )}
       {v && v.notes.length > 0 && <ul className="tipcard__notes">{v.notes.map(n => <li key={n}>{n}</li>)}</ul>}
-      {teraPreview && <p className="tipcard__hint">Terastallize is on: STAB from {teraPreview} this turn.</p>}
+      {teraPreview && <p className="tipcard__hint">{t('tips.teraOn', { type: teraPreview })}</p>}
     </div>
   );
 }
@@ -128,6 +134,7 @@ function TypeRow({ label, types, tone }: { label: string; types: TypeName[]; ton
 export function MonCard({ f, hp, pct, status, moves, vs, foeAttacker, note }: {
   f: Fighter; hp?: { hp: number; maxhp: number } | null; pct?: boolean; status?: string | null; moves: string[]; vs: Fighter | null; foeAttacker?: Fighter | null; note?: string;
 }) {
+  const t = useT();
   const chart = defenseChart(f);
   const types = liveTypes(f);
   // How hard the opposing active's own types hit this Pokémon.
@@ -136,19 +143,19 @@ export function MonCard({ f, hp, pct, status, moves, vs, foeAttacker, note }: {
     <div className="tipcard" style={{ '--t': TYPE_COLORS[types[0] ?? 'Normal'] } as CSSProperties}>
       <header><strong>{f.species}</strong>{types.map(t => <TypeBadge key={t} type={t} size="sm" />)}{f.tera && <span className="tipcard__tera">Tera</span>}</header>
       <dl className="tipcard__stats">
-        {hp && <div><dt>HP</dt><dd>{pct ? `${Math.round((hp.hp / hp.maxhp) * 100)}%` : `${hp.hp}/${hp.maxhp}`}{status ? ` · ${status.toUpperCase()}` : ''}</dd></div>}
-        <div><dt>Ability</dt><dd>{f.ability || '?'}</dd></div>
-        <div><dt>Item</dt><dd>{f.item ?? 'None'}</dd></div>
+        {hp && <div><dt>{t('battle.hp')}</dt><dd>{pct ? `${Math.round((hp.hp / hp.maxhp) * 100)}%` : `${hp.hp}/${hp.maxhp}`}{status ? ` · ${STATUS_KEY[status] ? t(STATUS_KEY[status]) : status.toUpperCase()}` : ''}</dd></div>}
+        <div><dt>{t('tips.ability')}</dt><dd>{f.ability || '?'}</dd></div>
+        <div><dt>{t('tips.item')}</dt><dd>{f.item ?? t('tips.none')}</dd></div>
       </dl>
       {note && <p className="tipcard__hint">{note}</p>}
       <dl className="tipcard__chart">
-        <TypeRow label="Weak x4" types={chart.x4} tone="x4" />
-        <TypeRow label="Weak x2" types={chart.x2} tone="x2" />
-        <TypeRow label="Resists" types={[...chart.half, ...chart.quarter]} tone="half" />
-        <TypeRow label="Immune" types={chart.immune} tone="immune" />
+        <TypeRow label={t('tips.weak4')} types={chart.x4} tone="x4" />
+        <TypeRow label={t('tips.weak2')} types={chart.x2} tone="x2" />
+        <TypeRow label={t('tips.resists')} types={[...chart.half, ...chart.quarter]} tone="half" />
+        <TypeRow label={t('tips.immune')} types={chart.immune} tone="immune" />
       </dl>
       {incoming.length > 0 && (
-        <p className="tipcard__verdict">Takes from {foeAttacker!.species}'s types: {incoming.map(({ t, v }) => <span key={t} className={`vchip vchip--${v.tone}`}>{t} {shortMult(v) || 'x1'}</span>)}</p>
+        <p className="tipcard__verdict">{t('tips.takesFrom', { name: foeAttacker!.species })} {incoming.map(({ t, v }) => <span key={t} className={`vchip vchip--${v.tone}`}>{t} {shortMult(v) || 'x1'}</span>)}</p>
       )}
       <ul className="tipcard__moves">
         {moves.map(mv => {

@@ -1,4 +1,4 @@
-import { HUB_SINCE, LOBBIES_SINCE, type BattleMode, type CharacterId, type GameAction, type LiveBattle, type LobbySummary, type PlazaEmote, type PublicRoom, type Seat, type ServerMessage, type Spot, type Visibility } from '@shared';
+import { HUB_SINCE, LOBBIES_SINCE, poseAfter, type PlazaPose, type BattleMode, type CharacterId, type GameAction, type LiveBattle, type LobbySummary, type PlazaEmote, type PublicRoom, type Seat, type ServerMessage, type Spot, type Visibility } from '@shared';
 
 export type TransportKind = 'backend' | 'peer';
 export type BattleListener = (id: number, lines: string[], reset: boolean, deadline: number | null) => void;
@@ -67,6 +67,32 @@ export interface Transport {
   leave(): void;
   clearError(): void;
   dispose(): void;
+}
+
+/**
+ * Room-plaza presence for both transports: relays the other seat's moves and gestures to listeners, and keeps the
+ * pose each seat holds (sit, nap) so a listener that subscribes late (the plaza screen mounting after the room
+ * arrived) still learns it. A seat whose trainer is not connected comes back standing, so its pose is dropped.
+ */
+export class PresenceRelay {
+  private listeners = new Set<PresenceListener>();
+  private poses: [PlazaPose | null, PlazaPose | null] = [null, null];
+  constructor(store: SnapshotStore) {
+    store.subscribe(() => {
+      const room = store.get().room;
+      for (const s of [0, 1] as const) if (!room?.players[s]?.connected) this.poses[s] = null;
+    });
+  }
+  hear(m: PresenceMessage) {
+    if (m.type === 'emote') this.poses[m.seat] = poseAfter(this.poses[m.seat], m.emote);
+    this.listeners.forEach(l => l(m));
+  }
+  subscribe(l: PresenceListener) {
+    this.listeners.add(l);
+    for (const s of [0, 1] as const) { const p = this.poses[s]; if (p) l({ type: 'emote', seat: s, emote: p }); }
+    return () => { this.listeners.delete(l); };
+  }
+  reset() { this.poses = [null, null]; }
 }
 
 /** Small observable store used by both transports. */

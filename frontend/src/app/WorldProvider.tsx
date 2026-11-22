@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { World } from '../engine/World.js';
 import { displayOf, settings, useReducedMotion, useSettings } from './settings.js';
+import { t } from '../i18n/index.js';
 
 export type WorldStatus = { kind: 'loading'; progress: number; label: string } | { kind: 'ready' } | { kind: 'fallback'; reason: string };
 type Ctx = { world: World | null; status: WorldStatus; firstCharacter: boolean };
@@ -16,7 +17,7 @@ export function WorldProvider({ children }: { children: ReactNode }) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [world, setWorld] = useState<World | null>(null);
-  const [status, setStatus] = useState<WorldStatus>({ kind: 'loading', progress: 0, label: 'Preparing the stage' });
+  const [status, setStatus] = useState<WorldStatus>({ kind: 'loading', progress: 0, label: t('app.preparingStage') });
   const [firstCharacter, setFirstCharacter] = useState(false);
   const reduced = useReducedMotion();
   const s = useSettings();
@@ -25,16 +26,16 @@ export function WorldProvider({ children }: { children: ReactNode }) {
     let w: World | null = null; let cancelled = false;
     const offs: Array<() => void> = [];
     (async () => {
-      if (new URLSearchParams(location.search).has('nowebgl')) { setStatus({ kind: 'fallback', reason: 'WebGL disabled by ?nowebgl' }); return; }
+      if (new URLSearchParams(location.search).has('nowebgl')) { setStatus({ kind: 'fallback', reason: t('app.noWebglFlag') }); return; }
       try {
         const { World } = await import('../engine/World.js');
         if (cancelled) return;
-        if (!World.supported()) { setStatus({ kind: 'fallback', reason: 'WebGL 2 is not available in this browser' }); return; }
+        if (!World.supported()) { setStatus({ kind: 'fallback', reason: t('app.noWebgl2') }); return; }
         const st = settings.get(); const d = displayOf(st);
         w = new World(host.current!, canvas.current!, { ...d, calm: st.calm, steady: st.camera === 'steady', reducedMotion: reduced, preload: [st.partner] });
-        offs.push(w.events.on('progress', p => setStatus(prev => prev.kind === 'loading' ? { kind: 'loading', progress: p.total ? p.loaded / p.total : 0, label: `Loading ${p.label}` } : prev)));
+        offs.push(w.events.on('progress', p => setStatus(prev => prev.kind === 'loading' ? { kind: 'loading', progress: p.total ? p.loaded / p.total : 0, label: t('app.loadingWhat', { what: p.label }) } : prev)));
         offs.push(w.events.on('characterReady', () => { setFirstCharacter(true); setStatus(prev => prev.kind === 'loading' ? { kind: 'ready' } : prev); }));
-        offs.push(w.events.on('contextLost', () => setStatus({ kind: 'fallback', reason: 'The graphics context was lost' })));
+        offs.push(w.events.on('contextLost', () => setStatus({ kind: 'fallback', reason: t('app.contextLost') })));
         offs.push(w.events.on('contextRestored', () => setStatus({ kind: 'ready' })));
         offs.push(w.events.on('error', e => console.warn('[world]', e.message)));
         setWorld(w);

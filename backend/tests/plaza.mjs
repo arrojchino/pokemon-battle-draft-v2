@@ -29,13 +29,18 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 const a = client('a'); const b = client('b'); const c = client('c');
 await connect(a); await connect(b); await connect(c);
 await until(() => a.hello && b.hello && c.hello, 'hello');
-assert.equal(a.hello.protocol, 8);
+assert.equal(a.hello.protocol, 9);
 
 a.send({ type: 'create', name: 'Ana', bestOf: 3, avatar: 'greninja', mode: 'app' });
 await until(() => a.joined && a.state, 'create');
 assert.deepEqual(a.state.chat, [], 'a new room starts with an empty chat');
+// v9: a pose held before the rival arrives (Sit) reaches them as they join: the room remembers it per seat.
+a.send({ type: 'emote', emote: 'sit' });
+await wait(100);
 b.send({ type: 'join', code: a.state.code, name: 'Beto', avatar: 'lugia' });
 await until(() => b.state?.players[1] && a.state.players[1], 'join');
+await until(() => b.emotes.length === 1, 'the late joiner hears the pose');
+assert.deepEqual(b.emotes[0], { type: 'emote', seat: 0, emote: 'sit' });
 
 // Presence: off-field spots are pulled back to the platform edge, facing is wrapped, and only the other seat hears it.
 a.send({ type: 'move', x: 20, z: 0, face: 7 });
@@ -52,6 +57,22 @@ await until(() => b.errors.includes('Malformed message'), 'unknown emote rejecte
 await wait(150);
 assert.equal(a.moves.length, 0, 'a player never hears their own presence');
 assert.equal(a.emotes.length, 1);
+
+// An emote from a reaches b live; a Nap is then remembered for b's next socket (a reload resuming the seat),
+// and the seat that comes back is standing again: a's next reload hears no pose for b.
+a.send({ type: 'emote', emote: 'nap' });
+await until(() => b.emotes.some(e => e.emote === 'nap'), 'an emote from a reaches b');
+const b2 = client('b2'); await connect(b2); await until(() => b2.hello, 'b2 hello');
+b2.send({ type: 'resume', code: a.state.code, token: b.joined.token });
+await until(() => b2.joined && b2.emotes.length === 1, 'a resumed seat hears the pose');
+assert.deepEqual(b2.emotes[0], { type: 'emote', seat: 0, emote: 'nap' });
+const a2 = client('a2'); await connect(a2); await until(() => a2.hello, 'a2 hello');
+a2.send({ type: 'resume', code: a.state.code, token: a.joined.token });
+await until(() => a2.joined && a2.state, 'a resumes');
+await wait(150);
+assert.equal(a2.emotes.length, 0, 'nobody was holding a pose for a to hear');
+b2.ws.close(); a2.ws.close();
+await wait(100);
 
 // Chat lives in the room state: cleaned, numbered, seen by both seats.
 a.send({ type: 'chat', text: '  hola\u0000   mundo \u202e ' });

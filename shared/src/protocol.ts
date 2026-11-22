@@ -28,14 +28,18 @@ import { cleanChat, normalizeBestOf, type BattleMode, type ChatLine, type GameAc
  *     opts in with `hubFeed` gets that battle's public stream as `hubFeed` lines, the same lines spectators get,
  *     while staying in the plaza; it does not count as watching. Clients send `hubFeed` only to servers whose
  *     `hello.protocol` is at least FEED_SINCE.
+ * v9: held poses. Sit and Nap last until the partner gets up, so the server remembers them: main-plaza members
+ *     carry `pose` ('sit', 'nap' or null), and a trainer who takes or retakes a room seat hears the other seat's
+ *     pose as an `emote`. Nothing new is sent by clients, so there is no gate.
  * Servers accept every older client message unchanged, and older clients can read newer state.
  */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 export const LOBBIES_SINCE = 4;
 export const PLAZA_SINCE = 5;
 export const HUB_SINCE = 6;
 export const GESTURES_SINCE = 7;
 export const FEED_SINCE = 8;
+export const POSES_SINCE = 9;
 
 /**
  * Gestures a partner can play in a plaza. The first six (v7) are the models' own clips; `rise` gets up from a nap
@@ -44,6 +48,13 @@ export const FEED_SINCE = 8;
 export const PLAZA_EMOTES = ['happy', 'stretch', 'notice', 'nap', 'sit', 'rise', 'greet', 'excited', 'twirl', 'bow', 'thumbs', 'punch'] as const;
 export type PlazaEmote = (typeof PLAZA_EMOTES)[number];
 export const isPlazaEmote = (v: unknown): v is PlazaEmote => typeof v === 'string' && (PLAZA_EMOTES as readonly string[]).includes(v);
+/** A pose a partner holds until it gets up (v9): sitting or napping. */
+export type PlazaPose = 'sit' | 'nap';
+export const isPlazaPose = (v: unknown): v is PlazaPose => v === 'sit' || v === 'nap';
+/** The held pose after an emote: Sit and Nap start one, `rise` ends it, a passing gesture leaves it as it was. */
+export function poseAfter(pose: PlazaPose | null, emote: PlazaEmote): PlazaPose | null {
+  return emote === 'sit' || emote === 'nap' ? emote : emote === 'rise' ? null : pose;
+}
 /** Partners walk the stage platform inside this radius (stage units); the authority pulls anything further back to it. */
 export const PLAZA_R = 9;
 /** A partner's spot in the plaza: floor position and facing (radians; 0 faces the camera side of the field). */
@@ -60,7 +71,7 @@ const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinit
 /** The main plaza holds at most this many trainers at once. */
 export const MAX_HUB = 20;
 /** Someone in the main plaza: a server-issued id, their name and partner, and where the partner stands. */
-export type HubMember = { id: string; name: string; avatar: CharacterId | null } & Spot;
+export type HubMember = { id: string; name: string; avatar: CharacterId | null; pose: PlazaPose | null } & Spot;
 /** A line said in the main plaza. The speaker's name travels with it, so it still reads right after they leave. */
 export type HubLine = { id: number; from: string; name: string; text: string };
 /** An in-app battle in a public room, listed for spectators. */
@@ -193,7 +204,7 @@ function parseLobby(v: unknown): LobbySummary | null {
 
 function parseMember(v: unknown): HubMember | null {
   if (!isObj(v) || !isHubId(v.id) || !num(v.x) || !num(v.z) || !num(v.face)) return null;
-  return { id: v.id, name: cleanName(v.name, 'Trainer'), avatar: avatarOf(v.avatar), ...cleanSpot(v.x, v.z, v.face) };
+  return { id: v.id, name: cleanName(v.name, 'Trainer'), avatar: avatarOf(v.avatar), pose: isPlazaPose(v.pose) ? v.pose : null, ...cleanSpot(v.x, v.z, v.face) };
 }
 function parseHubLine(v: unknown): HubLine | null {
   if (!isObj(v) || !num(v.id) || !isHubId(v.from) || typeof v.text !== 'string') return null;

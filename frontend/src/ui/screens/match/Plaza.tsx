@@ -6,13 +6,16 @@ import type { Transport } from '../../../net/types.js';
 import { sound } from '../../../audio/sound.js';
 import { Icon, type IconName } from '../../primitives.js';
 import type { MatchModel } from './model.js';
+import { useT, type MessageKey } from '../../../i18n/index.js';
 
 /** Plaza gestures: each plays the partner model's own authored clip (Sit only where the model has one). */
-export const EMOTES: { emote: PlazaEmote & Gesture; label: string; icon: IconName }[] = [
-  { emote: 'happy', label: 'Happy', icon: 'star' },
-  { emote: 'stretch', label: 'Stretch', icon: 'spark' },
-  { emote: 'sit', label: 'Sit', icon: 'heart' },
-  { emote: 'nap', label: 'Nap', icon: 'moon' },
+/** Shortest gap between two gestures from this player (ms): under the server's 2 a second, with room for a `rise`. */
+export const EMOTE_GAP = 700;
+export const EMOTES: { emote: PlazaEmote & Gesture; label: MessageKey; icon: IconName }[] = [
+  { emote: 'happy', label: 'plaza.happy', icon: 'star' },
+  { emote: 'stretch', label: 'plaza.stretch', icon: 'spark' },
+  { emote: 'sit', label: 'plaza.sit', icon: 'heart' },
+  { emote: 'nap', label: 'plaza.nap', icon: 'moon' },
 ];
 type GestureState = { list: Gesture[]; resting: 'sit' | 'nap' | null };
 const NO_GESTURES: GestureState = { list: [], resting: null };
@@ -37,15 +40,16 @@ function useGestures(world: World | null, transport: Transport): GestureState {
 }
 /** The gesture buttons. While the partner sits or naps, that button gets it up and the others wait. */
 export function GestureBar({ world, transport, onGesture }: { world: World | null; transport: Transport; onGesture: (g: PlazaEmote) => void }) {
+  const t = useT();
   const { list, resting } = useGestures(world, transport);
   if (!list.length) return null;
   return (
-    <div className="chat__emotes" role="group" aria-label="Gestures">
+    <div className="chat__emotes" role="group" aria-label={t('plaza.gestures')}>
       {EMOTES.filter(x => list.includes(x.emote)).map(x => {
         const on = x.emote === resting;
         return (
           <button key={x.emote} type="button" className="emote" aria-pressed={on} disabled={!!resting && !on} onClick={() => onGesture(x.emote)}>
-            <Icon name={x.icon} size={15} /><span>{on ? (resting === 'sit' ? 'Stand up' : 'Wake up') : x.label}</span>
+            <Icon name={x.icon} size={15} /><span>{on ? (resting === 'sit' ? t('plaza.standUp') : t('plaza.wakeUp')) : t(x.label)}</span>
           </button>
         );
       })}
@@ -68,6 +72,7 @@ type Bubbles = [Bubble | null, Bubble | null];
  * `walking` is true while the stage is the plaza; elsewhere the chat stays and the bubbles follow the partners.
  */
 export function PlazaHud({ world, room, m, transport, walking }: { world: World | null; room: PublicRoom; m: MatchModel; transport: Transport; walking: boolean }) {
+  const t = useT();
   const chat = room.chat ?? NO_LINES;
   const lastId = chat.length ? chat[chat.length - 1].id : 0;
   const [open, setOpen] = useState(() => walking && media(ROOMY));
@@ -94,8 +99,10 @@ export function PlazaHud({ world, room, m, transport, walking }: { world: World 
   }, [world, transport, m.opp]);
 
   // A rival who arrives or comes back learns where this player's partner stands.
+  // A rival who leaves or drops comes back standing, so whatever pose we knew for them is forgotten.
   const oppHere = walking && m.oppConnected;
-  useEffect(() => { if (world && oppHere) world.plazaResend(); }, [world, oppHere]);
+  useEffect(() => { if (!world) return; if (oppHere) world.plazaResend(); else world.plazaForget(); }, [world, oppHere]);
+  useEffect(() => () => world?.plazaForget(), [world]);
 
   // Open in the plaza when there is room; folded away once the match moves on (the toggle brings it back).
   useEffect(() => { setOpen(walking && media(ROOMY)); }, [walking]);
@@ -176,9 +183,9 @@ export function PlazaHud({ world, room, m, transport, walking }: { world: World 
     setText('');
   };
   const emote = (e: PlazaEmote) => {
-    // The server passes about one emote a second; a faster local one would never reach the rival.
+    // At most one gesture every EMOTE_GAP ms, below the server's emote rate, so none is cut on the way.
     const now = performance.now();
-    if (now - lastEmote.current < 650) return;
+    if (now - lastEmote.current < EMOTE_GAP) return;
     lastEmote.current = now;
     world?.plazaEmote(e);
   };
@@ -202,41 +209,41 @@ export function PlazaHud({ world, room, m, transport, walking }: { world: World 
     <>
       <div className="ptags" aria-hidden="true">{tag(0)}{tag(1)}</div>
       {open ? (
-        <section className="chat panel" aria-label="Room chat">
+        <section className="chat panel" aria-label={t('plaza.roomChat')}>
           <header className="chat__head">
-            <p className="eyebrow"><span className="jp">チャット</span> {walking ? 'Plaza chat' : 'Room chat'}</p>
+            <p className="eyebrow">{walking ? t('plaza.plazaChat') : t('plaza.roomChat')}</p>
             {m.hasOpponent && (
               <button type="button" className={`iconbtn ${muted ? 'is-on' : ''}`} aria-pressed={muted} onClick={() => setMuted(v => !v)}
-                title={muted ? `Show ${m.oppName}'s messages` : `Hide ${m.oppName}'s messages`} aria-label={muted ? `Show ${m.oppName}'s messages` : `Hide ${m.oppName}'s messages`}>
+                title={muted ? t('plaza.showMessages', { name: m.oppName }) : t('plaza.hideMessages', { name: m.oppName })} aria-label={muted ? t('plaza.showMessages', { name: m.oppName }) : t('plaza.hideMessages', { name: m.oppName })}>
                 <Icon name={muted ? 'mute' : 'volume'} size={16} />
               </button>
             )}
-            <button type="button" className="iconbtn" onClick={() => setOpen(false)} aria-label="Close chat"><Icon name="close" size={16} /></button>
+            <button type="button" className="iconbtn" onClick={() => setOpen(false)} aria-label={t('plaza.closeChat')}><Icon name="close" size={16} /></button>
           </header>
           <ol className="chat__log scroller" ref={logRef} role="log" aria-live="polite">
             {lines.map(l => (
               <li key={l.id} className={`chat__line ${l.seat === m.me ? 'is-mine' : ''}`}><strong>{m.names[l.seat]}</strong><span>{l.text}</span></li>
             ))}
-            {!lines.length && <li className="chat__empty">{m.hasOpponent ? `Say hi to ${m.oppName}. Lines also pop up over your partner.` : 'Waiting for a rival. They can read this when they join.'}</li>}
+            {!lines.length && <li className="chat__empty">{m.hasOpponent ? t('plaza.emptyWithRival', { name: m.oppName }) : t('plaza.emptyAlone')}</li>}
           </ol>
           {walking && <GestureBar world={world} transport={transport} onGesture={emote} />}
           <form className="chat__form" onSubmit={send}>
             <input ref={inputRef} className="chat__input" value={text} onChange={e => setText(e.target.value)} maxLength={MAX_CHAT}
-              placeholder={m.hasOpponent ? `Message ${m.oppName}` : 'Leave a message'} aria-label="Chat message" enterKeyHint="send" autoComplete="off"
+              placeholder={m.hasOpponent ? t('plaza.messageTo', { name: m.oppName }) : t('plaza.leaveMessage')} aria-label={t('plaza.chatMessage')} enterKeyHint="send" autoComplete="off"
               onKeyDown={e => { if (e.key === 'Escape') e.currentTarget.blur(); }} />
-            <button className="btn btn--primary chat__send" disabled={!text.trim()}>Send</button>
+            <button className="btn btn--primary chat__send" disabled={!text.trim()}>{t('plaza.send')}</button>
           </form>
           {walking && (
             <p className="chat__hint">
               {touch
-                ? <>Tap the floor to walk there. Tap your rival's partner to go say hello.</>
-                : <><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to walk. Click the floor to go there, or your rival's partner to say hello. <kbd>Enter</kbd> chats.</>}
+                ? t('plaza.hintTouch')
+                : t.rich('plaza.hintKeys', { keys: <><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></>, enter: <kbd>Enter</kbd> })}
             </p>
           )}
         </section>
       ) : (
-        <button type="button" className="chat-toggle iconbtn iconbtn--text" onClick={() => setOpen(true)} aria-label={unread ? `Open chat, ${unread} new` : 'Open chat'}>
-          <Icon name="text" size={16} />Chat{unread > 0 && <span className="chat-toggle__count">{unread}</span>}
+        <button type="button" className="chat-toggle iconbtn iconbtn--text" onClick={() => setOpen(true)} aria-label={unread ? t(unread === 1 ? 'plaza.openChatNew.one' : 'plaza.openChatNew.other', { n: unread }) : t('plaza.openChat')}>
+          <Icon name="text" size={16} />{t('plaza.chat')}{unread > 0 && <span className="chat-toggle__count">{unread}</span>}
         </button>
       )}
     </>

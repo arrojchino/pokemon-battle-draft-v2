@@ -1,20 +1,22 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { POOL } from '@shared';
-import { characterById } from '../../characters/roster.js';
+import { characterById, quipKey } from '../../characters/roster.js';
 import { useSettings } from '../../app/settings.js';
 import { useWorld } from '../../app/WorldProvider.js';
 import { sound } from '../../audio/sound.js';
 import { useStageReady } from '../Overlays.js';
 import { Icon, type IconName } from '../primitives.js';
+import { useT } from '../../i18n/index.js';
 
 type Props = { inviteCode: string; onPlay: () => void; onJoin: () => void; onPokedex: () => void; onPartners: () => void; onSettings: () => void; onCredits: () => void; onPlaza?: () => void };
-type Item = { id: string; label: string; icon: IconName; on: () => void; jp?: string; desc?: string; primary?: boolean; util?: boolean };
+type Item = { id: string; label: string; icon: IconName; on: () => void; desc?: string; primary?: boolean; util?: boolean };
 
 /**
  * The first frame people see: a classic start menu with a sliding ▶ cursor, your partner Pokémon on the field beside it.
  * Arrow keys move the cursor (Settings and Credits share the last row), Enter picks, Escape is ignored.
  */
 export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners, onSettings, onCredits, onPlaza }: Props) {
+  const t = useT();
   const s = useSettings();
   const c = characterById(s.partner)!;
   const { world } = useWorld();
@@ -37,14 +39,14 @@ export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners,
   const nod = () => { const now = performance.now(); if (now - lastNod.current > 2500) { lastNod.current = now; world?.emote(s.partner, 'nod'); } };
 
   const items: Item[] = [
-    ...(inviteCode ? [{ id: 'invite', label: 'Join invite', jp: '招待', desc: `Room ${inviteCode.slice(0, 12)}`, icon: 'link' as const, on: onJoin, primary: true }] : []),
-    { id: 'play', label: 'Play online', jp: '対戦', desc: 'Create a room and invite a rival', icon: 'swords', on: onPlay, primary: !inviteCode },
-    ...(onPlaza ? [{ id: 'plaza', label: 'Plaza', jp: '広場', desc: 'Walk with your partner, meet trainers, watch battles', icon: 'users' as const, on: onPlaza }] : []),
-    ...(!inviteCode ? [{ id: 'join', label: 'Join with code', jp: '参加', desc: "Enter a rival's room code", icon: 'hash' as const, on: onJoin }] : []),
-    { id: 'pool', label: 'Draft pool', jp: '図鑑', desc: `All ${POOL.length} sets the coin can deal`, icon: 'grid', on: onPokedex },
-    { id: 'partner', label: 'Partner', jp: '相棒', desc: `Choose who cheers you on · ${c.name}`, icon: 'user', on: onPartners },
-    { id: 'settings', label: 'Settings', icon: 'gear', on: onSettings, util: true },
-    { id: 'credits', label: 'Credits', icon: 'info', on: onCredits, util: true },
+    ...(inviteCode ? [{ id: 'invite', label: t('title.joinInvite'), desc: t('title.room', { code: inviteCode.slice(0, 12) }), icon: 'link' as const, on: onJoin, primary: true }] : []),
+    { id: 'play', label: t('title.playOnline'), desc: t('title.playOnlineDesc'), icon: 'swords', on: onPlay, primary: !inviteCode },
+    ...(onPlaza ? [{ id: 'plaza', label: t('title.plaza'), desc: t('title.plazaDesc'), icon: 'users' as const, on: onPlaza }] : []),
+    ...(!inviteCode ? [{ id: 'join', label: t('title.joinCode'), desc: t('title.joinCodeDesc'), icon: 'hash' as const, on: onJoin }] : []),
+    { id: 'pool', label: t('title.pool'), desc: t('title.poolDesc', { count: POOL.length }), icon: 'grid', on: onPokedex },
+    { id: 'partner', label: t('title.partner'), desc: t('title.partnerDesc', { name: c.name }), icon: 'user', on: onPartners },
+    { id: 'settings', label: t('title.settings'), icon: 'gear', on: onSettings, util: true },
+    { id: 'credits', label: t('title.credits'), icon: 'info', on: onCredits, util: true },
   ];
   const main = items.filter(it => !it.util), util = items.filter(it => it.util);
   // Rows of item indices for 2D cursor movement: one item per row, then the utility pair side by side.
@@ -104,7 +106,6 @@ export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners,
         <span className="menu__label">{it.label}</span>
         {it.desc && <span className="menu__desc">{it.desc}</span>}
       </span>
-      {it.jp && <span className="menu__jp jp" aria-hidden="true">{it.jp}</span>}
     </button>
   );
 
@@ -117,21 +118,21 @@ export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners,
             <span className="wordmark__pre">Pokémon</span>
             <span className="wordmark__main"><span>Battle</span> <span>Draft</span></span>
           </h1>
-          <p className="eyebrow title__league"><Icon name="trophy" size={14} />Stadium League<span className="jp">スタジアムリーグ</span></p>
-          <p className="title__lede">Two trainers, one coin, twelve random sets. Draft your team, then settle it under the stadium lights.</p>
+          <p className="eyebrow title__league"><Icon name="trophy" size={14} />{t('title.league')}</p>
+          <p className="title__lede">{t('title.lede')}</p>
         </header>
-        <nav className="menu" ref={nav} aria-label="Main menu">
+        <nav className="menu" ref={nav} aria-label={t('title.mainMenu')}>
           <span className="menu__cursor" aria-hidden="true" />
           {main.map((it, i) => row(it, i))}
           <div className="menu__util">{util.map((it, i) => row(it, main.length + i))}</div>
         </nav>
       </div>
-      <aside className="nameplate" aria-label="Your partner" style={{ '--partner': c.accent } as CSSProperties}>
+      <aside className="nameplate" aria-label={t('title.yourPartner')} style={{ '--partner': c.accent } as CSSProperties}>
         <img className="nameplate__badge" src={c.portrait} alt="" />
         <span className="nameplate__text">
-          <span className="eyebrow"><span className="jp">相棒</span>Partner</span>
+          <span className="eyebrow">{t('title.partner')}</span>
           <strong className="nameplate__name">{c.name}</strong>
-          <q className="nameplate__quip">{c.quip}</q>
+          <q className="nameplate__quip">{t(quipKey(c.id))}</q>
         </span>
       </aside>
     </main>

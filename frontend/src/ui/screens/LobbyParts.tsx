@@ -2,8 +2,9 @@ import type { CSSProperties } from 'react';
 import type { BattleMode, CharacterId, Visibility } from '@shared';
 import { characterById } from '../../characters/roster.js';
 import { Icon } from '../primitives.js';
+import type { MessageKey } from '../../i18n/index.js';
 
-export const MODE_LABEL: Record<BattleMode, string> = { app: 'Battle here', showdown: 'On Showdown' };
+export const MODE_LABEL: Record<BattleMode, MessageKey> = { app: 'lobby.modeApp', showdown: 'lobby.modeShowdown' };
 
 /** Lobby settings remembered for this visit: the create form starts from them and Quick join opens lobbies with them. */
 export const lobbyPrefs: { bestOf: 3 | 5; visibility: Visibility } = { bestOf: 3, visibility: 'private' };

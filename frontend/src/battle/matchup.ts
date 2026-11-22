@@ -1,4 +1,5 @@
 import { TYPE_NAMES, conditionImmune, moveInfo, typeMultiplier, type MoveInfo, type TypeName } from '@shared';
+import { tDoc as tr } from '../i18n/core.js';
 
 /**
  * Showdown-style matchup hints. Both teams are public after the draft, so abilities and items are
@@ -13,8 +14,8 @@ export const liveTypes = (f: Fighter): TypeName[] => (f.tera && f.tera !== 'Stel
 export type Verdict = {
   mult: number | null;          // damage multiplier (null for status moves)
   tone: 'x4' | 'x2' | 'x1' | 'half' | 'quarter' | 'immune' | 'status' | 'blocked';
-  label: string;                // "Super effective", "No effect", ...
-  notes: string[];              // why, in plain words
+  label: string;                // "Super effective", "No effect", ... in the game's language
+  notes: string[];              // why, in plain words (ability, item, move and type names stay English)
   stab: boolean;
 };
 
@@ -29,50 +30,50 @@ export function moveVerdict(moveName: string, user: Fighter, target: Fighter | n
   const userTypes: TypeName[] = tera && tera !== 'Stellar' ? [...new Set([...user.types, tera])] : user.types;
   const stab = m.category !== 'Status' && (userTypes.includes(m.type) || user.ability === 'Protean');
   const notes: string[] = [];
-  if (stab) notes.push(user.ability === 'Protean' && !userTypes.includes(m.type) ? 'Protean makes it STAB (x1.5)' : 'Same-type bonus (STAB x1.5)');
-  if (!target || m.self) return { mult: null, tone: 'status', label: m.self ? 'Affects your side' : 'Status move', notes, stab };
+  if (stab) notes.push(user.ability === 'Protean' && !userTypes.includes(m.type) ? tr('mu.protean') : tr('mu.stab'));
+  if (!target || m.self) return { mult: null, tone: 'status', label: m.self ? tr('mu.affectsSide') : tr('mu.statusMove'), notes, stab };
 
   const moldBreaker = user.ability === 'Mold Breaker';
   const ability = moldBreaker && BYPASS.has(target.ability) ? '' : target.ability;
-  if (moldBreaker && BYPASS.has(target.ability)) notes.push(`Mold Breaker ignores ${target.ability}`);
+  if (moldBreaker && BYPASS.has(target.ability)) notes.push(tr('mu.moldBreaker', { ability: target.ability }));
   const types = liveTypes(target);
 
   if (m.category === 'Status') return statusVerdict(m, target, ability, types, notes, stab);
 
   let mult = typeMultiplier(m.type, types);
   const why = (s: string) => notes.push(s);
-  if (mult === 0) why(`${target.species} is immune to ${m.type}`);
+  if (mult === 0) why(tr('mu.immuneTo', { name: target.species, type: m.type }));
   if (m.type === 'Ground' && mult > 0) {
     if (ability === 'Levitate') { mult = 0; why('Levitate'); }
-    else if (target.item === 'Air Balloon') { mult = 0; why('Air Balloon (pops when hit)'); }
+    else if (target.item === 'Air Balloon') { mult = 0; why(tr('mu.airBalloon')); }
   }
-  if (m.type === 'Electric' && ability === 'Volt Absorb' && mult > 0) { mult = 0; why('Volt Absorb heals it instead'); }
-  if (m.type === 'Ghost' && ability === 'Purifying Salt' && mult > 0) why('Purifying Salt halves Ghost damage');
-  if (m.type === 'Fire' && ability === 'Heatproof' && mult > 0) why('Heatproof halves Fire damage');
-  if (m.type === 'Fire' && ability === 'Thermal Exchange' && mult > 0) why('Thermal Exchange: Fire raises its Attack');
-  if (ability === 'Disguise' && mult > 0) why('Disguise absorbs the first hit');
-  if (target.tera) why(`Terastallized: defends as ${liveTypes(target).join('/')}`);
+  if (m.type === 'Electric' && ability === 'Volt Absorb' && mult > 0) { mult = 0; why(tr('mu.voltAbsorb')); }
+  if (m.type === 'Ghost' && ability === 'Purifying Salt' && mult > 0) why(tr('mu.purifyingSaltGhost'));
+  if (m.type === 'Fire' && ability === 'Heatproof' && mult > 0) why(tr('mu.heatproof'));
+  if (m.type === 'Fire' && ability === 'Thermal Exchange' && mult > 0) why(tr('mu.thermalExchange'));
+  if (ability === 'Disguise' && mult > 0) why(tr('mu.disguise'));
+  if (target.tera) why(tr('mu.tera', { types: liveTypes(target).join('/') }));
   return { mult, tone: toneOf(mult), label: labelOf(mult), notes, stab };
 }
 
 function statusVerdict(m: MoveInfo, target: Fighter, ability: string, types: TypeName[], notes: string[], stab: boolean): Verdict {
-  const blocked = (why: string): Verdict => ({ mult: 0, tone: 'blocked', label: 'Fails', notes: [...notes, why], stab });
-  if (ability === 'Good as Gold') return blocked('Good as Gold blocks status moves');
-  if (ability === 'Magic Bounce') return blocked('Magic Bounce reflects it back');
-  if (m.typeImmunity && typeMultiplier(m.type, types) === 0) return blocked(`${target.species} is immune to ${m.type}`);
-  if (m.powder && conditionImmune('powder', types)) return blocked('Grass types ignore powder moves');
-  if (m.name === 'Leech Seed' && types.includes('Grass')) return blocked('Grass types cannot be seeded');
+  const blocked = (why: string): Verdict => ({ mult: 0, tone: 'blocked', label: tr('mu.fails'), notes: [...notes, why], stab });
+  if (ability === 'Good as Gold') return blocked(tr('mu.goodAsGold'));
+  if (ability === 'Magic Bounce') return blocked(tr('mu.magicBounce'));
+  if (m.typeImmunity && typeMultiplier(m.type, types) === 0) return blocked(tr('mu.immuneTo', { name: target.species, type: m.type }));
+  if (m.powder && conditionImmune('powder', types)) return blocked(tr('mu.powder'));
+  if (m.name === 'Leech Seed' && types.includes('Grass')) return blocked(tr('mu.seed'));
   if (m.status) {
-    if (ability === 'Purifying Salt') return blocked('Purifying Salt prevents status');
-    if (m.status === 'brn' && (ability === 'Thermal Exchange' || conditionImmune('brn', types))) return blocked(ability === 'Thermal Exchange' ? 'Thermal Exchange prevents burns' : 'Fire types cannot be burned');
-    if (m.status === 'par' && conditionImmune('par', types)) return blocked('Electric types cannot be paralyzed');
-    if ((m.status === 'tox' || m.status === 'psn') && conditionImmune(m.status, types)) return blocked('Poison and Steel types cannot be poisoned');
+    if (ability === 'Purifying Salt') return blocked(tr('mu.purifyingSaltStatus'));
+    if (m.status === 'brn' && (ability === 'Thermal Exchange' || conditionImmune('brn', types))) return blocked(ability === 'Thermal Exchange' ? tr('mu.thermalBurn') : tr('mu.fireBurn'));
+    if (m.status === 'par' && conditionImmune('par', types)) return blocked(tr('mu.elecPar'));
+    if ((m.status === 'tox' || m.status === 'psn') && conditionImmune(m.status, types)) return blocked(tr('mu.poison'));
   }
-  return { mult: null, tone: 'status', label: 'Status move', notes, stab };
+  return { mult: null, tone: 'status', label: tr('mu.statusMove'), notes, stab };
 }
 
 const toneOf = (x: number): Verdict['tone'] => (x === 0 ? 'immune' : x >= 4 ? 'x4' : x >= 2 ? 'x2' : x <= 0.25 ? 'quarter' : x < 1 ? 'half' : 'x1');
-const labelOf = (x: number) => (x === 0 ? 'No effect' : x >= 4 ? 'Super effective x4' : x >= 2 ? 'Super effective x2' : x <= 0.25 ? 'Barely effective x0.25' : x < 1 ? 'Not very effective x0.5' : 'Neutral');
+const labelOf = (x: number) => tr(x === 0 ? 'mu.noEffect' : x >= 4 ? 'mu.x4' : x >= 2 ? 'mu.x2' : x <= 0.25 ? 'mu.quarter' : x < 1 ? 'mu.half' : 'mu.neutral');
 export const shortMult = (v: Verdict | null) => (!v || v.mult === null ? '' : v.mult === 0 ? '✕' : v.mult === 0.25 ? '¼' : v.mult === 0.5 ? '½' : v.mult === 1 ? '' : `x${v.mult}`);
 
 /** A bare attacking type against a Pokémon, including the always-on Ground/Electric immunities. */

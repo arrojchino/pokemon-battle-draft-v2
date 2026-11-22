@@ -14,12 +14,18 @@ export type BattleSnapshot = {
   version: number;
 };
 
+/**
+ * Lines are classified by their message key, so the rules hold in every language; the English patterns only
+ * cover an entry logged without a key.
+ */
 /** A damage line that only states the HP lost (the bar shows it). */
 const HP_ONLY = / lost \d+(\.\d+)?% of its health\.$/;
 /** Whether a log entry belongs in the message box (turn markers and bare HP figures do not). */
-export const inBox = (e: LogEntry) => e.kind !== 'turn' && !HP_ONLY.test(e.text);
+export const inBox = (e: LogEntry) => e.kind !== 'turn' && (e.key ? e.key !== 'model.lostHealth' : !HP_ONLY.test(e.text));
 /** Messages that are asides (ability tags, items shown, hit counts): read quickly. */
 const MINOR = /^\[.*\]$|^Hit \d+ times?!$| has .+\.$| ate its | was used up\.$|'s .+ ended\.$/;
+const MINOR_KEYS: ReadonlySet<string> = new Set(['model.ability', 'model.hitOne', 'model.hitOther', 'model.hasItem', 'model.hasItemFrom', 'model.ateItem', 'model.itemUsed', 'model.effectEnd']);
+const isMinor = (e: LogEntry) => (e.key ? MINOR_KEYS.has(e.key) : MINOR.test(e.text));
 /**
  * How long a set of messages needs on screen to be read: a base plus a per-character allowance, with a floor
  * and a ceiling. Asides get a shorter floor so they do not drag the pace.
@@ -27,7 +33,7 @@ const MINOR = /^\[.*\]$|^Hit \d+ times?!$| has .+\.$| ate its | was used up\.$|'
 export function readTime(entries: readonly LogEntry[]): number {
   if (!entries.length) return 0;
   const chars = entries.reduce((n, e) => n + e.text.length, 0);
-  const minor = entries.every(e => MINOR.test(e.text));
+  const minor = entries.every(isMinor);
   return minor ? Math.min(1100, Math.max(650, 420 + 30 * chars)) : Math.min(2300, Math.max(900, 420 + 30 * chars));
 }
 

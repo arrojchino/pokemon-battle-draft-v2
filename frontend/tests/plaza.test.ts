@@ -224,7 +224,10 @@ describe('main plaza protocol', () => {
     const member = { id: 'm3', name: 'Beto', avatar: 'lugia', x: 1, z: 2, face: 0 };
     const line = { id: 1, from: 'm3', name: 'Beto', text: 'hi' };
     expect(parseServerMessage({ type: 'hub', you: 'm3', members: [member, { id: 'x', name: 'bad', x: 0, z: 0, face: 0 }], chat: [line, { ...line, id: 2, text: '\u0000' }] }))
-      .toEqual({ type: 'hub', you: 'm3', members: [member], chat: [line] });
+      .toEqual({ type: 'hub', you: 'm3', members: [{ ...member, pose: null }], chat: [line] });
+    // v9: a held pose survives parsing, anything else reads as standing
+    expect(parseServerMessage({ type: 'hub', you: 'm3', members: [{ ...member, pose: 'nap' }, { ...member, id: 'm4', pose: 'dance' }], chat: [] }))
+      .toEqual({ type: 'hub', you: 'm3', members: [{ ...member, pose: 'nap' }, { ...member, id: 'm4', pose: null }], chat: [] });
     expect(parseServerMessage({ type: 'hubMove', id: 'm3', x: 99, z: 0, face: 0 })).toEqual({ type: 'hubMove', id: 'm3', x: PLAZA_R, z: 0, face: 0 });
     expect(parseServerMessage({ type: 'hubLeave', id: 'rival' })).toBeNull();
     expect(parseServerMessage({ type: 'watching', code: null })).toEqual({ type: 'watching', code: null });

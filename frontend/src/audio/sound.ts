@@ -1,13 +1,13 @@
 /**
  * AudioManager: every sound in the game goes through here.
  *
- * - Categories: each cue answers to one volume (music, environment, Pokémon cries, interface, battle). Each
+ * - Categories: each cue answers to one volume (music, Pokémon cries, interface, effects). Each
  *   category has its own fader, ducking stage and profile level into a master bus with a limiter and a soft
  *   clipper, so nothing clips however many sounds pile up (see graph.ts, mix.ts).
- * - Profiles ('menu' | 'plaza' | 'battle' | 'watch') crossfade the music piece and ambience beds and set the
- *   cry policy: quiet and rare in menus, occasional in the plaza, normal in battle.
- * - Synthesized: every effect, the plaza ambience and both music pieces are generated live with Web Audio
- *   (synth.ts, ambience.ts, music.ts); nothing to download or license. Pokémon cries are the one recording,
+ * - Profiles ('menu' | 'plaza' | 'battle' | 'watch') crossfade the music piece and set the cry policy: quiet
+ *   and rare in menus, occasional in the plaza, normal in battle. There is no environment bed.
+ * - Synthesized: every effect and both music pieces are generated live with Web Audio (synth.ts, music.ts);
+ *   nothing to download or license. Pokémon cries are the one recording,
  *   fetched from the PokéAPI cries repository on first use, then treated once per species (analysis.ts:
  *   loudness-normalized, harsh highs cut, length capped, soft-clipped) and throttled per species and globally.
  * - Throttling: repeats of a cue inside its minimum gap are dropped, quick repeats get softer, and each
@@ -18,10 +18,9 @@
  */
 import { pokemonCry } from '../assets.js';
 import { CRY, measure, mono, processCry, type CryStats, type Level } from './analysis.js';
-import { Ambience } from './ambience.js';
 import { Graph } from './graph.js';
 import {
-  ALL_CUES, AUDIO_DEFAULTS, CRY_DUCK, CRY_POLICY, CUE_CATEGORY, CUE_GAP, DEFAULT_GAP, DUCK, MAX_VOICES, PRIORITY, PROFILES,
+  ALL_CUES, AUDIO_DEFAULTS, CRY_DUCK, CRY_POLICY, CUE_CATEGORY, CUE_GAP, CUE_TRIM, DEFAULT_GAP, DUCK, MAX_VOICES, PRIORITY, PROFILES,
   REPEAT_FALLOFF, REPEAT_WINDOW, categoryGain, type AudioMix, type Category, type Cue, type Profile,
 } from './mix.js';
 import { MusicPlayer } from './music.js';
@@ -48,12 +47,11 @@ class AudioManager {
   private g: Graph | null = null;
   private synth: Synth | null = null;
   private music: MusicPlayer | null = null;
-  private amb: Ambience | null = null;
   private mix: AudioMix = { ...AUDIO_DEFAULTS };
   private profile: Profile = 'menu';
   private last = new Map<Cue, number>();
   private rep = new Map<Cue, number>();
-  private busy: Record<Category, number[]> = { music: [], ambience: [], cries: [], ui: [], battle: [] };
+  private busy: Record<Category, number[]> = { music: [], cries: [], ui: [], battle: [] };
   private cries = new Map<number, Promise<CryEntry>>();
   private cryAt = -Infinity;
   private cryBy = new Map<number, number>();
@@ -70,7 +68,6 @@ class AudioManager {
       this.g = new Graph(ctx, this.mix, this.profile);
       this.synth = new Synth(this.g);
       this.music = new MusicPlayer(this.g);
-      this.amb = new Ambience(this.g);
       document.addEventListener('visibilitychange', () => this.onVisibility());
       window.setInterval(() => this.pump(), 100);
       this.beds(3);
@@ -78,19 +75,19 @@ class AudioManager {
     if (this.live.state === 'suspended' && !document.hidden) void this.live.resume().then(() => this.pump());
   }
 
-  /** Player volumes (0..1 each) and mute; music and ambience stop entirely while silent. */
+  /** Player volumes (0..1 each) and mute; the music stops entirely while silent. */
   setMix(m: Partial<AudioMix>) {
     const before = this.mix;
     this.mix = { ...this.mix, ...m };
     this.g?.setMix(this.mix);
     const on = (x: AudioMix, c: Category) => categoryGain(x, c, this.profile) > 0;
-    if (on(before, 'music') !== on(this.mix, 'music') || on(before, 'ambience') !== on(this.mix, 'ambience')) this.beds(1.5);
+    if (on(before, 'music') !== on(this.mix, 'music')) this.beds(1.5);
   }
   /** Master volume and mute (kept for older callers; setMix covers every category). */
   setVolume(volume: number, muted: boolean) { this.setMix({ master: volume, muted }); }
   getMix(): AudioMix { return { ...this.mix }; }
 
-  /** Switch the soundscape: crossfades music and ambience, sets category levels and the cry policy. */
+  /** Switch the soundscape: crossfades the music, sets category levels and the cry policy. */
   setProfile(p: Profile) {
     if (!PROFILES.includes(p) || p === this.profile) return;
     this.profile = p;
@@ -101,16 +98,15 @@ class AudioManager {
   get currentProfile(): Profile { return this.profile; }
 
   private beds(fade: number) {
-    if (!this.music || !this.amb) return;
+    if (!this.music) return;
     if (categoryGain(this.mix, 'music', this.profile) > 0) this.music.play(this.profile, fade); else this.music.stop(fade);
-    if (categoryGain(this.mix, 'ambience', this.profile) > 0) this.amb.start(this.profile, fade); else this.amb.stop(fade);
     this.pump();
   }
   private pump() {
     const ctx = this.live;
     if (!ctx || ctx.state !== 'running') return;
     const until = ctx.currentTime + 0.4;
-    this.music?.schedule(until); this.amb?.schedule(until);
+    this.music?.schedule(until);
   }
   private onVisibility() {
     const ctx = this.live, g = this.g;
@@ -135,7 +131,7 @@ class AudioManager {
     const t = now + Math.max(0.015, (this.live?.baseLatency || 0) + 0.008);
     s.bus = g.input[cat];
     const ring = playCue(s, cue, t, {
-      gain: clamp(o.gain ?? 1, 0, 1.5) * Math.pow(REPEAT_FALLOFF, rep),
+      gain: clamp(o.gain ?? 1, 0, 1.5) * Math.pow(REPEAT_FALLOFF, rep) * (CUE_TRIM[cue] ?? 1),
       pan: o.pan === undefined ? undefined : clamp(o.pan, -1, 1),
       pitch: o.pitch === undefined ? undefined : clamp(o.pitch, 0.5, 2),
     });
@@ -176,7 +172,7 @@ class AudioManager {
     src.start(t);
     const dur = buf.duration / rate;
     this.cryEnds.push(t + dur);
-    g.duck('music', CRY_DUCK.music, dur); g.duck('ambience', CRY_DUCK.ambience, dur);
+    g.duck('music', CRY_DUCK.music, dur);
   }
   /** Fetch, decode and treat a cry once per species (cached; a failed fetch is retried next time). */
   private loadCry(ctx: BaseAudioContext, dex: number): Promise<CryEntry> {
@@ -209,7 +205,7 @@ class AudioManager {
       if (dex) void this.loadCry(ctx, dex).then(e => { if (this.live === ctx) this.startCry(e.buf, {}); }).catch(() => { /* offline */ });
       return;
     }
-    const cue = ({ ui: 'confirm', battle: 'hit', ambience: 'step' } as Partial<Record<Category, Cue>>)[cat];
+    const cue = ({ ui: 'confirm', battle: 'hit' } as Partial<Record<Category, Cue>>)[cat];
     if (cue) this.play(cue);
   }
 
@@ -246,7 +242,7 @@ class AudioManager {
     const off = new OfflineAudioContext(2, Math.round(sr * (opt.seconds ?? (cue === 'introSwell' ? 7 : 3))), sr);
     const g = new Graph(off, { ...AUDIO_DEFAULTS, ...opt.mix }, profile);
     const s = new Synth(g); s.rnd = seeded(7); s.bus = g.input[cat];
-    const ring = playCue(s, cue, 0.02, { gain: opt.gain, pitch: opt.pitch });
+    const ring = playCue(s, cue, 0.02, { gain: (opt.gain ?? 1) * (CUE_TRIM[cue] ?? 1), pitch: opt.pitch });
     const b = await off.startRendering();
     const lv = measure([b.getChannelData(0), b.getChannelData(1)], sr);
     return { cue, category: cat, profile, ring, ...lv, rms: Math.pow(10, lv.rmsDb / 20) };
@@ -263,14 +259,13 @@ class AudioManager {
     const b = await off.startRendering();
     return { dex, ...e.stats, out: measure([b.getChannelData(0), b.getChannelData(1)], sr) as Level };
   }
-  /** QA: render a profile's music and/or ambience for `seconds` (seeded) and measure it. */
-  async renderBeds(profile: Profile, seconds = 16, opt: { mix?: Partial<AudioMix>; only?: 'music' | 'ambience' } = {}) {
+  /** QA: render a profile's music for `seconds` (seeded) and measure it. */
+  async renderBeds(profile: Profile, seconds = 16, opt: { mix?: Partial<AudioMix> } = {}) {
     const sr = 48000, off = new OfflineAudioContext(2, Math.round(sr * seconds), sr);
     const g = new Graph(off, { ...AUDIO_DEFAULTS, ...opt.mix }, profile), rnd = seeded(11);
-    if (opt.only !== 'ambience') { const m = new MusicPlayer(g, rnd); m.play(profile, 0.01); m.schedule(seconds); }
-    if (opt.only !== 'music') { const a = new Ambience(g, rnd); a.start(profile, 0.01); a.schedule(seconds); }
+    const m = new MusicPlayer(g, rnd); m.play(profile, 0.01); m.schedule(seconds);
     const b = await off.startRendering();
-    return { profile, only: opt.only ?? 'both', ...measure([b.getChannelData(0), b.getChannelData(1)], sr) };
+    return { profile, ...measure([b.getChannelData(0), b.getChannelData(1)], sr) };
   }
 }
 

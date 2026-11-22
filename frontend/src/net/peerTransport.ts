@@ -3,7 +3,8 @@ import {
   PLAZA_SINCE, PROTOCOL_VERSION, cleanSpot, createRoom, isRoomCode, parseClientMessage, parseServerMessage, publicView, reduce, seatForToken, seatGuest,
   type BattleMode, type CharacterId, type ClientMessage, type GameAction, type PlazaEmote, type RoomState, type Rng, type ServerMessage, type Visibility,
 } from '@shared';
-import { SnapshotStore, sessionStore, type BattleListener, type HubListener, type LobbyList, type PresenceListener, type PresenceMessage, type Transport } from './types.js';
+import { PresenceRelay, SnapshotStore, sessionStore, type BattleListener, type HubListener, type LobbyList, type PresenceListener, type PresenceMessage, type Transport } from './types.js';
+import { t as tr } from '../i18n/index.js';
 
 const HOST_KEY = 'pab-peer-host';
 type HostSave = { id: string; room: RoomState; savedAt: number };
@@ -30,10 +31,10 @@ export class PeerTransport implements Transport {
   private guestConn: DataConnection | null = null; // host side: the one connection bound to seat 1
   private hostConn: DataConnection | null = null;  // guest side: our link to the host
   private pending: (() => void) | null = null;
-  private presence = new Set<PresenceListener>();
+  private presence: PresenceRelay;
   private disposed = false;
 
-  constructor() { void this.boot(); }
+  constructor() { this.presence = new PresenceRelay(this.store); void this.boot(); }
 
   getSnapshot = () => this.store.get();
   subscribe = (l: () => void) => this.store.subscribe(l);
@@ -56,13 +57,13 @@ export class PeerTransport implements Transport {
       peer.on('disconnected', () => { this.store.set({ link: 'offline' }); if (!this.disposed) setTimeout(() => { try { peer.reconnect(); } catch { /* destroyed */ } }, 1000); });
       peer.on('error', (e: Error & { type?: string }) => {
         if (e.type === 'unavailable-id' && attempt < 6) { peer.destroy(); setTimeout(() => void this.boot(id, attempt + 1), 1500); return; }
-        if (e.type === 'unavailable-id') { this.dropHost(); peer.destroy(); void this.boot(undefined, 0); this.store.fail('Previous room expired. Create a new one.'); return; }
-        if (e.type === 'peer-unavailable') { this.store.fail('Room not found. Check the code or ask the host to keep the page open.'); sessionStore.clear(); return; }
-        this.store.fail('Relay: ' + (e.message || e.type || 'error'));
+        if (e.type === 'unavailable-id') { this.dropHost(); peer.destroy(); void this.boot(undefined, 0); this.store.fail(tr('srv.peerExpired')); return; }
+        if (e.type === 'peer-unavailable') { this.store.fail(tr('srv.peerNotFound')); sessionStore.clear(); return; }
+        this.store.fail(tr('srv.relay', { detail: e.message || e.type || 'error' }));
       });
     } catch (e) {
       this.store.set({ link: 'offline' });
-      this.store.fail('Peer relay unavailable: ' + String((e as Error).message ?? e));
+      this.store.fail(tr('srv.relayUnavailable', { detail: String((e as Error).message ?? e) }));
     }
   }
 
@@ -149,8 +150,8 @@ export class PeerTransport implements Transport {
       else if (msg.type === 'joined') { sessionStore.save({ kind: 'peer', code: msg.code, token: msg.token }); this.store.set({ seat: msg.seat }); }
       else if (msg.type === 'error') { if (msg.message === 'Invalid session' || msg.message === 'Room is full') sessionStore.clear(); this.store.fail(msg.message); }
     });
-    conn.on('close', () => { if (this.hostConn === conn) { this.store.set({ link: 'offline' }); this.store.fail('Host disconnected'); } });
-    conn.on('error', () => this.store.fail('Peer connection failed'));
+    conn.on('close', () => { if (this.hostConn === conn) { this.store.set({ link: 'offline' }); this.store.fail(tr('srv.hostDisconnected')); } });
+    conn.on('error', () => this.store.fail(tr('srv.peerFailed')));
   }
   private resumeGuest() {
     const s = sessionStore.load('peer');
@@ -158,7 +159,7 @@ export class PeerTransport implements Transport {
   }
 
   // ---------- plaza presence: straight to the other peer, never stored ----------
-  private hear(m: PresenceMessage) { this.presence.forEach(l => l(m)); }
+  private hear(m: PresenceMessage) { this.presence.hear(m); }
   /** The host speaks as seat 0; a guest talks only to a host new enough to understand presence. */
   private live(asHost: ServerMessage, asGuest: ClientMessage) {
     if (this.host) { if (this.guestConn?.open) this.guestConn.send(asHost); }
@@ -166,11 +167,11 @@ export class PeerTransport implements Transport {
   }
   move(x: number, z: number, face: number) { const s = cleanSpot(x, z, face); this.live({ type: 'move', seat: 0, ...s }, { type: 'move', ...s }); }
   emote(emote: PlazaEmote) { this.live({ type: 'emote', seat: 0, emote }, { type: 'emote', emote }); }
-  onPresence(l: PresenceListener) { this.presence.add(l); return () => { this.presence.delete(l); }; }
+  onPresence(l: PresenceListener) { return this.presence.subscribe(l); }
 
   // ---------- Transport ----------
-  choose() { this.store.fail('In-app battles need the dedicated server'); }
-  forfeit() { this.store.fail('In-app battles need the dedicated server'); }
+  choose() { this.store.fail(tr('srv.inAppBattles')); }
+  forfeit() { this.store.fail(tr('srv.inAppBattles')); }
   onBattle(_listener: BattleListener) { return () => {}; }
   /** Peer rooms are invite-only: there is no server to list them, so `visibility` does not apply. */
   create(name: string, bestOf: 3 | 5, avatar: CharacterId | null, _mode: BattleMode, _visibility: Visibility) {
@@ -182,24 +183,24 @@ export class PeerTransport implements Transport {
   }
   join(code: string, name: string, avatar: CharacterId | null) {
     const c = code.trim();
-    if (!isRoomCode(c)) { this.store.fail('That room code does not look right'); return; }
+    if (!isRoomCode(c)) { this.store.fail(tr('srv.badCode')); return; }
     sessionStore.clear();
     this.whenOpen(() => this.connectTo(c, { type: 'join', code: c, name, avatar }));
   }
-  quickJoin() { this.store.fail('Quick join needs the dedicated server'); }
+  quickJoin() { this.store.fail(tr('srv.quickJoin')); }
   /** The main plaza and spectators live on the dedicated server; peer mode has neither (the UI hides them). */
   hub() {}
   hubMove() {}
   hubEmote() {}
-  hubChat() { this.store.fail('The plaza needs the dedicated server'); }
+  hubChat() { this.store.fail(tr('srv.plazaNeedsServer')); }
   onHub(_listener: HubListener) { return () => {}; }
-  watch() { this.store.fail('Watching battles needs the dedicated server'); }
+  watch() { this.store.fail(tr('srv.watchNeedsServer')); }
   unwatch() {}
-  listLobbies(): Promise<LobbyList> { return Promise.reject(new Error('Public lobbies need the dedicated server')); }
+  listLobbies(): Promise<LobbyList> { return Promise.reject(new Error(tr('srv.publicLobbies'))); }
   act(action: GameAction) {
     if (this.host) this.apply(action, 0, m => { if (m.type === 'error') this.store.fail(m.message); });
     else if (this.hostConn?.open) this.hostConn.send(action);
-    else this.store.fail('Not connected to the host');
+    else this.store.fail(tr('srv.notConnectedHost'));
   }
   leave() {
     sessionStore.clear(); this.dropHost();

@@ -8,10 +8,11 @@ import { hasHub } from '../../net/types.js';
 import type { Anchor, HubPeer } from '../../engine/World.js';
 import { sound } from '../../audio/sound.js';
 import { Icon, Spinner } from '../primitives.js';
-import { GestureBar, ROOMY, bubbleMs, media } from './match/Plaza.js';
+import { EMOTE_GAP, GestureBar, ROOMY, bubbleMs, media } from './match/Plaza.js';
 import { PartnerAvatar, lobbyPrefs, partnerStyle } from './LobbyParts.js';
 import { useLobbies } from './MultiplayerScreen.js';
 import { HOST_NAME, HostDialog } from './HostDialog.js';
+import { useT } from '../../i18n/index.js';
 
 type Props = { onBack: () => void; onPlay: () => void; onPartner: () => void };
 type Bubble = { id: number; text: string; until: number };
@@ -31,6 +32,7 @@ const tagOpacity = (d: number) => Math.max(0, Math.min(1, (15 - d) / 5));
  * lobbies to join. Presence goes through the transport; the World does the walking.
  */
 export function HubScreen({ onBack, onPlay, onPartner }: Props) {
+  const tr = useT();
   const s = useSettings();
   const { world } = useWorld();
   const session = useSession();
@@ -38,7 +40,7 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
   const reduced = useReducedMotion();
   const ok = hasHub(session);
   const online = session.link === 'online';
-  const name = s.name.trim() || 'Trainer';
+  const name = s.name.trim() || tr('hub.defaultName');
   const spawn = useMemo(spawnSpot, []);
   const [you, setYou] = useState<string | null>(null);
   const [members, setMembers] = useState<HubMember[]>([]);
@@ -67,9 +69,11 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
         // A (re)entry: the lines already said are history, not bubbles; others learn where this partner stands.
         seen.current = m.chat.length ? m.chat[m.chat.length - 1].id : 0;
         setYou(m.you); setMembers(m.members); setChat(m.chat); setBubbles({});
+        // Whoever already sits or naps keeps doing so on this screen too (v9 servers send the pose).
+        for (const x of m.members) if (x.id !== m.you) world?.plazaPose(x.id, x.pose);
         world?.plazaResend();
-      } else if (m.type === 'hubJoin') setMembers(list => [...list.filter(x => x.id !== m.member.id), m.member]);
-      else if (m.type === 'hubLeave') setMembers(list => list.filter(x => x.id !== m.id));
+      } else if (m.type === 'hubJoin') { setMembers(list => [...list.filter(x => x.id !== m.member.id), m.member]); world?.plazaPose(m.member.id, m.member.pose); }
+      else if (m.type === 'hubLeave') { setMembers(list => list.filter(x => x.id !== m.id)); world?.plazaForget(m.id); }
       else if (m.type === 'hubChat') setChat(c => [...c.slice(-59), m.line]);
       else if (m.type === 'hubMove') world?.plazaPresence({ type: 'move', x: m.x, z: m.z, face: m.face }, m.id);
       else world?.plazaPresence({ type: 'emote', emote: m.emote }, m.id);
@@ -90,7 +94,7 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
   // the partners of whoever is already here, the stands. It waits for the roster (or 1.2 s), and the whole
   // entry is capped at about 4 s from here.
   const mountedAt = useRef(performance.now());
-  const [entry, setEntry] = useState<{ p: number; label: string; done: boolean; quick: boolean; gone: boolean }>({ p: 0, label: 'Entering the plaza', done: false, quick: false, gone: false });
+  const [entry, setEntry] = useState<{ p: number; label: string; done: boolean; quick: boolean; gone: boolean }>(() => ({ p: 0, label: tr('hub.entering'), done: false, quick: false, gone: false }));
   const [waited, setWaited] = useState(false);
   useEffect(() => { if (!ok) return; const tm = window.setTimeout(() => setWaited(true), 1200); return () => window.clearTimeout(tm); }, [ok]);
   const othersRef = useRef(others); othersRef.current = others;
@@ -170,20 +174,20 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
 
   const start = (run: () => void) => { setBusy(true); t.clearError(); run(); };
   const quick = () => start(() => t.quickJoin(s.name.trim(), s.partner, lobbyPrefs.bestOf, t.supportsBattles ? s.battleMode : 'showdown'));
-  const join = (code: string) => start(() => t.join(code, s.name.trim() || 'Player 2', s.partner));
+  const join = (code: string) => start(() => t.join(code, s.name.trim() || tr('hub.player2'), s.partner));
   const watch = (code: string) => { t.clearError(); t.watch(code); };
 
   if (!ok) {
     const connecting = session.kind === 'backend' && (session.serverProtocol === null || !online);
     return (
       <main className="screen hub">
-        <header className="hub__bar"><button type="button" className="iconbtn iconbtn--text" onClick={onBack}><Icon name="back" />Menu</button></header>
+        <header className="hub__bar"><button type="button" className="iconbtn iconbtn--text" onClick={onBack}><Icon name="back" />{tr('hub.menu')}</button></header>
         <section className="hub__off panel" aria-live="polite">
-          <p className="eyebrow"><span className="jp">広場</span> Plaza</p>
-          {connecting ? <><Spinner size={22} label="Connecting" /><p>Connecting to the plaza…</p></> : <>
-            <h3 className="dock__title">The plaza needs the battle server</h3>
-            <p className="dock__hint">{session.kind === 'peer' ? 'Open the game from a link with a server (?ws=) to meet other trainers here.' : 'This server is older than the plaza. Rooms and battles still work from Play online.'}</p>
-            <button type="button" className="btn btn--primary" onClick={onPlay}><Icon name="swords" />Play online</button>
+          <p className="eyebrow">{tr('hub.plaza')}</p>
+          {connecting ? <><Spinner size={22} label={tr('hub.connecting')} /><p>{tr('hub.connectingPlaza')}</p></> : <>
+            <h3 className="dock__title">{tr('hub.needsServer')}</h3>
+            <p className="dock__hint">{session.kind === 'peer' ? tr('hub.needsLink') : tr('hub.oldServer')}</p>
+            <button type="button" className="btn btn--primary" onClick={onPlay}><Icon name="swords" />{tr('hub.playOnline')}</button>
           </>}
         </section>
       </main>
@@ -214,9 +218,9 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
               <svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="37" pathLength={100} /><circle className="veil__ring" cx="40" cy="40" r="37" pathLength={100} /></svg>
               <span className="spinner" />
             </div>
-            <p className="veil__brand"><span className="veil__pre">Pokémon</span><strong className="veil__title">Plaza</strong><span className="jp veil__jp">広場</span></p>
+            <p className="veil__brand"><span className="veil__pre">Pokémon</span><strong className="veil__title">{tr('hub.plaza')}</strong></p>
             <div className="veil__bar"><i /></div>
-            <small className="num">{entry.done ? 'Welcome' : entry.label} · {Math.round(entry.p * 100)}%</small>
+            <small className="num">{entry.done ? tr('hub.welcome') : entry.label} · {Math.round(entry.p * 100)}%</small>
           </div>
         </div>
       )}
@@ -225,27 +229,27 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
         {members.filter(m => m.id !== you).map(m => tagFor(m.id, m.name, false))}
       </div>
       <header className="hub__bar">
-        <button type="button" className="iconbtn iconbtn--text" onClick={onBack}><Icon name="back" />Menu</button>
+        <button type="button" className="iconbtn iconbtn--text" onClick={onBack}><Icon name="back" />{tr('hub.menu')}</button>
         <div className="hub__title">
-          <p className="eyebrow"><span className="jp">広場</span> Plaza</p>
-          <strong>{count} {count === 1 ? 'trainer' : 'trainers'} here <small>of {MAX_HUB}</small></strong>
+          <p className="eyebrow">{tr('hub.plaza')}</p>
+          <strong>{tr.rich(count === 1 ? 'hub.here.one' : 'hub.here.other', { count, cap: <small>{tr('hub.cap', { max: MAX_HUB })}</small> })}</strong>
         </div>
-        <span className={`dot ${online ? 'dot--on' : 'dot--wait'}`} title={online ? 'Connected' : 'Reconnecting'} />
+        <span className={`dot ${online ? 'dot--on' : 'dot--wait'}`} title={online ? tr('hub.connected') : tr('hub.reconnecting')} />
         <span className="hub__spacer" />
         <button type="button" className="iconbtn iconbtn--text hub__partner" onClick={onPartner} style={partnerStyle(s.partner)}>
-          <PartnerAvatar id={s.partner} size="sm" />{characterById(s.partner)?.name ?? 'Partner'}
+          <PartnerAvatar id={s.partner} size="sm" />{characterById(s.partner)?.name ?? tr('hub.partner')}
         </button>
-        <button type="button" className={`iconbtn iconbtn--text ${side ? 'is-on' : ''}`} aria-expanded={side} onClick={() => setSide(v => !v)}><Icon name="swords" />Battles</button>
+        <button type="button" className={`iconbtn iconbtn--text ${side ? 'is-on' : ''}`} aria-expanded={side} onClick={() => setSide(v => !v)}><Icon name="swords" />{tr('hub.battles')}</button>
       </header>
 
       <div ref={hostTag} className="host-tag" data-near={hostNear && !talking ? '1' : undefined} style={{ opacity: 0 }}>
         <div className="host-tag__in">
           {hostNear && !talking && (
             <button type="button" className="host-tag__talk" data-sfx="none" onClick={() => setTalking(true)}>
-              {media('(pointer: coarse)') ? 'Tap to talk' : <><kbd>E</kbd> Talk</>}
+              {media('(pointer: coarse)') ? tr('hub.tapTalk') : tr.rich('hub.keyTalk', { key: <kbd>E</kbd> })}
             </button>
           )}
-          <span className="host-tag__name">{HOST_NAME} <small>Plaza host</small></span>
+          <span className="host-tag__name">{HOST_NAME} <small>{tr('host.role')}</small></span>
         </div>
       </div>
       <HubChat open={open} setOpen={setOpen} unread={unread} chat={chat} you={you} names={names} world={world} onSend={text => t.hubChat(text)} />
@@ -262,6 +266,7 @@ function HubChat({ open, setOpen, unread, chat, you, names, world, onSend }: {
   open: boolean; setOpen: (v: boolean) => void; unread: number; chat: HubLine[]; you: string | null; names: Map<string, string>;
   world: ReturnType<typeof useWorld>['world']; onSend: (text: string) => void;
 }) {
+  const t = useT();
   const [text, setText] = useState('');
   const logRef = useRef<HTMLOListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -289,42 +294,42 @@ function HubChat({ open, setOpen, unread, chat, you, names, world, onSend }: {
     onSend(v); setText('');
   };
   const emote = (x: PlazaEmote) => {
-    // The server passes about one emote a second; a faster local one would never reach the others.
+    // At most one gesture every EMOTE_GAP ms, below the server's emote rate, so none is cut on the way.
     const now = performance.now();
-    if (now - lastEmote.current < 650) return;
+    if (now - lastEmote.current < EMOTE_GAP) return;
     lastEmote.current = now;
     world?.plazaEmote(x);
   };
   const touch = media('(pointer: coarse)');
   if (!open) {
     return (
-      <button type="button" className="chat-toggle iconbtn iconbtn--text" onClick={() => setOpen(true)} aria-label={unread ? `Open chat, ${unread} new` : 'Open chat'}>
-        <Icon name="text" size={16} />Chat{unread > 0 && <span className="chat-toggle__count">{unread}</span>}
+      <button type="button" className="chat-toggle iconbtn iconbtn--text" onClick={() => setOpen(true)} aria-label={unread ? t(unread === 1 ? 'hub.openChatNew.one' : 'hub.openChatNew.other', { n: unread }) : t('hub.openChat')}>
+        <Icon name="text" size={16} />{t('hub.chat')}{unread > 0 && <span className="chat-toggle__count">{unread}</span>}
       </button>
     );
   }
   return (
-    <section className="chat panel" aria-label="Plaza chat">
+    <section className="chat panel" aria-label={t('hub.plazaChat')}>
       <header className="chat__head">
-        <p className="eyebrow"><span className="jp">チャット</span> Plaza chat</p>
-        <button type="button" className="iconbtn" onClick={() => setOpen(false)} aria-label="Close chat"><Icon name="close" size={16} /></button>
+        <p className="eyebrow">{t('hub.plazaChat')}</p>
+        <button type="button" className="iconbtn" onClick={() => setOpen(false)} aria-label={t('hub.closeChat')}><Icon name="close" size={16} /></button>
       </header>
       <ol className="chat__log scroller" ref={logRef} role="log" aria-live="polite">
         {chat.map(l => (
           <li key={l.id} className={`chat__line ${l.from === you ? 'is-mine' : ''}`}><strong>{names.get(l.from) ?? l.name}</strong><span>{l.text}</span></li>
         ))}
-        {!chat.length && <li className="chat__empty">Say hi to everyone here. Lines also pop up over your partner.</li>}
+        {!chat.length && <li className="chat__empty">{t('hub.chatEmpty')}</li>}
       </ol>
       <GestureBar world={world} transport={transport} onGesture={emote} />
       <form className="chat__form" onSubmit={send}>
-        <input ref={inputRef} className="chat__input" value={text} onChange={e => setText(e.target.value)} maxLength={MAX_CHAT} placeholder="Message the plaza"
-          aria-label="Chat message" enterKeyHint="send" autoComplete="off" onKeyDown={e => { if (e.key === 'Escape') e.currentTarget.blur(); }} />
-        <button className="btn btn--primary chat__send" disabled={!text.trim()}>Send</button>
+        <input ref={inputRef} className="chat__input" value={text} onChange={e => setText(e.target.value)} maxLength={MAX_CHAT} placeholder={t('hub.messagePlaceholder')}
+          aria-label={t('hub.chatMessage')} enterKeyHint="send" autoComplete="off" onKeyDown={e => { if (e.key === 'Escape') e.currentTarget.blur(); }} />
+        <button className="btn btn--primary chat__send" disabled={!text.trim()}>{t('hub.send')}</button>
       </form>
       <p className="chat__hint">
         {touch
-          ? <>Tap the floor to walk there. Tap someone's partner to go say hello.</>
-          : <><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to walk. Click the floor to go there, or someone's partner to say hello. <kbd>Enter</kbd> chats.</>}
+          ? t('hub.hintTouch')
+          : t.rich('hub.hintKeys', { wasd: <><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></>, enter: <kbd>Enter</kbd> })}
       </p>
     </section>
   );
@@ -333,50 +338,53 @@ function HubChat({ open, setOpen, unread, chat, you, names, world, onSend }: {
 function BattlesPanel({ online, busy, onJoin, onWatch, onQuick, onCreate, onClose }: {
   online: boolean; busy: boolean; onJoin: (code: string) => void; onWatch: (code: string) => void; onQuick: () => void; onCreate: () => void; onClose: () => void;
 }) {
+  const t = useT();
   const { data, error } = useLobbies(online);
   const live = data?.live ?? [], lobbies = data?.lobbies ?? [];
   return (
-    <aside className="hub__side panel" aria-label="Battles">
+    <aside className="hub__side panel" aria-label={t('hub.battles')}>
       <header className="hub__sidehead">
-        <p className="eyebrow"><span className="jp">観戦</span> Live battles</p>
-        <button type="button" className="iconbtn" onClick={onClose} aria-label="Close battles"><Icon name="close" size={16} /></button>
+        <p className="eyebrow">{t('hub.liveBattles')}</p>
+        <button type="button" className="iconbtn" onClick={onClose} aria-label={t('hub.closeBattles')}><Icon name="close" size={16} /></button>
       </header>
       <div className="hub__scroll scroller">
-        {!data ? <p className="hub__empty">{error || 'Looking for battles…'}</p>
+        {!data ? <p className="hub__empty">{error || t('hub.looking')}</p>
           : live.length ? <ul className="hub__list">{live.map(b => <LiveRow key={b.code} b={b} onWatch={() => onWatch(b.code)} />)}</ul>
-          : <p className="hub__empty">No battles right now. Start one and the plaza can watch.</p>}
-        <p className="eyebrow hub__subhead"><span className="jp">募集</span> Open lobbies</p>
+          : <p className="hub__empty">{t('hub.noBattles')}</p>}
+        <p className="eyebrow hub__subhead">{t('hub.openLobbies')}</p>
         {data && (lobbies.length ? <ul className="hub__list">{lobbies.map(l => <LobbyRow key={l.code} l={l} busy={busy} onJoin={() => onJoin(l.code)} />)}</ul>
-          : <p className="hub__empty">Nobody is waiting. Quick match opens a lobby for the next trainer.</p>)}
+          : <p className="hub__empty">{t('hub.noLobbies')}</p>)}
       </div>
       <div className="hub__actions">
-        <button type="button" className="btn btn--gold" disabled={busy || !online} onClick={onQuick}><Icon name="bolt" />Quick match</button>
-        <button type="button" className="btn btn--ghost" onClick={onCreate}><Icon name="plus" />Create</button>
+        <button type="button" className="btn btn--gold" disabled={busy || !online} onClick={onQuick}><Icon name="bolt" />{t('hub.quickMatch')}</button>
+        <button type="button" className="btn btn--ghost" onClick={onCreate}><Icon name="plus" />{t('hub.create')}</button>
       </div>
     </aside>
   );
 }
 
 function LiveRow({ b, onWatch }: { b: LiveBattle; onWatch: () => void }) {
+  const t = useT();
   return (
     <li className="hub__row" style={partnerStyle(b.avatars[0])}>
       <span className="hub__vs"><PartnerAvatar id={b.avatars[0]} size="sm" /><PartnerAvatar id={b.avatars[1]} size="sm" /></span>
       <div className="hub__rowtext">
         <strong>{b.names[0]} <i>vs</i> {b.names[1]}</strong>
-        <small>{b.wins[0]}–{b.wins[1]} · Best of {b.bestOf} · Turn {Math.max(1, b.turn)}{b.watchers ? ` · ${b.watchers} watching` : ''}</small>
+        <small>{b.wins[0]}–{b.wins[1]} · {t('hub.bestOf', { n: b.bestOf })} · {t('hub.turn', { n: Math.max(1, b.turn) })}{b.watchers ? ` · ${t('hub.watching', { n: b.watchers })}` : ''}</small>
       </div>
-      <button type="button" className="btn btn--primary btn--sm" onClick={onWatch}><Icon name="eye" size={14} />Watch</button>
+      <button type="button" className="btn btn--primary btn--sm" onClick={onWatch}><Icon name="eye" size={14} />{t('hub.watch')}</button>
     </li>
   );
 }
 
 function LobbyRow({ l, busy, onJoin }: { l: LobbySummary; busy: boolean; onJoin: () => void }) {
+  const t = useT();
   const host = characterById(l.avatar);
   return (
     <li className="hub__row" style={{ ...partnerStyle(l.avatar) } as CSSProperties}>
       <PartnerAvatar id={l.avatar} size="sm" />
-      <div className="hub__rowtext"><strong>{l.host}</strong><small>{host ? `with ${host.name} · ` : ''}Best of {l.bestOf}</small></div>
-      <button type="button" className="btn btn--sm" disabled={busy} onClick={onJoin}>Join</button>
+      <div className="hub__rowtext"><strong>{l.host}</strong><small>{host ? `${t('hub.withPartner', { name: host.name })} · ` : ''}{t('hub.bestOf', { n: l.bestOf })}</small></div>
+      <button type="button" className="btn btn--sm" disabled={busy} onClick={onJoin}>{t('hub.join')}</button>
     </li>
   );
 }

@@ -25,16 +25,25 @@ describe('audio settings', () => {
   it('uses the audio defaults on a first visit', async () => {
     const { settings } = await load();
     const s = settings.get();
-    expect([s.volume, s.musicVolume, s.ambienceVolume, s.criesVolume, s.uiVolume, s.battleVolume, s.muted]).toEqual([0.7, 0.3, 0.25, 0.15, 0.35, 0.45, false]);
+    expect([s.volume, s.musicVolume, s.criesVolume, s.uiVolume, s.battleVolume, s.muted]).toEqual([0.7, 0.3, 0.15, 0.35, 0.45, false]);
   });
 
   it('persists every volume and mute in pab-settings across a reload', async () => {
     const a = await load();
-    a.settings.set({ volume: 0.55, musicVolume: 0.1, ambienceVolume: 0.4, criesVolume: 0.05, uiVolume: 0.6, battleVolume: 0.9, muted: true });
+    a.settings.set({ volume: 0.55, musicVolume: 0.1, criesVolume: 0.05, uiVolume: 0.6, battleVolume: 0.9, muted: true });
     const saved = JSON.parse(store.get('pab-settings') ?? '{}');
-    expect(saved).toMatchObject({ volume: 0.55, musicVolume: 0.1, ambienceVolume: 0.4, criesVolume: 0.05, uiVolume: 0.6, battleVolume: 0.9, muted: true });
+    expect(saved).toMatchObject({ volume: 0.55, musicVolume: 0.1, criesVolume: 0.05, uiVolume: 0.6, battleVolume: 0.9, muted: true });
     const b = await load();
-    expect(b.settings.get()).toMatchObject({ volume: 0.55, musicVolume: 0.1, ambienceVolume: 0.4, criesVolume: 0.05, uiVolume: 0.6, battleVolume: 0.9, muted: true });
+    expect(b.settings.get()).toMatchObject({ volume: 0.55, musicVolume: 0.1, criesVolume: 0.05, uiVolume: 0.6, battleVolume: 0.9, muted: true });
+  });
+
+  it('ignores the old environment volume in a save, and drops it on the next save', async () => {
+    store.set('pab-settings', JSON.stringify({ partner: 'greninja', volume: 0.6, musicVolume: 0.2, ambienceVolume: 0.8, battleVolume: 0.5 }));
+    const a = await load();
+    expect(a.settings.get()).toMatchObject({ volume: 0.6, musicVolume: 0.2, battleVolume: 0.5 });
+    expect('ambienceVolume' in a.settings.get()).toBe(false);
+    a.settings.set({ uiVolume: 0.3 });
+    expect(JSON.parse(store.get('pab-settings') ?? '{}')).not.toHaveProperty('ambienceVolume');
   });
 
   it('keeps an older save (master and mute only), fills new volumes with defaults and clamps bad values', async () => {

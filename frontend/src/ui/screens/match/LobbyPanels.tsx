@@ -2,33 +2,35 @@ import type { CoinSide, GameAction, PublicRoom } from '@shared';
 import { inviteLink } from '../../../net/session.js';
 import { CopyButton, Icon, Spinner } from '../../primitives.js';
 import { MODE_LABEL, PartnerAvatar, partnerStyle } from '../LobbyParts.js';
-import type { MatchModel } from './model.js';
+import { sideKey, type MatchModel } from './model.js';
+import { useT } from '../../../i18n/index.js';
 
 type Act = (a: GameAction) => void;
 const shortCode = (code: string) => (code.length > 12 ? code.slice(0, 8) + '…' : code);
 
 /** Host's waiting room: who is here, the open seat, the lobby settings and the invite. */
 export function WaitingPanel({ room, m }: { room: PublicRoom; m: MatchModel }) {
+  const t = useT();
   return (
     <section className="dock panel wait">
-      <p className="eyebrow"><span className="jp">待機中</span> Waiting for a rival · {room.visibility === 'public' ? 'Public lobby' : 'Private room'}</p>
+      <p className="eyebrow">{t('lobby.waitingRival')} · {t(room.visibility === 'public' ? 'lobby.publicLobby' : 'lobby.privateRoom')}</p>
       <div className="wait__seats">
         <div className="seat" style={partnerStyle(m.mine)}>
           <PartnerAvatar id={m.mine} />
-          <div className="seat__text"><strong>{m.myName}</strong><small><Icon name="crown" size={12} />Host</small></div>
-          <span className="badge badge--ok">Ready</span>
+          <div className="seat__text"><strong>{m.myName}</strong><small><Icon name="crown" size={12} />{t('lobby.host')}</small></div>
+          <span className="badge badge--ok">{t('lobby.ready')}</span>
         </div>
         <span className="wait__vs" aria-hidden="true">VS</span>
         <div className="seat seat--open">
-          <span className="seat__ring"><Spinner size={22} label="Waiting for a rival" /></span>
-          <div className="seat__text"><strong>Open seat</strong><small>Share the code or the link</small></div>
+          <span className="seat__ring"><Spinner size={22} label={t('lobby.waitingRival')} /></span>
+          <div className="seat__text"><strong>{t('lobby.openSeat')}</strong><small>{t('lobby.shareHint')}</small></div>
         </div>
       </div>
-      <div className="code" aria-label="Room code" title={room.code}>{shortCode(room.code)}</div>
-      <p className="dock__hint">Best of {room.bestOf} · {MODE_LABEL[room.mode]}. Your rival picks a partner and joins with this code.</p>
+      <div className="code" aria-label={t('lobby.roomCode')} title={room.code}>{shortCode(room.code)}</div>
+      <p className="dock__hint">{t('match.bestOf', { n: room.bestOf })} · {t(MODE_LABEL[room.mode])}. {t('lobby.rivalJoinsHint')}</p>
       <div className="dock__row">
-        <CopyButton className="btn btn--primary" label="Copy invite link" getText={() => inviteLink(room.code)} />
-        <CopyButton className="btn" label="Copy code" getText={() => room.code} />
+        <CopyButton className="btn btn--primary" label={t('lobby.copyInvite')} getText={() => inviteLink(room.code)} />
+        <CopyButton className="btn" label={t('lobby.copyCode')} getText={() => room.code} />
       </div>
     </section>
   );
@@ -39,43 +41,45 @@ export function WaitingPanel({ room, m }: { room: PublicRoom; m: MatchModel }) {
  * previous game. The call flips the coin at once.
  */
 export function TossPanel({ room, m, act, flipping }: { room: PublicRoom; m: MatchModel; act: Act; flipping: boolean }) {
+  const t = useT();
   const caller = room.caller;
-  const callerName = caller === null ? 'Your rival' : m.names[caller];
-  const why = room.games === 0 ? 'was picked at random to call' : 'won the last game and calls';
+  const callerName = caller === null ? t('lobby.yourRival') : m.names[caller];
+  const random = room.games === 0;
   const side = (s: CoinSide) => (
     <button key={s} className={`call call--${s}`} disabled={flipping} onClick={() => act({ type: 'call', side: s })}>
       <Icon name={s === 'heads' ? 'sun' : 'moon'} size={30} />
-      <span>{s === 'heads' ? 'Heads' : 'Tails'}</span>
-      <small>{s === 'heads' ? 'Sun face' : 'Moon face'}</small>
+      <span>{t(s === 'heads' ? 'lobby.heads' : 'lobby.tails')}</span>
+      <small>{t(s === 'heads' ? 'lobby.sunFace' : 'lobby.moonFace')}</small>
     </button>
   );
   return (
     <section className="dock panel toss">
-      <p className="eyebrow"><span className="jp">コイントス</span> Game {m.gameNo} · Coin toss</p>
+      <p className="eyebrow">{t('match.game', { n: m.gameNo })} · {t('score.phase.calls')}</p>
       {m.iCall ? <>
-        <h3 className="dock__title">Your call</h3>
-        <p className="dock__hint">You {why === 'was picked at random to call' ? 'were picked at random' : 'won the last game'}. Call it and the coin flips; the toss winner takes their pick of two dealt teams.</p>
+        <h3 className="dock__title">{t('lobby.yourCall')}</h3>
+        <p className="dock__hint">{t(random ? 'lobby.youRandom' : 'lobby.youWonLast')} {t('lobby.callHint')}</p>
         <div className="calls">{side('heads')}{side('tails')}</div>
       </> : <>
-        <h3 className="dock__title">{callerName} calls the coin</h3>
-        <p className="dock__hint">{callerName} {why} it. The coin flips the moment they call.</p>
-        <div className="toss__wait"><Spinner size={22} label="Waiting for the call" /><span>Waiting for {callerName}…</span></div>
+        <h3 className="dock__title">{t('lobby.callsCoin', { name: callerName })}</h3>
+        <p className="dock__hint">{t(random ? 'lobby.theyRandom' : 'lobby.theyWonLast', { name: callerName })} {t('lobby.flipsOnCall')}</p>
+        <div className="toss__wait"><Spinner size={22} label={t('lobby.waitingCall')} /><span>{t('lobby.waitingFor', { name: callerName })}</span></div>
       </>}
     </section>
   );
 }
 
 export function TossResultPanel({ room, m, act, revealed }: { room: PublicRoom; m: MatchModel; act: Act; revealed: boolean }) {
-  if (!revealed) return <section className="dock panel dock--quiet"><p className="eyebrow">The coin is in the air…</p></section>;
+  const t = useT();
+  if (!revealed) return <section className="dock panel dock--quiet"><p className="eyebrow">{t('lobby.coinInAir')}</p></section>;
   const winnerName = m.names[room.tossWinner ?? 0];
   const called = room.caller !== null ? room.calls[room.caller] : null;
-  const callerName = room.caller !== null ? (room.caller === m.me ? 'You' : m.names[room.caller]) : '';
+  const callerName = room.caller !== null ? m.names[room.caller] : '';
   return (
     <section className="dock panel dock--result toss-result">
-      <p className="eyebrow"><span className="jp">結果</span> {called ? `${callerName} called ${called} · ` : ''}It landed {room.result}</p>
-      <h3 className="dock__title dock__title--gold">{m.iWonToss ? 'You won the toss' : `${winnerName} won the toss`}</h3>
-      <p className="dock__hint">{m.iWonToss ? 'Dealing two teams: take the six you want.' : `${winnerName} picks one of two teams dealt face down; you get the other six. Their choice stays hidden.`}</p>
-      <button className="btn btn--gold btn--xl" onClick={() => act({ type: 'spin' })}><Icon name="swords" />{m.iWonToss ? 'Deal now' : 'Deal two teams'}</button>
+      <p className="eyebrow">{called ? `${t(room.caller === m.me ? 'lobby.youCalled' : 'lobby.nameCalled', { name: callerName, side: t(sideKey(called)) })} · ` : ''}{t('lobby.landed', { side: room.result ? t(sideKey(room.result)) : '' })}</p>
+      <h3 className="dock__title dock__title--gold">{m.iWonToss ? t('lobby.youWonToss') : t('match.wonToss', { name: winnerName })}</h3>
+      <p className="dock__hint">{m.iWonToss ? t('lobby.dealingHint') : t('lobby.theyPickHint', { name: winnerName })}</p>
+      <button className="btn btn--gold btn--xl" onClick={() => act({ type: 'spin' })}><Icon name="swords" />{t(m.iWonToss ? 'lobby.dealNow' : 'lobby.dealTwo')}</button>
     </section>
   );
 }

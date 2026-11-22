@@ -5,6 +5,7 @@ import { sound } from '../../audio/sound.js';
 import { Icon, type IconName } from '../primitives.js';
 import { PartnerAvatar, partnerStyle } from './LobbyParts.js';
 import { useLobbies } from './MultiplayerScreen.js';
+import { t as tr, useT } from '../../i18n/index.js';
 
 /** The plaza host's name. */
 export const HOST_NAME = 'Mira';
@@ -34,11 +35,17 @@ function useTyped(line: string, reduced: boolean) {
 
 /** What the plaza looks like right now, from the server's own lists. */
 function newsLine(trainers: number, live: LiveBattle[], lobbies: number): string {
-  const p = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  let s = `Right now there ${trainers === 1 ? 'is' : 'are'} ${p(trainers, 'trainer', 'trainers')} in the plaza, ${p(live.length, 'live battle', 'live battles')} and ${p(lobbies, 'open lobby', 'open lobbies')}.`;
+  const trainersText = tr(trainers === 1 ? 'host.trainers.one' : 'host.trainers.other', { n: trainers });
+  let s = tr(trainers === 1 ? 'host.newsIs' : 'host.newsAre', {
+    trainers: trainersText,
+    battles: tr(live.length === 1 ? 'host.liveBattles.one' : 'host.liveBattles.other', { n: live.length }),
+    lobbies: tr(lobbies === 1 ? 'host.openLobbies.one' : 'host.openLobbies.other', { n: lobbies }),
+  });
   const top = [...live].sort((a, b) => b.watchers - a.watchers)[0];
-  if (top) s += top.watchers ? ` Most watched: ${top.names[0]} vs ${top.names[1]}, ${p(top.watchers, 'trainer', 'trainers')} watching.` : ` ${top.names[0]} and ${top.names[1]} are on turn ${Math.max(1, top.turn)}.`;
-  else s += lobbies ? ' Someone is waiting for a rival: Find a battle to join them.' : ' A quiet moment: why not start a battle?';
+  if (top) s += ' ' + (top.watchers
+    ? tr('host.mostWatched', { a: top.names[0], b: top.names[1], watchers: tr(top.watchers === 1 ? 'host.trainers.one' : 'host.trainers.other', { n: top.watchers }) })
+    : tr('host.onTurn', { a: top.names[0], b: top.names[1], turn: Math.max(1, top.turn) }));
+  else s += ' ' + (lobbies ? tr('host.someoneWaiting') : tr('host.quiet'));
   return s;
 }
 
@@ -48,10 +55,11 @@ function newsLine(trainers: number, live: LiveBattle[], lobbies: number): string
  * Arrow keys (or W and S) move between options, Enter picks, Escape leaves; walking waits while it is open.
  */
 export function HostDialog({ world, trainer, trainers, online, busy, reducedMotion, onClose, onFind, onCreate, onWatch, onJoin }: Props) {
+  const t = useT();
   const { data } = useLobbies(online);
   const live = data?.live ?? [], lobbies = data?.lobbies.length ?? 0;
   const [view, setView] = useState<View>('menu');
-  const [line, setLine] = useState(`Welcome to the Pokémon Plaza, ${trainer}! Ready for a battle?`);
+  const [line, setLine] = useState(() => t('host.greeting', { trainer }));
   const [code, setCode] = useState('');
   const typed = useTyped(line, reducedMotion);
   const box = useRef<HTMLElement>(null);
@@ -73,13 +81,13 @@ export function HostDialog({ world, trainer, trainers, online, busy, reducedMoti
   }, [view]);
 
   const say = (text: string, gesture: 'present' | 'nod' | 'point' = 'nod') => { setLine(text); world?.hostGesture(gesture); };
-  const menu = () => { setView('menu'); say('Anything else I can help you with?', 'present'); };
+  const menu = () => { setView('menu'); say(t('host.anythingElse'), 'present'); };
   const watchView = () => {
     setView('watch');
-    say(live.length ? `There ${live.length === 1 ? 'is one battle' : `are ${live.length} battles`} on right now. Pick one and I'll take you to the stands.` : "Nobody's battling right now. Start one and the whole plaza can watch!", 'point');
+    say(live.length ? (live.length === 1 ? t('host.watchOne') : t('host.watchMany', { n: live.length })) : t('host.watchNone'), 'point');
   };
-  const codeView = () => { setView('code'); setCode(''); say("Got an invitation code? Type it in and I'll take you to that room.", 'present'); };
-  const news = () => say(data ? newsLine(trainers, live, lobbies) : 'Let me check the board… ask me again in a moment.', 'present');
+  const codeView = () => { setView('code'); setCode(''); say(t('host.codePrompt'), 'present'); };
+  const news = () => say(data ? newsLine(trainers, live, lobbies) : t('host.checking'), 'present');
   const goodbye = () => { world?.hostGesture('nod'); onClose(); };
   const validCode = /^[A-Z0-9]{4,8}$/.test(code);
 
@@ -104,11 +112,11 @@ export function HostDialog({ world, trainer, trainers, online, busy, reducedMoti
   );
 
   return (
-    <section ref={box} className="hostdlg panel" role="dialog" aria-label={`Talking to ${HOST_NAME}`} onKeyDown={onKey}>
+    <section ref={box} className="hostdlg panel" role="dialog" aria-label={t('host.talkingTo', { name: HOST_NAME })} onKeyDown={onKey}>
       <header className="hostdlg__head">
-        <p className="eyebrow"><span className="jp">案内</span> Plaza host</p>
+        <p className="eyebrow">{t('host.role')}</p>
         <strong className="hostdlg__name">{HOST_NAME}</strong>
-        <button type="button" className="iconbtn" data-sfx="none" onClick={onClose} aria-label="Leave the conversation"><Icon name="close" size={16} /></button>
+        <button type="button" className="iconbtn" data-sfx="none" onClick={onClose} aria-label={t('host.leave')}><Icon name="close" size={16} /></button>
       </header>
       <p className="hostdlg__line" aria-live="polite" onClick={typed.skip}>
         {typed.text}{!typed.done && <span className="hostdlg__caret" aria-hidden="true" />}
@@ -116,12 +124,12 @@ export function HostDialog({ world, trainer, trainers, online, busy, reducedMoti
       </p>
       {view === 'menu' && (
         <div className="hostdlg__opts">
-          {opt('Find a battle', 'swords', () => { onFind(); onClose(); }, !online, data ? `${live.length} live · ${lobbies} open` : undefined)}
-          {opt('Create a battle', 'plus', () => { onCreate(); onClose(); })}
-          {opt('Watch a battle', 'eye', watchView, !online)}
-          {opt('Join with code', 'hash', codeView, !online)}
-          {opt("What's happening?", 'info', news)}
-          {opt('Goodbye', 'back', goodbye)}
+          {opt(t('host.findBattle'), 'swords', () => { onFind(); onClose(); }, !online, data ? t('host.findHint', { live: live.length, open: lobbies }) : undefined)}
+          {opt(t('host.createBattle'), 'plus', () => { onCreate(); onClose(); })}
+          {opt(t('host.watchBattle'), 'eye', watchView, !online)}
+          {opt(t('host.joinCode'), 'hash', codeView, !online)}
+          {opt(t('host.whatsHappening'), 'info', news)}
+          {opt(t('host.goodbye'), 'back', goodbye)}
         </div>
       )}
       {view === 'watch' && (
@@ -130,19 +138,19 @@ export function HostDialog({ world, trainer, trainers, online, busy, reducedMoti
             <button key={b.code} type="button" className="hostdlg__opt hostdlg__battle" data-sfx="dialogSelect" style={partnerStyle(b.avatars[0])} onClick={() => { onWatch(b.code); onClose(); }}>
               <span className="hub__vs"><PartnerAvatar id={b.avatars[0]} size="sm" /><PartnerAvatar id={b.avatars[1]} size="sm" /></span>
               <span>{b.names[0]} <i>vs</i> {b.names[1]}</span>
-              <small>Turn {Math.max(1, b.turn)}{b.watchers ? ` · ${b.watchers} watching` : ''}</small>
+              <small>{t('hub.turn', { n: Math.max(1, b.turn) })}{b.watchers ? ` · ${t('hub.watching', { n: b.watchers })}` : ''}</small>
             </button>
           ))}
-          {!live.length && opt('Create a battle', 'plus', () => { onCreate(); onClose(); })}
-          {opt('Back', 'back', menu)}
+          {!live.length && opt(t('host.createBattle'), 'plus', () => { onCreate(); onClose(); })}
+          {opt(t('common.back'), 'back', menu)}
         </div>
       )}
       {view === 'code' && (
         <form className="hostdlg__code" onSubmit={e => { e.preventDefault(); if (validCode && !busy) { onJoin(code); onClose(); } }}>
           <input ref={codeRef} className="chat__input" value={code} onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
-            placeholder="Room code" aria-label="Room code" autoComplete="off" spellCheck={false} enterKeyHint="go" />
-          <button className="btn btn--primary" data-sfx="dialogSelect" disabled={!validCode || busy}>Join</button>
-          <button type="button" className="btn btn--ghost hostdlg__opt" data-sfx="back" onClick={menu}>Back</button>
+            placeholder={t('host.roomCode')} aria-label={t('host.roomCode')} autoComplete="off" spellCheck={false} enterKeyHint="go" />
+          <button className="btn btn--primary" data-sfx="dialogSelect" disabled={!validCode || busy}>{t('host.join')}</button>
+          <button type="button" className="btn btn--ghost hostdlg__opt" data-sfx="back" onClick={menu}>{t('common.back')}</button>
         </form>
       )}
     </section>

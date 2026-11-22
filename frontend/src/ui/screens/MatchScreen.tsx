@@ -8,7 +8,8 @@ import { inviteLink } from '../../net/session.js';
 import type { Layout } from '../../engine/World.js';
 import { ErrorBoundary } from '../../app/ErrorBoundary.js';
 import { CopyButton, Icon, openSettings, toast } from '../primitives.js';
-import { matchModel } from './match/model.js';
+import { linkKey, matchModel } from './match/model.js';
+import { t as tr, useT } from '../../i18n/index.js';
 import { Scoreboard } from './match/Scoreboard.js';
 import { CompletePanel, DraftBoard, IntervalPanel } from './match/Panels.js';
 import { TossPanel, TossResultPanel, WaitingPanel } from './match/LobbyPanels.js';
@@ -31,9 +32,11 @@ type Arena = { id: number; controller: BattleController; dispose: () => void; di
  * (camera, partners, coin) and onto the phase panels, and turns state transitions into reactions.
  */
 export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom; seat: Seat; transport: Transport; link: string }) {
+  const t = useT();
   const s = useSettings();
   const { world, status } = useWorld();
-  const m = useMemo(() => matchModel(room, seat, s.partner), [room, seat, s.partner]);
+  // The language is a dependency: the model holds default names ("Player 1") in it.
+  const m = useMemo(() => matchModel(room, seat, s.partner), [room, seat, s.partner, t.lang]); // eslint-disable-line react-hooks/exhaustive-deps
   const act = (a: GameAction) => transport.act(a);
   const [history, setHistory] = useState(false);
   const [revealed, setRevealed] = useState(room.phase !== 'spin');
@@ -85,7 +88,7 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
     world.emote('theirs', mineWon ? theirsC?.personality.on.gameLose ?? 'sad' : theirsC?.personality.on.gameWin ?? 'victory');
   }, [arena, battleOver, arenaSnap, world, seat, m.mine, m.theirs]);
   // Once the result is recorded, move on by itself after a beat.
-  useEffect(() => { if (!showArena || !battleOver || room.phase === 'battle') return; const t = setTimeout(dismissArena, 9000); return () => clearTimeout(t); }, [showArena, battleOver, room.phase]);
+  useEffect(() => { if (!showArena || !battleOver || room.phase === 'battle') return; const tm = setTimeout(dismissArena, 9000); return () => clearTimeout(tm); }, [showArena, battleOver, room.phase]);
 
   // Keep our partner in sync with the authority (v2 servers only; v1 just ignores the message).
   useEffect(() => {
@@ -129,9 +132,9 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
     const charOf = (s0: Seat) => (s0 === m.me ? mineC : theirsC);
     if (p && !p.players[m.opp] && room.players[m.opp]) {
       setTimeout(() => world.emote('theirs', 'greet'), 900);
-      toast(`${m.oppName} joined the room`, 'ok');
+      toast(tr('match.oppJoined', { name: m.oppName }), 'ok');
     }
-    if (p && p.players[m.opp]?.connected && room.players[m.opp] && !room.players[m.opp]!.connected) toast(`${m.oppName} disconnected. Their seat is kept.`, 'error');
+    if (p && p.players[m.opp]?.connected && room.players[m.opp] && !room.players[m.opp]!.connected) toast(tr('match.oppLeft', { name: m.oppName }), 'error');
     // Coin: animate only when we saw the flip happen live; on reconnect just show the face.
     const key = `${room.code}:${room.games}:${room.result}`;
     if (room.phase === 'spin' && room.result && flippedKey.current !== key) {
@@ -190,25 +193,25 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
       {chatty && !showArena && room.phase !== 'pick' && <PlazaHud world={world} room={room} m={m} transport={transport} walking={plaza} />}
       <Scoreboard room={room} m={m} />
       <div className="roombar">
-        <span className={`dot ${link === 'online' ? 'dot--on' : link === 'connecting' ? 'dot--wait' : ''}`} title={`Link ${link}`} />
+        <span className={`dot ${link === 'online' ? 'dot--on' : link === 'connecting' ? 'dot--wait' : ''}`} title={t(linkKey(link))} />
         <span className="roombar__code mono" title={room.code}>{room.code.length > 10 ? room.code.slice(0, 8) + '…' : room.code}</span>
-        {room.watchers > 0 && <span className="roombar__watch" title={`${room.watchers} watching this room`}><Icon name="eye" size={14} />{room.watchers}</span>}
-        <CopyButton className="iconbtn iconbtn--text" label="Invite" getText={() => inviteLink(room.code)} />
-        <button className="iconbtn iconbtn--text" onClick={() => setHistory(h => !h)} aria-expanded={history}><Icon name="history" />History</button>
+        {room.watchers > 0 && <span className="roombar__watch" title={t('match.watchingRoom', { n: room.watchers })}><Icon name="eye" size={14} />{room.watchers}</span>}
+        <CopyButton className="iconbtn iconbtn--text" label={t('match.invite')} getText={() => inviteLink(room.code)} />
+        <button className="iconbtn iconbtn--text" onClick={() => setHistory(h => !h)} aria-expanded={history}><Icon name="history" />{t('match.history')}</button>
         <details className="roombar__menu">
-          <summary className="iconbtn" aria-label="Room menu"><Icon name="gear" /></summary>
+          <summary className="iconbtn" aria-label={t('match.roomMenu')}><Icon name="gear" /></summary>
           <div className="menu-pop panel">
             {transport.supportsBattles && room.phase !== 'battle' && room.phase !== 'pick' && (
-              <button onClick={() => act({ type: 'mode', mode: room.mode === 'app' ? 'showdown' : 'app' })}><Icon name="swords" />{room.mode === 'app' ? 'Battle on Showdown instead' : 'Battle here instead'}</button>
+              <button onClick={() => act({ type: 'mode', mode: room.mode === 'app' ? 'showdown' : 'app' })}><Icon name="swords" />{t(room.mode === 'app' ? 'match.toShowdown' : 'match.toApp')}</button>
             )}
-            <button onClick={openSettings}><Icon name="sliders" />Settings</button>
-            <button onClick={() => act({ type: 'reset', bestOf: 3 })}>New series · Best of 3</button>
-            <button onClick={() => act({ type: 'reset', bestOf: 5 })}>New series · Best of 5</button>
-            <button onClick={() => transport.leave()}><Icon name="leave" />Leave room</button>
+            <button onClick={openSettings}><Icon name="sliders" />{t('settings.title')}</button>
+            <button onClick={() => act({ type: 'reset', bestOf: 3 })}>{t('match.newSeries')} · {t('match.bestOf', { n: 3 })}</button>
+            <button onClick={() => act({ type: 'reset', bestOf: 5 })}>{t('match.newSeries')} · {t('match.bestOf', { n: 5 })}</button>
+            <button onClick={() => transport.leave()}><Icon name="leave" />{t('match.leave')}</button>
           </div>
         </details>
       </div>
-      <ErrorBoundary label="match panel" compact>
+      <ErrorBoundary label={t('match.panel')} compact>
         <div className="match__dock" key={showArena ? `arena-${arena?.id}` : `${room.phase}-${m.hasOpponent}`}>{panel()}</div>
       </ErrorBoundary>
       <HistoryDrawer room={room} m={m} open={history} onClose={() => setHistory(false)} />

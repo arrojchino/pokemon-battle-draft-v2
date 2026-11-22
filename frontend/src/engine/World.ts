@@ -4,7 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import type { CharacterId, CoinSide, PlazaEmote, Spot } from '@shared';
+import type { CharacterId, CoinSide, PlazaEmote, PlazaPose, Spot } from '@shared';
 import { DEFAULT_CHARACTER, characterById, type Emote } from '../characters/roster.js';
 import { CameraDirector, type Shot } from './CameraDirector.js';
 import { FLOOR_Y, MonRig, type Gesture } from './character/MonRig.js';
@@ -19,9 +19,11 @@ import { Stadium } from './world/Stadium.js';
 import { Atmosphere } from './world/Atmosphere.js';
 import { Coin } from './world/Coin.js';
 import { Plaza, PLAZA_SPAWN, RIVAL, isMoveKey, platform, withObstacles, type Walker } from './world/Plaza.js';
+import { GestureQueue } from './world/gestureQueue.js';
 import { HOST_FRONT, HOST_OBSTACLE, HOST_SPOT, PlazaHost } from './world/PlazaHost.js';
 import { FIELD, WALL_R } from './world/dims.js';
 import { BattleStage } from './battle/BattleStage.js';
+import { t as tr } from '../i18n/index.js';
 
 const FOG_COLOR = new THREE.Color('#060a18');
 const FOG_DENSITY = 0.0105;
@@ -132,6 +134,10 @@ export class World {
   private fades = new Map<string, number>();
   /** Main plaza: the rig each member's partner uses (member id to rig key). */
   private hubRigs = new Map<string, string>();
+  /** Poses other partners hold (sit, nap) by peer id; applied once that partner is loaded and standing still. */
+  private peerPoses = new Map<string, PlazaPose>();
+  /** Gestures from other partners waiting for them to stop or finish loading (see GestureQueue). */
+  private peerGestures = new GestureQueue<Gesture>(1.5);
   /**
    * The plaza host (main plaza only): whether this player's partner is close enough to talk, a walk up to her
    * that ends in a conversation, walking input held while a dialogue is open, and the pointer over her.
@@ -464,7 +470,7 @@ export class World {
     const want = [...new Set(partners)].filter(id => !this.rigs.has(id));
     const report = () => {
       const progress = Math.min(1, host * 0.7 + (want.length ? mons / want.length : 1) * 0.3);
-      const label = host < 1 ? 'Calling Mira' : mons < want.length ? 'Greeting trainers' : 'Opening the stands';
+      const label = tr(host < 1 ? 'world.callingMira' : mons < want.length ? 'world.greetingTrainers' : 'world.openingStands');
       this.events.emit('hubProgress', { progress, label });
     };
     report();
@@ -758,26 +764,40 @@ export class World {
    * member id (a room's rival needs none).
    */
   plazaPresence(m: ({ type: 'move' } & Spot) | { type: 'emote'; emote: PlazaEmote }, id = RIVAL) {
-    const l = this.layout;
-    if (!walking(l)) return;
-    if (m.type === 'move') { this.plaza.hear(id, m); return; }
-    // A gesture plays in step with the walk, which is drawn a fraction of a second behind the reports.
-    const g = m.emote === 'rise' ? 'rise' : GESTURES[m.emote];
-    if (g) window.setTimeout(() => this.peerGesture(id, g), this.plaza.delayOf(id) * 1000);
+    if (m.type === 'move') { if (walking(this.layout)) this.plaza.hear(id, m); return; }
+    // A gesture plays in step with the walk, which is drawn a fraction of a second behind the reports. Held poses
+    // are kept even before the plaza is up (they arrive with the room), and applied when that partner is ready.
+    const e = m.emote, delay = this.plaza.delayOf(id) * 1000;
+    if (e === 'sit' || e === 'nap' || e === 'rise') { window.setTimeout(() => this.plazaPose(id, e === 'rise' ? null : e), delay); return; }
+    const g = GESTURES[e];
+    if (g && walking(this.layout)) window.setTimeout(() => this.peerGestures.push(id, g, performance.now() / 1000), delay);
   }
-  private peerGesture(id: string, g: Gesture | 'rise') {
-    const l = this.layout;
-    if (!walking(l)) return;
-    const key = this.peerKeys(l).find(([pid]) => pid === id)?.[1];
-    const rig = key ? this.rigs.get(key) : undefined;
-    if (!key || !rig) return;
-    if (g === 'rise') { rig.rise(); return; }
-    // Gestures are for standing still: one that arrives while that partner walks (an older client) is skipped.
-    if (rig.resting || (this.plaza.peers.get(id)?.w.speed ?? 0) > 0.25) return;
-    this.gestureKey(key, g);
+  /** Someone else's partner holds a pose (sit, nap) or none: it plays as soon as that partner is loaded and still. */
+  plazaPose(id: string, pose: PlazaPose | null) {
+    if (pose) this.peerPoses.set(id, pose); else this.peerPoses.delete(id);
   }
-  /** Send this player's spot again on the next frame (someone just arrived or reconnected). */
-  plazaResend() { this.plaza.resend(); }
+  /** Forget someone's pose and pending gesture: they left, or their partner is coming back standing. */
+  plazaForget(id = RIVAL) { this.peerPoses.delete(id); this.peerGestures.drop(id); }
+  /**
+   * Another partner's gestures, every frame: a held pose it should be in, a queued gesture once it stands still,
+   * and getting up when its trainer walks off (an older client that never sent `rise`) or the pose ended.
+   */
+  private peerAct(id: string, key: string, rig: MonRig, w: Walker) {
+    let want = this.peerPoses.get(id) ?? null;
+    if (want && w.speed > 0.15) { this.peerPoses.delete(id); want = null; }
+    const has = rig.posture === 'rest' ? 'sit' : rig.posture === 'sleep' ? 'nap' : null;
+    if (has && !want) { rig.rise(); return; }
+    const still = w.speed < 0.05 && rig.posture !== null;
+    if (want && want !== has) { if (still) rig.gesture(want); return; }
+    const g = this.peerGestures.take(id, performance.now() / 1000, still && !rig.resting);
+    if (g) this.gestureKey(key, g);
+  }
+  /** Send this player's spot again on the next frame (someone just arrived or reconnected), and its held pose. */
+  plazaResend() {
+    this.plaza.resend();
+    const pose = this.resting();
+    if (pose) this.events.emit('plazaEmote', { emote: pose });
+  }
   /**
    * Just above a partner's head on screen, in a plaza or a match: where name tags and chat bubbles go.
    * `who` is 'mine', 'theirs' (a room's rival) or a main-plaza member id.
@@ -848,7 +868,7 @@ export class World {
       if (!rig) continue;
       const w = p.peer(id);
       rig.place(w.x, w.z, w.face, true);
-      if (rig.resting && w.speed > 0.15) rig.rise();
+      this.peerAct(id, key, rig, w);
       rig.stride(w.speed, w.walk);
       const rx = w.x - c.x, rz = w.z - c.z;
       const along = (rx * px + rz * pz) / pl, off = Math.abs(rx * pz - rz * px) / pl;

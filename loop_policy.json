@@ -1,0 +1,109 @@
+{
+  "version": "11",
+  "engine": {
+    "stall_lookback_rounds": 3,
+    "max_rounds": 200,
+    "enforcement_escalation_enabled": true,
+    "agent_recovery_enabled": true,
+    "recovery_preserve_discoveries": true,
+    "unverified_claim_streak_limit": 3
+  },
+  "prompt": {
+    "l0_max_chars": 5000,
+    "l1_max_chars": 50000,
+    "l2_max_chars": 100000
+  },
+  "backend": {
+    "root_dir": ".loopforge"
+  },
+  "evolution": {
+    "max_discovered_constraints_per_round": 5,
+    "max_start_criteria": 12,
+    "max_active_subgoals": 12
+  },
+  "state_file": {
+    "enabled": true,
+    "directory": ".loopforge/state"
+  },
+  "evidence": {
+    "providers": [
+      "git"
+    ],
+    "timeout_ms": 300000,
+    "commands": [
+      {
+        "name": "fe_typecheck",
+        "enabled": true,
+        "executable": "node",
+        "args": [
+          "node_modules/typescript/bin/tsc",
+          "--noEmit"
+        ],
+        "phase": "after",
+        "required": false,
+        "timeout_ms": 240000,
+        "max_output_chars": 6000,
+        "success_exit_codes": [
+          0
+        ],
+        "cwd": "frontend"
+      },
+      {
+        "name": "fe_tests",
+        "enabled": true,
+        "executable": "node",
+        "args": [
+          "node_modules/vitest/vitest.mjs",
+          "run"
+        ],
+        "phase": "after",
+        "required": false,
+        "timeout_ms": 240000,
+        "max_output_chars": 6000,
+        "success_exit_codes": [
+          0
+        ],
+        "cwd": "frontend"
+      },
+      {
+        "name": "be_typecheck",
+        "enabled": true,
+        "executable": "node",
+        "args": [
+          "node_modules/typescript/bin/tsc",
+          "--noEmit"
+        ],
+        "phase": "after",
+        "required": false,
+        "timeout_ms": 240000,
+        "max_output_chars": 6000,
+        "success_exit_codes": [
+          0
+        ],
+        "cwd": "backend"
+      },
+      {
+        "name": "cjk_scan",
+        "enabled": true,
+        "executable": "node",
+        "args": [
+          "scripts/check-cjk.mjs"
+        ],
+        "phase": "after",
+        "required": false,
+        "timeout_ms": 240000,
+        "max_output_chars": 6000,
+        "success_exit_codes": [
+          0
+        ]
+      }
+    ]
+  },
+  "mcp": {
+    "session_lease_ms": 30000,
+    "session_lease_renew_interval_ms": 10000
+  },
+  "gate": {
+    "enabled": false
+  }
+}

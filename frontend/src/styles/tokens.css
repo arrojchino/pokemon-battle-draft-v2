@@ -60,7 +60,6 @@
   /* Typography */
   --font-display: 'Outfit', 'Manrope', system-ui, sans-serif;
   --font-body: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-jp: 'Zen Kaku JP', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Noto Sans JP', sans-serif;
   --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   --fs-2xs: 10px; --fs-xs: 11px; --fs-sm: 13px; --fs-md: 15px; --fs-lg: 18px;
   --fs-xl: 22px; --fs-2xl: 28px; --fs-3xl: 38px; --fs-hero: clamp(46px, 6.6vw, 96px);
@@ -97,6 +96,6 @@
   --line: var(--border-1); --line-2: var(--border-3);
   --glass: var(--panel-bg); --glass-2: var(--panel-bg-strong);
   --accent2: var(--blue); --cut: 0px; --radius: var(--r-sm);
-  --display: var(--font-display); --body: var(--font-body); --jp: var(--font-jp); --mono: var(--font-mono);
+  --display: var(--font-display); --body: var(--font-body); --mono: var(--font-mono);
   --ease: var(--ease-out);
 }

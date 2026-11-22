@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { CHARACTER_IDS, isCharacterId, type CharacterId } from '@shared';
 import type { EffectsLevel, QualityPref, RenderScale } from '../engine/quality.js';
 import { AUDIO_DEFAULTS, mixFromSettings } from '../audio/mix.js';
+import { detectLang, isLang, type Lang } from '../i18n/core.js';
 
 export type MotionPref = 'system' | 'reduced' | 'full';
 export type CameraStyle = 'cinematic' | 'steady';
@@ -25,11 +26,12 @@ export type Settings = {
   /* Audio, each 0..1: `volume` is the master; then one volume per category (see audio/mix.ts) and mute */
   volume: number;
   musicVolume: number;
-  ambienceVolume: number;
   criesVolume: number;
   uiVolume: number;
   battleVolume: number;
   muted: boolean;
+  /** Interface language; the first visit takes it from the browser (`navigator.language`). */
+  lang: Lang;
   /* Identity and room preferences */
   partner: CharacterId;
   name: string;
@@ -42,9 +44,9 @@ export const UI_SCALES = [0.9, 1, 1.1, 1.25] as const;
 const KEY = 'pab-settings';
 const query = new URLSearchParams(location.search);
 
-/** Audio defaults (master 70%, music 30%, environment 25%, cries 15%, interface 35%, battle 45%). */
+/** Audio defaults (master 70%, music 30%, cries 15%, interface 35%, effects 45%). */
 export const AUDIO_SETTINGS_DEFAULTS = {
-  volume: AUDIO_DEFAULTS.master, musicVolume: AUDIO_DEFAULTS.music, ambienceVolume: AUDIO_DEFAULTS.ambience,
+  volume: AUDIO_DEFAULTS.master, musicVolume: AUDIO_DEFAULTS.music,
   criesVolume: AUDIO_DEFAULTS.cries, uiVolume: AUDIO_DEFAULTS.ui, battleVolume: AUDIO_DEFAULTS.battle, muted: false,
 } satisfies Partial<Settings>;
 
@@ -75,8 +77,9 @@ function load(): Settings {
     uiScale: pick(UI_SCALES, s.uiScale, d.uiScale),
     highContrast: s.highContrast === true,
     calm: s.calm === true,
-    volume: a.master, musicVolume: a.music, ambienceVolume: a.ambience, criesVolume: a.cries, uiVolume: a.ui, battleVolume: a.battle,
+    volume: a.master, musicVolume: a.music, criesVolume: a.cries, uiVolume: a.ui, battleVolume: a.battle,
     muted: query.has('mute') || a.muted,
+    lang: isLang(s.lang) ? s.lang : detectLang(typeof navigator === 'undefined' ? null : navigator.languages?.length ? navigator.languages : navigator.language),
     partner: isCharacterId(s.partner) ? s.partner : CHARACTER_IDS[Math.floor(Math.random() * CHARACTER_IDS.length)],
     name: typeof s.name === 'string' ? s.name.slice(0, 24) : '',
     showdownName: typeof s.showdownName === 'string' ? s.showdownName.slice(0, 18) : '',

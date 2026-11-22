@@ -1,7 +1,8 @@
 import { memo, useRef, useState, type CSSProperties } from 'react';
-import { TYPE_NAMES, category, moveInfo, type Pokemon, type TypeName } from '@shared';
+import { TYPE_NAMES, category, moveInfo, type Pokemon, type RoleCategory, type TypeName } from '@shared';
 import { pokemonArt } from '../assets.js';
 import { typeVerdict } from '../battle/matchup.js';
+import { useT, type MessageKey } from '../i18n/index.js';
 
 /** Type palette (mirrors --type-* in styles/tokens.css): conventional hues tuned for the dark UI. */
 export const TYPE_COLORS: Record<TypeName, string> = {
@@ -17,8 +18,9 @@ export const TypeBadge = ({ type, tera = false, size = 'md' }: { type: TypeName;
   </span>
 );
 
-const ROLE_LABEL = { hazard: 'Hazards', support: 'Support', setup: 'Setup', attacker: 'Attacker', other: 'Flex' } as const;
-const ROLES = ['Hazards', 'Support', 'Setup', 'Attacker', 'Flex'] as const;
+/** The dictionary key of each role's short label (the Pokédex uses them too). */
+export const ROLE_KEY = { hazard: 'mon.roleHazard', support: 'mon.roleSupport', setup: 'mon.roleSetup', attacker: 'mon.roleAttacker', other: 'mon.roleFlex' } as const satisfies Record<RoleCategory, MessageKey>;
+const ROLES = [ROLE_KEY.hazard, ROLE_KEY.support, ROLE_KEY.setup, ROLE_KEY.attacker, ROLE_KEY.other] as const;
 
 /** A move's type, from the shared move data (Normal when unknown). */
 const moveType = (name: string): TypeName => moveInfo(name)?.type ?? 'Normal';
@@ -46,6 +48,7 @@ function Art({ p, className }: { p: Pokemon; className: string }) {
  */
 export const PokemonCard = memo(function PokemonCard({ p, index = 0, highlight, compact = false }: { p: Pokemon; index?: number; highlight?: string; compact?: boolean }) {
   const ref = useRef<HTMLElement>(null);
+  const t = useT();
   return (
     <article
       ref={ref}
@@ -64,15 +67,15 @@ export const PokemonCard = memo(function PokemonCard({ p, index = 0, highlight, 
         <div className="pcard__art"><Art p={p} className="pcard__img" /></div>
         <header className="pcard__head">
           <h4>{p.name}</h4>
-          <span className="pcard__role">{ROLE_LABEL[category(p)]} · {p.role}</span>
+          <span className="pcard__role">{t(ROLE_KEY[category(p)])} · {p.role}</span>
         </header>
         <div className="pcard__types">{p.types.map(t => <TypeBadge key={t} type={t} size="sm" />)}<TypeBadge type={p.tera} tera size="sm" /></div>
         <dl className="pcard__meta">
-          <div><dt>Ability</dt><dd>{p.ability}</dd></div>
-          <div><dt>Item</dt><dd>{p.item}</dd></div>
-          <div><dt>Nature</dt><dd>{p.nature}</dd></div>
+          <div><dt>{t('mon.ability')}</dt><dd>{p.ability}</dd></div>
+          <div><dt>{t('mon.item')}</dt><dd>{p.item}</dd></div>
+          <div><dt>{t('mon.nature')}</dt><dd>{p.nature}</dd></div>
         </dl>
-        <ul className="pcard__moves" aria-label="Moves">
+        <ul className="pcard__moves" aria-label={t('mon.moves')}>
           {p.moves.map(m => { const t = moveType(m); return <li key={m} data-move={m} style={{ '--t': TYPE_COLORS[t] } as CSSProperties}>{m}<span className="sr-only"> ({t})</span></li>; })}
         </ul>
         {!compact && <p className="pcard__quirk">{p.quirk}</p>}
@@ -97,29 +100,30 @@ export const PokemonChip = memo(function PokemonChip({ p }: { p: Pokemon }) {
  * hit several members super effectively (abilities and items such as Levitate or Air Balloon count).
  */
 export function TeamSummary({ team }: { team: Pokemon[] }) {
+  const t = useT();
   const roles: Record<string, number> = {};
-  team.forEach(p => { const c = ROLE_LABEL[category(p)]; roles[c] = (roles[c] || 0) + 1; });
+  team.forEach(p => { const c = ROLE_KEY[category(p)]; roles[c] = (roles[c] || 0) + 1; });
   const coverage = TYPE_NAMES.filter(t => team.some(p => p.moves.some(m => { const i = moveInfo(m); return !!i && i.category !== 'Status' && i.type === t; })));
   const weak = TYPE_NAMES.filter(t => t !== 'Stellar')
     .map(t => ({ t, n: team.filter(p => (typeVerdict(t, { species: p.name, types: p.types, tera: null, ability: p.ability, item: p.item }).mult ?? 1) >= 2).length }))
     .filter(w => w.n >= 2).sort((a, b) => b.n - a.n).slice(0, 3);
   return (
     <div className="tsum">
-      <dl className="tsum__roles" aria-label="Roles">
-        {ROLES.map(r => <div key={r} className={roles[r] ? '' : 'is-zero'}><dt>{r}</dt><dd className="num">{roles[r] || 0}</dd></div>)}
+      <dl className="tsum__roles" aria-label={t('mon.roles')}>
+        {ROLES.map(r => <div key={r} className={roles[r] ? '' : 'is-zero'}><dt>{t(r)}</dt><dd className="num">{roles[r] || 0}</dd></div>)}
       </dl>
       <div className="tsum__row">
-        <span className="tsum__label">Coverage</span>
-        <span className="tsum__dots" role="img" aria-label={`Attacking types: ${coverage.join(', ')}`}>
+        <span className="tsum__label">{t('mon.coverage')}</span>
+        <span className="tsum__dots" role="img" aria-label={t('mon.coverageAria', { types: coverage.join(', ') })}>
           {coverage.map(t => <i key={t} title={t} style={{ '--t': TYPE_COLORS[t] } as CSSProperties} />)}
         </span>
         <b className="num">{coverage.length}</b>
       </div>
       <div className="tsum__row">
-        <span className="tsum__label">Weak spots</span>
+        <span className="tsum__label">{t('mon.weakSpots')}</span>
         {weak.length
-          ? weak.map(w => <span key={w.t} className="tsum__weak" title={`${w.n} of ${team.length} take super-effective ${w.t} damage`}><TypeBadge type={w.t} size="sm" /><b className="num">×{w.n}</b></span>)
-          : <span className="tsum__none">No type hits two at once</span>}
+          ? weak.map(w => <span key={w.t} className="tsum__weak" title={t('mon.weakTitle', { n: w.n, total: team.length, type: w.t })}><TypeBadge type={w.t} size="sm" /><b className="num">×{w.n}</b></span>)
+          : <span className="tsum__none">{t('mon.noWeak')}</span>}
       </div>
     </div>
   );

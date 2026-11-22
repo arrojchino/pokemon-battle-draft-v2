@@ -10,8 +10,9 @@ import { BattleController } from '../../battle/controller.js';
 import type { BattleFx } from '../../battle/model.js';
 import { createStageBridge } from '../../battle/stageBridge.js';
 import { Icon } from '../primitives.js';
-import { matchModel } from './match/model.js';
-import { Scoreboard } from './match/Scoreboard.js';
+import { linkKey, matchModel } from './match/model.js';
+import { PHASE_LABEL, Scoreboard } from './match/Scoreboard.js';
+import { t as tr, useT } from '../../i18n/index.js';
 import { BattleArena } from './match/BattleArena.js';
 
 /** `?fast` plays battle animations at ~12x speed (for testing). */
@@ -20,15 +21,15 @@ type Arena = { id: number; controller: BattleController; dispose: () => void; di
 
 /** What is happening in the watched room between battles. */
 function between(room: PublicRoom, names: [string, string]): { eyebrow: string; title: string; hint: string } {
-  const lead = room.wins[0] === room.wins[1] ? 'Level' : `${names[room.wins[0] > room.wins[1] ? 0 : 1]} leads`;
-  const score = `${lead} ${Math.max(...room.wins)}–${Math.min(...room.wins)} · Best of ${room.bestOf}`;
+  const lead = room.wins[0] === room.wins[1] ? tr('watch.level') : tr('watch.leads', { name: names[room.wins[0] > room.wins[1] ? 0 : 1] });
+  const score = `${lead} ${Math.max(...room.wins)}–${Math.min(...room.wins)} · ${tr('match.bestOf', { n: room.bestOf })}`;
   switch (room.phase) {
-    case 'calls': return { eyebrow: 'Coin toss', title: 'The coin is about to be called', hint: score };
-    case 'spin': return { eyebrow: 'Coin toss', title: room.tossWinner === null ? 'The coin is in the air' : `${names[room.tossWinner]} won the toss`, hint: 'Two teams are dealt face down; the toss winner takes one.' };
-    case 'pick': return { eyebrow: 'Draft', title: `${room.tossWinner === null ? 'The toss winner' : names[room.tossWinner]} is choosing a team`, hint: 'The battle starts as soon as the pick is in.' };
-    case 'battle': return { eyebrow: 'Battle', title: room.mode === 'app' ? 'The battle is starting' : 'They are battling on Showdown', hint: room.mode === 'app' ? score : 'This room battles off site, so there is nothing to show here until they report the winner.' };
-    case 'between': return { eyebrow: 'Interval', title: `Game ${room.games} goes to ${names[room.history[room.history.length - 1]?.winner ?? 0]}`, hint: score };
-    case 'complete': return { eyebrow: 'Series complete', title: `${names[room.wins[0] > room.wins[1] ? 0 : 1]} wins the series`, hint: `${room.wins[0]}–${room.wins[1]}` };
+    case 'calls': return { eyebrow: tr(PHASE_LABEL.calls), title: tr('watch.aboutToCall'), hint: score };
+    case 'spin': return { eyebrow: tr(PHASE_LABEL.calls), title: room.tossWinner === null ? tr('watch.inAir') : tr('match.wonToss', { name: names[room.tossWinner] }), hint: tr('watch.dealHint') };
+    case 'pick': return { eyebrow: tr(PHASE_LABEL.pick), title: room.tossWinner === null ? tr('watch.winnerChoosing') : tr('watch.nameChoosing', { name: names[room.tossWinner] }), hint: tr('watch.pickHint') };
+    case 'battle': return { eyebrow: tr(PHASE_LABEL.battle), title: room.mode === 'app' ? tr('watch.starting') : tr('watch.onShowdown'), hint: room.mode === 'app' ? score : tr('watch.offSiteHint') };
+    case 'between': return { eyebrow: tr(PHASE_LABEL.between), title: tr('watch.gameGoesTo', { n: room.games, name: names[room.history[room.history.length - 1]?.winner ?? 0] }), hint: score };
+    case 'complete': return { eyebrow: tr(PHASE_LABEL.complete), title: tr('watch.winsSeries', { name: names[room.wins[0] > room.wins[1] ? 0 : 1] }), hint: `${room.wins[0]}–${room.wins[1]}` };
   }
 }
 
@@ -37,9 +38,11 @@ function between(room: PublicRoom, names: [string, string]): { eyebrow: string; 
  * from their public stream (the first trainer's side near the lens). Nothing here acts on the room.
  */
 export function WatchScreen({ room, transport, link, onLeave }: { room: PublicRoom; transport: Transport; link: string; onLeave: () => void }) {
+  const t = useT();
   const s = useSettings();
   const { world } = useWorld();
-  const m = useMemo(() => matchModel(room, 0, s.partner), [room, s.partner]);
+  // The language is a dependency: the model holds default names ("Player 1") in it.
+  const m = useMemo(() => matchModel(room, 0, s.partner), [room, s.partner, t.lang]); // eslint-disable-line react-hooks/exhaustive-deps
   const reduced = useReducedMotion();
   const reducedRef = useRef(reduced); reducedRef.current = reduced;
   const [arena, setArena] = useState<Arena | null>(null);
@@ -86,17 +89,17 @@ export function WatchScreen({ room, transport, link, onLeave }: { room: PublicRo
     <main className={`screen match watch phase-${room.phase} ${showArena ? 'has-arena' : ''}`}>
       <Scoreboard room={room} m={m} watch />
       <div className="roombar">
-        <span className={`dot ${link === 'online' ? 'dot--on' : link === 'connecting' ? 'dot--wait' : ''}`} title={`Link ${link}`} />
-        <span className="roombar__watch"><Icon name="eye" size={14} />Watching{room.watchers > 1 ? ` with ${room.watchers - 1} more` : ''}</span>
-        <button type="button" className="iconbtn iconbtn--text" onClick={onLeave}><Icon name="leave" />Stop watching</button>
+        <span className={`dot ${link === 'online' ? 'dot--on' : link === 'connecting' ? 'dot--wait' : ''}`} title={t(linkKey(link))} />
+        <span className="roombar__watch"><Icon name="eye" size={14} />{room.watchers > 1 ? t('watch.watchingWith', { n: room.watchers - 1 }) : t('watch.watching')}</span>
+        <button type="button" className="iconbtn iconbtn--text" onClick={onLeave}><Icon name="leave" />{t('watch.stop')}</button>
       </div>
-      <ErrorBoundary label="watch panel" compact>
+      <ErrorBoundary label={t('watch.panel')} compact>
         <div className="match__dock" key={showArena ? `arena-${arena?.id}` : room.phase}>
           {showArena && arena
             ? <BattleArena controller={arena.controller} spectating mineLabel={m.names[0]} theirsLabel={m.names[1]} onForfeit={() => {}} finished={room.phase !== 'battle'} onContinue={dismiss} iWon={null} />
             : (
               <section className="dock panel dock--quiet watch__panel" aria-live="polite">
-                <p className="eyebrow"><span className="jp">観戦</span> {info.eyebrow}</p>
+                <p className="eyebrow">{info.eyebrow}</p>
                 <h3 className="dock__title">{info.title}</h3>
                 <p className="dock__hint">{info.hint}</p>
               </section>

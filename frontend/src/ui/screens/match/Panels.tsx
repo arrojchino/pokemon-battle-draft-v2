@@ -4,6 +4,7 @@ import { useReducedMotion } from '../../../app/settings.js';
 import { Icon } from '../../primitives.js';
 import { PokemonCard, PokemonChip, Sprite, TeamSummary } from '../../pokemon.js';
 import type { MatchModel } from './model.js';
+import { useT } from '../../../i18n/index.js';
 
 type Act = (a: GameAction) => void;
 
@@ -39,6 +40,7 @@ function useFitHeight(ref: RefObject<HTMLElement | null>, deps: unknown[]) {
  * learns which six were taken (in battle they only see what the other side reveals).
  */
 export function DraftBoard({ room, m, act }: { room: PublicRoom; m: MatchModel; act: Act }) {
+  const t = useT();
   const [hover, setHover] = useState<0 | 1 | null>(null);
   const [chosen, setChosen] = useState<0 | 1 | null>(null);
   const reduced = useReducedMotion();
@@ -49,15 +51,15 @@ export function DraftBoard({ room, m, act }: { room: PublicRoom; m: MatchModel; 
 
   if (!room.candidates) {
     return (
-      <section ref={box} className="draft draft--sealed" aria-label="Team draft">
+      <section ref={box} className="draft draft--sealed" aria-label={t('panel.teamDraft')}>
         <header className="draft__head">
-          <p className="eyebrow"><span className="jp">ドラフト</span> {m.oppName} is choosing</p>
-          <p className="draft__sub">Two teams were dealt face down. {m.oppName} takes one and the other six are yours. Their pick stays hidden; in battle you only see what their Pokémon reveal.</p>
+          <p className="eyebrow">{t('panel.oppChoosing', { name: m.oppName })}</p>
+          <p className="draft__sub">{t('panel.sealedSub', { name: m.oppName })}</p>
         </header>
         <div className="draft__cols">
           {[0, 1].map(i => (
             <div key={i} className="draft__col draft__col--sealed">
-              <div className="draft__colhead"><h3>Team {i ? 'B' : 'A'}</h3><span className="badge">Face down</span></div>
+              <div className="draft__colhead"><h3>{t('panel.team', { letter: i ? 'B' : 'A' })}</h3><span className="badge">{t('panel.faceDown')}</span></div>
               <div className="draft__grid">{Array.from({ length: 6 }, (_, k) => <div key={k} className="cardback" style={{ '--i': k + i * 6 } as CSSProperties} aria-hidden="true"><span className="cardback__ball" /></div>)}</div>
             </div>
           ))}
@@ -67,18 +69,18 @@ export function DraftBoard({ room, m, act }: { room: PublicRoom; m: MatchModel; 
   }
 
   return (
-    <section ref={box} className={`draft ${chosen !== null ? 'has-choice' : ''}`} aria-label="Team draft">
+    <section ref={box} className={`draft ${chosen !== null ? 'has-choice' : ''}`} aria-label={t('panel.teamDraft')}>
       <header className="draft__head">
-        <p className="eyebrow"><span className="jp">ドラフト</span> {canPick ? 'You won the toss · choose your six' : `${m.oppName} is choosing`}</p>
-        <p className="draft__sub">The other team goes to {m.oppName}, who cannot see these cards or your choice. Sets are fixed: what you see is what you battle with.</p>
+        <p className="eyebrow">{canPick ? t('panel.wonToss') : t('panel.oppChoosing', { name: m.oppName })}</p>
+        <p className="draft__sub">{t('panel.pickSub', { name: m.oppName })}</p>
       </header>
       <div className="draft__cols">
         {room.candidates.map((team, i) => (
           <div key={i} className={`draft__col ${hover === i ? 'is-hover' : ''} ${chosen === i ? 'is-chosen' : chosen !== null ? 'is-passed' : ''}`} onMouseEnter={() => setHover(i as 0 | 1)} onMouseLeave={() => setHover(null)}>
             <div className="draft__colhead">
-              <h3>Team {i ? 'B' : 'A'}</h3>
+              <h3>{t('panel.team', { letter: i ? 'B' : 'A' })}</h3>
               <TeamSummary team={team} />
-              {canPick && <button className="btn btn--primary btn--lg draft__take" disabled={chosen !== null} onClick={() => take(i as 0 | 1)}><Icon name="check" />{chosen === i ? 'Taken' : `Take Team ${i ? 'B' : 'A'}`}</button>}
+              {canPick && <button className="btn btn--primary btn--lg draft__take" disabled={chosen !== null} onClick={() => take(i as 0 | 1)}><Icon name="check" />{chosen === i ? t('panel.taken') : t('panel.takeTeam', { letter: i ? 'B' : 'A' })}</button>}
             </div>
             <div className="draft__grid">{team.map((p, k) => <PokemonCard key={p.name} p={p} index={k + i * 6} compact />)}</div>
           </div>
@@ -99,9 +101,10 @@ export function TeamStrip({ label, team, partner }: { label: string; team: Pokem
 
 /** The rival's six as Team Preview shows them: species and types, sets hidden. */
 export function RivalStrip({ label, rival, partner }: { label: string; rival: RivalPreview[]; partner?: string }) {
+  const t = useT();
   return (
     <div className="strip strip--rival" style={{ '--partner': partner } as CSSProperties}>
-      <span className="strip__label">{label}<em>Sets hidden</em></span>
+      <span className="strip__label">{label}<em>{t('panel.setsHidden')}</em></span>
       <div className="strip__row">
         {rival.map(p => (
           <div key={p.name} className="pchip pchip--rival" title={`${p.name} · ${p.types.join(' / ')}`}>
@@ -115,41 +118,44 @@ export function RivalStrip({ label, rival, partner }: { label: string; rival: Ri
 }
 
 export function ResultReport({ room, m, act }: { room: PublicRoom; m: MatchModel; act: Act }) {
+  const t = useT();
   const [confirm, setConfirm] = useState<0 | 1 | null>(null);
   return (
     <div className="report">
-      <span className="report__q">Who won game {m.gameNo}?</span>
+      <span className="report__q">{t('panel.whoWon', { n: m.gameNo })}</span>
       {[0, 1].map(s => (
         confirm === s
-          ? <button key={s} className="btn btn--primary" onClick={() => { act({ type: 'result', winner: s as 0 | 1 }); setConfirm(null); }}><Icon name="check" />Confirm {m.names[s]}</button>
-          : <button key={s} className="btn" onClick={() => setConfirm(s as 0 | 1)} disabled={room.phase !== 'battle'}>{s === m.me ? 'I won' : `${m.names[s]} won`}</button>
+          ? <button key={s} className="btn btn--primary" onClick={() => { act({ type: 'result', winner: s as 0 | 1 }); setConfirm(null); }}><Icon name="check" />{t('panel.confirmWinner', { name: m.names[s] })}</button>
+          : <button key={s} className="btn" onClick={() => setConfirm(s as 0 | 1)} disabled={room.phase !== 'battle'}>{s === m.me ? t('panel.iWon') : t('panel.playerWon', { name: m.names[s] })}</button>
       ))}
     </div>
   );
 }
 
 export function IntervalPanel({ room, m, act }: { room: PublicRoom; m: MatchModel; act: Act }) {
+  const t = useT();
   const last = room.history[room.history.length - 1];
   const iWon = last?.winner === m.me;
   return (
     <section className={`dock panel dock--result ${iWon ? 'dock--win' : ''}`}>
-      <p className="eyebrow"><span className="jp">{iWon ? '勝利' : '敗北'}</span> Game {last?.game} result</p>
-      <h3 className={`dock__title ${iWon ? 'dock__title--gold' : ''}`}>{iWon ? 'You took the game' : `${m.names[last?.winner ?? 0]} took the game`}</h3>
-      <p className="dock__hint">Series {room.wins[0]}–{room.wins[1]}. First to {m.target} wins. {iWon ? 'You call the next coin.' : `${m.names[last?.winner ?? 0]} calls the next coin.`}</p>
-      <button className="btn btn--primary btn--xl" onClick={() => act({ type: 'next' })}><Icon name="arrow" />Next game</button>
+      <p className="eyebrow">{t('panel.gameResult', { n: last?.game ?? '' })}</p>
+      <h3 className={`dock__title ${iWon ? 'dock__title--gold' : ''}`}>{iWon ? t('panel.youTookGame') : t('panel.playerTookGame', { name: m.names[last?.winner ?? 0] })}</h3>
+      <p className="dock__hint">{t('panel.seriesScore', { a: room.wins[0], b: room.wins[1], n: m.target })} {iWon ? t('panel.youCallCoin') : t('panel.playerCallsCoin', { name: m.names[last?.winner ?? 0] })}</p>
+      <button className="btn btn--primary btn--xl" onClick={() => act({ type: 'next' })}><Icon name="arrow" />{t('panel.nextGame')}</button>
     </section>
   );
 }
 
 export function CompletePanel({ room, m, act }: { room: PublicRoom; m: MatchModel; act: Act }) {
+  const t = useT();
   const iWon = m.seriesWinner === m.me;
   return (
     <section className={`dock panel dock--result dock--victory ${iWon ? 'dock--win' : ''}`}>
-      <p className="eyebrow"><span className="jp">シリーズ終了</span> Series complete · {room.wins[0]}–{room.wins[1]}</p>
-      <h3 className={`dock__title dock__title--big ${iWon ? 'dock__title--gold' : ''}`}>{iWon ? 'Victory' : `${m.names[m.seriesWinner ?? 0]} wins the series`}</h3>
+      <p className="eyebrow">{t('panel.seriesComplete', { a: room.wins[0], b: room.wins[1] })}</p>
+      <h3 className={`dock__title dock__title--big ${iWon ? 'dock__title--gold' : ''}`}>{iWon ? t('panel.victory') : t('panel.playerWinsSeries', { name: m.names[m.seriesWinner ?? 0] })}</h3>
       <div className="dock__row">
-        <button className="btn btn--gold" onClick={() => act({ type: 'reset', bestOf: 3 })}><Icon name="spark" />Rematch · Best of 3</button>
-        <button className="btn" onClick={() => act({ type: 'reset', bestOf: 5 })}>Best of 5</button>
+        <button className="btn btn--gold" onClick={() => act({ type: 'reset', bestOf: 3 })}><Icon name="spark" />{t('panel.rematchBo3')}</button>
+        <button className="btn" onClick={() => act({ type: 'reset', bestOf: 5 })}>{t('panel.bestOf5')}</button>
       </div>
     </section>
   );

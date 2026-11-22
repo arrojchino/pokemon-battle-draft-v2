@@ -5,19 +5,20 @@ import { isRevival, setFor as setForSpecies, switchLocked, type BattleRequest, t
 import { Icon } from '../../primitives.js';
 import { sound } from '../../../audio/sound.js';
 import { moveVerdict, type Fighter } from '../../../battle/matchup.js';
-import { MonCard, MoveCard, TipLayer, VerdictChip, useTip } from './Tips.js';
+import { CATEGORY_KEY, MonCard, MoveCard, STATUS_KEY, TipLayer, VerdictChip, useTip } from './Tips.js';
 import { Sprite, TYPE_COLORS, TypeBadge } from '../../pokemon.js';
+import { t as tr, useT, type MessageKey } from '../../../i18n/index.js';
 
-const STATUS_LABEL: Record<string, string> = { brn: 'BRN', par: 'PAR', psn: 'PSN', tox: 'TOX', slp: 'SLP', frz: 'FRZ' };
-const STAT_SHORT: Record<string, string> = { atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe', accuracy: 'Acc', evasion: 'Eva' };
+const STAT_SHORT: Record<string, MessageKey> = { atk: 'battle.statAtk', def: 'battle.statDef', spa: 'battle.statSpa', spd: 'battle.statSpd', spe: 'battle.statSpe', accuracy: 'battle.statAcc', evasion: 'battle.statEva' };
 
 function HpBar({ mon, exact }: { mon: MonView; exact: boolean }) {
+  const t = useT();
   const f = mon.fainted ? 0 : mon.hp / mon.maxhp;
   const tone = f > 0.5 ? 'ok' : f > 0.2 ? 'mid' : 'low';
   return (
     <div className={`hp hp--${tone}`}>
-      <span className="hp__tag" aria-hidden="true">HP</span>
-      <div className="hp__track" role="meter" aria-label="HP" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(f * 100)}><i className="hp__ghost" style={{ '--f': f } as CSSProperties} /><i className="hp__fill" style={{ '--f': f } as CSSProperties} /></div>
+      <span className="hp__tag" aria-hidden="true">{t('battle.hp')}</span>
+      <div className="hp__track" role="meter" aria-label={t('battle.hp')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(f * 100)}><i className="hp__ghost" style={{ '--f': f } as CSSProperties} /><i className="hp__fill" style={{ '--f': f } as CSSProperties} /></div>
       <span className="hp__num">{exact ? <><b>{mon.fainted ? 0 : mon.hp}</b>/{mon.maxhp}</> : <><b>{Math.round(f * 100)}</b>%</>}</span>
     </div>
   );
@@ -29,10 +30,10 @@ function HpBar({ mon, exact }: { mon: MonView; exact: boolean }) {
  */
 export function fighterOfMon(mon: MonView | null, known = true): Fighter | null {
   if (!mon) return null;
-  const item = known || mon.revealed.item ? mon.item : 'Unknown';
+  const item = known || mon.revealed.item ? mon.item : tr('battle.unknownItem');
   return { species: mon.species, types: mon.set?.types ?? ['Normal'], tera: mon.tera, ability: known ? mon.set?.ability ?? '' : mon.revealed.ability ?? '', item };
 }
-const hiddenNote = (mon: MonView) => (mon.revealed.moves.length ? `${mon.revealed.moves.length} of 4 moves revealed. The rest of its set is hidden.` : 'Its set stays hidden until it acts.');
+const hiddenNote = (mon: MonView) => (mon.revealed.moves.length ? tr('battle.movesRevealed', { n: mon.revealed.moves.length }) : tr('battle.setHidden'));
 
 /** Floating damage and healing numbers from observed HP changes of the active Pokémon. */
 function useHpPops(mon: MonView | null, exact: boolean) {
@@ -63,6 +64,7 @@ function fighterOfReq(p: RequestPokemon, mon?: MonView | null): Fighter {
 
 /** `known`: this side's sets are ours to see (a player's own side). A spectator knows neither side's. */
 function MonPlate({ mon, side, label, mine, foe, known = mine, foeKnown = !mine }: { mon: MonView | null; side: SideView; label: string; mine: boolean; foe: MonView | null; known?: boolean; foeKnown?: boolean }) {
+  const t = useT();
   const tip = useTip(() => {
     const f = fighterOfMon(mon, known); if (!f || !mon) return null;
     const vs = fighterOfMon(foe, foeKnown);
@@ -73,20 +75,20 @@ function MonPlate({ mon, side, label, mine, foe, known = mine, foeKnown = !mine 
   const types: TypeName[] = mon.tera ? [mon.tera] : mon.set?.types ?? [];
   const boosts = Object.entries(mon.boosts).filter(([, v]) => v);
   return (
-    <section {...tip} tabIndex={0} className={`plate2 ${mine ? 'plate2--mine' : 'plate2--theirs'}`} aria-label={`${label} active Pokémon`} style={{ '--t1': TYPE_COLORS[types[0] ?? 'Normal'] } as CSSProperties}>
+    <section {...tip} tabIndex={0} className={`plate2 ${mine ? 'plate2--mine' : 'plate2--theirs'}`} aria-label={t('battle.activeMon', { label })} style={{ '--t1': TYPE_COLORS[types[0] ?? 'Normal'] } as CSSProperties}>
       <header>
         <strong>{mon.species}</strong>
-        {mon.status && <span className={`stat-chip stat-chip--${mon.status}`}>{STATUS_LABEL[mon.status] ?? mon.status}</span>}
+        {mon.status && <span className={`stat-chip stat-chip--${mon.status}`}>{STATUS_KEY[mon.status] ? t(STATUS_KEY[mon.status]) : mon.status}</span>}
         {mon.tera && <TypeBadge type={mon.tera} tera size="sm" />}
-        <span className="plate2__lv"><small>Lv</small>100</span>
+        <span className="plate2__lv"><small>{t('battle.lv')}</small>100</span>
       </header>
       <HpBar mon={mon} exact={known} />
       <div className="pops" aria-hidden="true">{pops.map(p => <b key={p.id} className={`pop ${p.heal ? 'pop--heal' : ''}`} onAnimationEnd={() => done(p.id)}>{p.text}</b>)}</div>
       <div className="plate2__row">
         <div className="plate2__types">{!mon.tera && mon.set?.types.map(t => <TypeBadge key={t} type={t} size="sm" />)}</div>
-        {boosts.map(([k, v]) => <span key={k} className={`boost ${v > 0 ? 'boost--up' : 'boost--down'}`}>{v > 0 ? '+' : ''}{v} {STAT_SHORT[k] ?? k}</span>)}
+        {boosts.map(([k, v]) => <span key={k} className={`boost ${v > 0 ? 'boost--up' : 'boost--down'}`}>{v > 0 ? '+' : ''}{v} {STAT_SHORT[k] ? t(STAT_SHORT[k]) : k}</span>)}
       </div>
-      <div className="plate2__team" aria-label={`${label} team`}>
+      <div className="plate2__team" aria-label={t('battle.teamOf', { label })}>
         {side.mons.map(m => <i key={m.key} title={m.species} className={m.fainted ? 'is-out' : m.status ? 'is-status' : ''} />)}
         {Array.from({ length: Math.max(0, 6 - side.mons.length) }, (_, k) => <i key={`unseen${k}`} className="is-unseen" aria-hidden="true" />)}
         <span>{label}</span>
@@ -104,16 +106,18 @@ function Timer({ deadline, active }: { deadline: number | null; active: boolean 
 }
 
 function TimerFace({ left }: { left: number }) {
+  const t = useT();
   // Tick through the last ten seconds, louder for the final three.
   useEffect(() => { if (left > 0 && left <= 10) sound.play(left <= 3 ? 'tickUrgent' : 'tick'); }, [left]);
-  return <span className={`timer ${left <= 20 ? 'is-low' : ''}`} title="When time runs out, the default move is played for you"><Icon name="history" size={14} />{left}s</span>;
+  return <span className={`timer ${left <= 20 ? 'is-low' : ''}`} title={t('arena.timerTitle')}><Icon name="history" size={14} />{left}s</span>;
 }
 
 function TeamPreview({ req, theirs, choose }: { req: BattleRequest; theirs: SideView; choose: (c: string) => void }) {
+  const t = useT();
   return (
     <div className="preview">
-      <p className="eyebrow"><span className="jp">先発</span> Choose your lead</p>
-      <div className="preview__theirs" aria-label="Opponent team">
+      <p className="eyebrow">{t('battle.chooseLead')}</p>
+      <div className="preview__theirs" aria-label={t('battle.opponentTeam')}>
         {theirs.mons.map(m => <FoePreview key={m.key} mon={m} />)}
       </div>
       <div className="preview__mine">
@@ -127,12 +131,14 @@ function TeamPreview({ req, theirs, choose }: { req: BattleRequest; theirs: Side
   );
 }
 function FoePreview({ mon }: { mon: MonView }) {
-  const tip = useTip(() => <MonCard f={fighterOfMon(mon, false)!} moves={[]} vs={null} note="Its set stays hidden until it is revealed in battle." />);
+  const t = useT();
+  const tip = useTip(() => <MonCard f={fighterOfMon(mon, false)!} moves={[]} vs={null} note={t('battle.foeSetHidden')} />);
   return <span {...tip} tabIndex={0} className="preview__foe"><Sprite eager artId={mon.set?.artId ?? mon.set?.id ?? 0} name={mon.species} /></span>;
 }
 function LeadButton({ p, sp, onPick }: { p: RequestPokemon; sp: string; onPick: () => void }) {
+  const t = useT();
   const set = setForSpecies(sp);
-  const tip = useTip(() => <MonCard f={fighterOfReq(p)} moves={set?.moves ?? p.moves} vs={null} note={set ? `Tera ${set.tera} available` : undefined} />);
+  const tip = useTip(() => <MonCard f={fighterOfReq(p)} moves={set?.moves ?? p.moves} vs={null} note={set ? t('battle.teraAvailable', { type: set.tera }) : undefined} />);
   return (
     <button {...tip} className="lead" onClick={onPick} style={{ '--t1': TYPE_COLORS[set?.types[0] ?? 'Normal'] } as CSSProperties}>
       <Sprite eager artId={set?.artId ?? set?.id ?? 0} name={set?.name ?? p.ident.slice(4)} />
@@ -142,6 +148,7 @@ function LeadButton({ p, sp, onPick }: { p: RequestPokemon; sp: string; onPick: 
   );
 }
 function MoveButton({ m, index, off, user, target, teraPreview, onPick }: { m: { move: string; id: string; pp?: number; maxpp?: number }; index: number; off: boolean; user: Fighter; target: Fighter | null; teraPreview: TypeName | null; onPick: (i: number) => void }) {
+  const t = useT();
   const info = moveInfo(m.move);
   const v = moveVerdict(m.move, user, target, teraPreview);
   const tip = useTip(() => <MoveCard name={m.move} pp={m.pp} maxpp={m.maxpp} user={user} target={target} teraPreview={teraPreview} />);
@@ -150,7 +157,7 @@ function MoveButton({ m, index, off, user, target, teraPreview, onPick }: { m: {
       <strong>{m.move}</strong>
       <span className="move__meta">
         <em>{info?.type ?? '???'}</em>
-        <em>{info?.category ?? ''}{info && info.power ? ` · ${info.power}` : ''}{info && info.accuracy ? ` · ${info.accuracy}%` : ''}</em>
+        <em>{info ? t(CATEGORY_KEY[info.category]) : ''}{info && info.power ? ` · ${info.power}` : ''}{info && info.accuracy ? ` · ${info.accuracy}%` : ''}</em>
         {m.pp !== undefined && <em className="move__pp">{m.pp}/{m.maxpp}</em>}
       </span>
       <span className="move__vs"><VerdictChip v={v} compact />{v?.stab && <span className="vchip vchip--stab">STAB</span>}</span>
@@ -160,13 +167,14 @@ function MoveButton({ m, index, off, user, target, teraPreview, onPick }: { m: {
 function SwapButton({ p, mon, disabled, foe, onPick, revive }: { p: RequestPokemon; mon: MonView | undefined; disabled: boolean; foe: Fighter | null; onPick: () => void; revive?: boolean }) {
   const out = p.condition.endsWith(' fnt');
   const sp = p.details.split(',')[0];
+  const t = useT();
   const set = setForSpecies(sp);
   const tip = useTip(() => {
     const [hp, maxhp] = p.condition.split(' ')[0].split('/').map(Number);
     return <MonCard f={fighterOfReq(p, mon)} hp={out ? { hp: 0, maxhp: maxhp || hp } : { hp, maxhp }} status={mon?.status ?? null} moves={set?.moves ?? p.moves} vs={foe} foeAttacker={foe} />;
   });
   return (
-    <button {...tip} className={`swap ${p.active ? 'is-active' : ''} ${out ? 'is-out' : ''} ${revive && out && !disabled ? 'is-revive' : ''}`} disabled={disabled} onClick={onPick} aria-label={revive && out && !disabled ? `Revive ${sp}` : undefined}>
+    <button {...tip} className={`swap ${p.active ? 'is-active' : ''} ${out ? 'is-out' : ''} ${revive && out && !disabled ? 'is-revive' : ''}`} disabled={disabled} onClick={onPick} aria-label={revive && out && !disabled ? t('battle.revive', { name: sp }) : undefined}>
       <Sprite eager artId={set?.artId ?? set?.id ?? 0} name={set?.name ?? p.ident.slice(4)} />
       <span className="swap__hp"><i style={{ '--f': mon ? (mon.fainted ? 0 : mon.hp / mon.maxhp) : 1 } as CSSProperties} /></span>
       <span className="swap__name">{sp}</span>
@@ -175,6 +183,7 @@ function SwapButton({ p, mon, disabled, foe, onPick, revive }: { p: RequestPokem
 }
 
 function Actions({ req, choose, mons, foe }: { req: BattleRequest; choose: (c: string) => void; mons: SideView; foe: MonView | null }) {
+  const t = useT();
   const [tera, setTera] = useState(false);
   const active = req.active?.[0];
   const forced = !!req.forceSwitch?.[0];
@@ -197,11 +206,11 @@ function Actions({ req, choose, mons, foe }: { req: BattleRequest; choose: (c: s
         {!forced && active?.canTerastallize && (
           <button className={`tera ${tera ? 'is-on' : ''}`} aria-pressed={tera} onClick={() => setTera(v => !v)} style={{ '--t': TYPE_COLORS[active.canTerastallize as TypeName] ?? '#fff' } as CSSProperties}>
             <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 0.5 11 4 9 11 3 11 1 4Z" /></svg>
-            Terastallize<small>{active.canTerastallize}</small>
+            {t('battle.terastallize')}<small>{active.canTerastallize}</small>
           </button>
         )}
-        <div className="switches" aria-label="Switch">
-          {forced && <p className="actions__prompt">{revival ? 'Revival Blessing: choose a fainted Pokémon to revive' : 'Choose your next Pokémon'}</p>}
+        <div className="switches" aria-label={t('battle.switch')}>
+          {forced && <p className="actions__prompt">{revival ? t('battle.revivalPrompt') : t('battle.chooseNext')}</p>}
           {bench.map(({ p, i, mon }) => (
             <SwapButton key={p.ident} p={p} mon={mon} foe={target} revive={revival} disabled={switchLocked(p, req)} onPick={() => choose(`switch ${i + 1}`)} />
           ))}
@@ -212,15 +221,18 @@ function Actions({ req, choose, mons, foe }: { req: BattleRequest; choose: (c: s
 }
 
 function Log({ log, open, onClose }: { log: LogEntry[]; open: boolean; onClose: () => void }) {
+  const t = useT();
   return (
-    <aside className={`blog ${open ? 'is-open' : ''}`} aria-label="Battle log" aria-hidden={!open}>
-      <header><strong>Battle log</strong><button className="iconbtn" onClick={onClose} aria-label="Close log" tabIndex={open ? 0 : -1}><Icon name="close" /></button></header>
+    <aside className={`blog ${open ? 'is-open' : ''}`} aria-label={t('battle.log')} aria-hidden={!open}>
+      <header><strong>{t('battle.log')}</strong><button className="iconbtn" onClick={onClose} aria-label={t('battle.closeLog')} tabIndex={open ? 0 : -1}><Icon name="close" /></button></header>
       <ol>{log.slice(-160).map(e => <li key={e.id} className={`blog__${e.kind}`}>{e.text}</li>)}</ol>
     </aside>
   );
 }
 
 type Tone = 'crit' | 'super' | 'resist' | 'miss' | 'ko' | 'immune';
+/** The tone of a line, by message key (any language), else by its English wording (a line logged without a key). */
+const TONE_KEYS: Readonly<Record<string, Tone>> = { 'model.crit': 'crit', 'model.superEffective': 'super', 'model.resisted': 'resist', 'model.avoided': 'miss', 'model.failed': 'miss', 'model.fainted': 'ko', 'model.immune': 'immune' };
 const TONES: [RegExp, Tone][] = [
   [/^A critical hit!/, 'crit'],
   [/^It's super effective!/, 'super'],
@@ -229,7 +241,7 @@ const TONES: [RegExp, Tone][] = [
   [/fainted!$/, 'ko'],
   [/^It doesn't affect/, 'immune'],
 ];
-const toneOf = (text: string): Tone | null => TONES.find(([re]) => re.test(text))?.[1] ?? null;
+const toneOf = (e: LogEntry): Tone | null => (e.key ? TONE_KEYS[e.key] ?? null : TONES.find(([re]) => re.test(e.text))?.[1] ?? null);
 
 /**
  * The message box: what has been said since the last pause, oldest first, the newest line typed in at a quick
@@ -241,7 +253,7 @@ function MessageBox({ lines, fallback }: { lines: LogEntry[]; fallback: string }
   return (
     <div className="msgbox" aria-live="polite">
       {lines.map((e, i) => {
-        const t = toneOf(e.text), now = i === lines.length - 1;
+        const t = toneOf(e), now = i === lines.length - 1;
         return <p key={e.id} className={`msg ${now ? 'is-now' : 'is-past'} ${t ? `msg--${t}` : ''}`} style={{ '--chars': Math.min(e.text.length, 70) } as CSSProperties}><span className="msg__text">{e.text}</span></p>;
       })}
     </div>
@@ -255,7 +267,7 @@ function useMomentCues(log: LogEntry[]) {
     const fresh = log.filter(e => e.id > seen.current);
     if (!fresh.length) return;
     seen.current = fresh[fresh.length - 1].id;
-    const tones = fresh.map(e => toneOf(e.text));
+    const tones = fresh.map(e => toneOf(e));
     if (tones.includes('ko')) sound.play('ko', { gain: 0.8 });
     else if (tones.includes('crit') || tones.includes('super')) sound.play('stamp', { gain: 0.5 });
     // The log array may be mutated in place, so key on its length and last id too.
@@ -273,6 +285,7 @@ export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, fin
   spectating?: boolean;
 }) {
   const snap = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const t = useT();
   const [logOpen, setLogOpen] = useState(false);
   const [confirmForfeit, setConfirmForfeit] = useState(false);
   const s = snap.state;
@@ -283,41 +296,41 @@ export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, fin
   const lines = snap.caption.length ? snap.caption : caption ? [caption] : [];
   const ended = s.phase === 'ended' && !snap.busy;
   useMomentCues(s.log);
-  const tone = caption ? toneOf(caption.text) : null;
+  const tone = caption ? toneOf(caption) : null;
 
   return (
     <TipLayer>
-    <section className="arena" aria-label="Battle">
+    <section className="arena" aria-label={t('arena.battle')}>
       <MonPlate mon={snap.active[opp]} side={s.sides[opp]} label={theirsLabel} mine={false} foe={snap.active[me]} foeKnown={!spectating} />
       <MonPlate mon={snap.active[me]} side={s.sides[me]} label={mineLabel} mine known={!spectating} foe={snap.active[opp]} />
       <div className="arena__bar">
-        <span className="arena__turn">{s.phase === 'preview' ? 'Team preview' : <><small>Turn</small><b>{s.turn || 1}</b></>}</span>
+        <span className="arena__turn">{s.phase === 'preview' ? t('arena.teamPreview') : <><small>{t('arena.turn')}</small><b>{s.turn || 1}</b></>}</span>
         <Timer deadline={snap.deadline} active={snap.canChoose} />
         {s.weather && <span className="arena__chip">{s.weather.replace(/([a-z])([A-Z])/g, '$1 $2')}</span>}
         {s.sides[me].conditions.map(c => <span key={'m' + c} className="arena__chip arena__chip--mine">{c}</span>)}
-        {s.sides[opp].conditions.map(c => <span key={'o' + c} className="arena__chip">{c} (foe)</span>)}
+        {s.sides[opp].conditions.map(c => <span key={'o' + c} className="arena__chip">{t('arena.foeCondition', { name: c })}</span>)}
         <span className="arena__spacer" />
-        <button className="iconbtn iconbtn--text" onClick={() => setLogOpen(v => !v)} aria-expanded={logOpen}><Icon name="history" />Log</button>
+        <button className="iconbtn iconbtn--text" onClick={() => setLogOpen(v => !v)} aria-expanded={logOpen}><Icon name="history" />{t('arena.log')}</button>
         {!ended && !spectating && (confirmForfeit
-          ? <button className="btn btn--sm" onClick={() => { onForfeit(); setConfirmForfeit(false); }}>Confirm forfeit</button>
-          : <button className="iconbtn iconbtn--text" onClick={() => setConfirmForfeit(true)}><Icon name="leave" />Forfeit</button>)}
+          ? <button className="btn btn--sm" onClick={() => { onForfeit(); setConfirmForfeit(false); }}>{t('arena.confirmForfeit')}</button>
+          : <button className="iconbtn iconbtn--text" onClick={() => setConfirmForfeit(true)}><Icon name="leave" />{t('arena.forfeit')}</button>)}
       </div>
       <div className="arena__dock panel">
         {ended ? (
           <div className="arena__end">
-            <p className="eyebrow"><span className="jp">{spectating ? '決着' : iWon ? '勝利' : '敗北'}</span> Turn {s.turn}</p>
-            <h3 className="dock__title dock__title--big">{spectating ? (s.winner ? `${s.winner} wins` : 'Draw') : iWon === null ? 'Draw' : iWon ? 'You win!' : `${s.winner} wins`}</h3>
-            {finished && <button className="btn btn--primary btn--xl" onClick={onContinue}><Icon name="arrow" />Continue</button>}
+            <p className="eyebrow">{t('arena.turnN', { n: s.turn })}</p>
+            <h3 className="dock__title dock__title--big">{spectating ? (s.winner ? t('arena.playerWins', { name: s.winner }) : t('arena.draw')) : iWon === null ? t('arena.draw') : iWon ? t('arena.youWin') : t('arena.playerWins', { name: s.winner ?? '' })}</h3>
+            {finished && <button className="btn btn--primary btn--xl" onClick={onContinue}><Icon name="arrow" />{t('arena.continue')}</button>}
           </div>
         ) : spectating ? (
           s.phase !== 'idle' && snap.busy ? <MessageBox lines={lines} fallback="…" />
-            : <p className="actions__wait" aria-live="polite">{s.phase === 'idle' ? 'Preparing the arena…' : s.phase === 'preview' ? `${mineLabel} and ${theirsLabel} are choosing their leads…` : `${mineLabel} and ${theirsLabel} are choosing…`}</p>
+            : <p className="actions__wait" aria-live="polite">{s.phase === 'idle' ? t('arena.preparing') : s.phase === 'preview' ? t('arena.choosingLeads', { mine: mineLabel, theirs: theirsLabel }) : t('arena.choosing', { mine: mineLabel, theirs: theirsLabel })}</p>
         ) : !req || s.phase === 'idle' ? (
-          <p className="actions__wait">Preparing the arena…</p>
+          <p className="actions__wait">{t('arena.preparing')}</p>
         ) : snap.busy ? (
           <MessageBox lines={lines} fallback="…" />
         ) : req.wait || snap.choiceSent ? (
-          <p className="actions__wait">{snap.choiceSent ? `Locked in. Waiting for ${theirsLabel}…` : `Waiting for ${theirsLabel}…`}</p>
+          <p className="actions__wait">{snap.choiceSent ? t('arena.lockedIn', { name: theirsLabel }) : t('arena.waitingFor', { name: theirsLabel })}</p>
         ) : req.teamPreview ? (
           <TeamPreview req={req} theirs={s.sides[opp]} choose={choose} />
         ) : (

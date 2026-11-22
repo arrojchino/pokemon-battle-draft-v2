@@ -11,7 +11,7 @@ export const midi = (n: number) => 440 * Math.pow(2, (n - 69) / 12);
 const clampPan = (p: number) => Math.max(-1, Math.min(1, p));
 
 export class Synth {
-  /** Input the next voices connect to (a category bus, or a music/ambience layer). */
+  /** Input the next voices connect to (a category bus, or a music layer). */
   bus: AudioNode;
   rnd: () => number = Math.random;
   constructor(readonly g: Graph) { this.bus = g.input.ui; }

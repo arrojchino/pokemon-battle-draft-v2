@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { t } from '../i18n/index.js';
 
 type State = { error: Error | null };
 
@@ -11,10 +12,10 @@ export class ErrorBoundary extends Component<{ children: ReactNode; label?: stri
     if (!this.state.error) return this.props.children;
     return (
       <div className={this.props.compact ? 'panel panel--error' : 'fatal'} role="alert">
-        <strong>Something broke{this.props.label ? ` in ${this.props.label}` : ''}.</strong>
+        <strong>{this.props.label ? t('error.brokeIn', { label: this.props.label }) : t('error.broke')}</strong>
         <p>{this.state.error.message}</p>
-        <button className="btn" onClick={() => this.setState({ error: null })}>Try again</button>
-        {!this.props.compact && <button className="btn btn--ghost" onClick={() => location.reload()}>Reload</button>}
+        <button className="btn" onClick={() => this.setState({ error: null })}>{t('error.tryAgain')}</button>
+        {!this.props.compact && <button className="btn btn--ghost" onClick={() => location.reload()}>{t('error.reload')}</button>}
       </div>
     );
   }

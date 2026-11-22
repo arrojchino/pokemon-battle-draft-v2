@@ -1,5 +1,6 @@
 import { winsNeeded, type CharacterId, type PublicRoom, type Seat } from '@shared';
 import { ROSTER } from '../../../characters/roster.js';
+import { t, type MessageKey } from '../../../i18n/index.js';
 
 /** Everything the match UI needs, derived once from authoritative room state and the local seat. */
 export function matchModel(room: PublicRoom, seat: Seat, localPartner: CharacterId) {
@@ -8,10 +9,10 @@ export function matchModel(room: PublicRoom, seat: Seat, localPartner: Character
   const mine = meP?.avatar ?? localPartner;
   // v1 peers send no avatar: give them a partner that differs from ours.
   const theirs = oppP ? (oppP.avatar ?? ROSTER.find(c => c.id !== mine)!.id) : null;
-  const names: [string, string] = [room.players[0]?.name ?? 'Player 1', room.players[1]?.name ?? 'Player 2'];
+  const names: [string, string] = [room.players[0]?.name ?? t('match.player1'), room.players[1]?.name ?? t('match.player2')];
   return {
     me, opp, mine, theirs, names,
-    myName: names[me], oppName: oppP ? names[opp] : 'Waiting…',
+    myName: names[me], oppName: oppP ? names[opp] : t('match.waiting'),
     hasOpponent: !!oppP,
     oppConnected: !!oppP?.connected,
     target: winsNeeded(room.bestOf),
@@ -24,3 +25,8 @@ export function matchModel(room: PublicRoom, seat: Seat, localPartner: Character
   };
 }
 export type MatchModel = ReturnType<typeof matchModel>;
+
+/** The tooltip for the connection dot. */
+export const linkKey = (l: string): MessageKey => (l === 'online' ? 'match.link.online' : l === 'connecting' ? 'match.link.connecting' : 'match.link.offline');
+/** A coin face as text, lower case ("heads"). */
+export const sideKey = (s: 'heads' | 'tails'): MessageKey => (s === 'heads' ? 'match.heads' : 'match.tails');

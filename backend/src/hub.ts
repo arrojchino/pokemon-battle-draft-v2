@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { MAX_HUB, cleanSpot, type CharacterId, type HubLine, type HubMember, type PlazaEmote, type ServerMessage, type Spot } from '../../shared/src/index.js';
+import { MAX_HUB, cleanSpot, poseAfter, type CharacterId, type HubLine, type HubMember, type PlazaEmote, type ServerMessage, type Spot } from '../../shared/src/index.js';
 
 /** Lines a trainer walking in can still read. */
 const KEEP_LINES = 40;
@@ -33,7 +33,7 @@ export class Hub {
       const a = Math.random() * Math.PI * 2, r = 1.8 + Math.random() * 2;
       spot = cleanSpot(Math.sin(a) * r, Math.cos(a) * r, a + Math.PI);
     }
-    const member: HubMember = { id: `m${++this.nextMember}`, name, avatar, ...spot };
+    const member: HubMember = { id: `m${++this.nextMember}`, name, avatar, pose: null, ...spot };
     this.members.set(ws, member);
     this.send(ws, { type: 'hub', you: member.id, members: [...this.members.values()].map(m => ({ ...m })), chat: this.chat.slice() });
     this.others(ws, { type: 'hubJoin', member: { ...member } });
@@ -50,13 +50,18 @@ export class Hub {
   move(ws: WebSocket, s: Spot) {
     const m = this.members.get(ws);
     if (!m) return;
+    // Walking somewhere ends a held pose (clients send `rise` first; this keeps the record right if one did not).
+    if (m.pose && Math.hypot(s.x - m.x, s.z - m.z) > 0.05) m.pose = null;
     m.x = s.x; m.z = s.z; m.face = s.face;
     this.others(ws, { type: 'hubMove', id: m.id, x: s.x, z: s.z, face: s.face });
   }
 
-  emote(ws: WebSocket, emote: PlazaEmote) {
+  /** A gesture for everyone else. Sit and Nap are remembered on the member, so whoever walks in later sees the pose. */
+  emote(ws: WebSocket, emote: PlazaEmote, relay = true) {
     const m = this.members.get(ws);
-    if (m) this.others(ws, { type: 'hubEmote', id: m.id, emote });
+    if (!m) return;
+    m.pose = poseAfter(m.pose, emote);
+    if (relay) this.others(ws, { type: 'hubEmote', id: m.id, emote });
   }
 
   /** A line from a member, for everyone there (the speaker included: it comes back with its number). */
