@@ -64,3 +64,51 @@
   .hub .chat, .hub .chat-toggle { bottom: 12px; left: 12px; }
   .hub__side { left: 10px; right: 10px; bottom: 10px; width: auto; }
 }
+
+/* The plaza host: name tag and talk prompt over her, and the conversation box. */
+.host-tag { position: fixed; left: 0; top: 0; z-index: 1; pointer-events: none; transition: opacity var(--dur-2); will-change: transform; }
+.host-tag__in { position: absolute; left: 0; bottom: 0; transform: translateX(-50%); display: grid; justify-items: center; gap: 6px; width: max-content; }
+.host-tag__name {
+  padding: 3px 10px; font: 700 var(--fs-2xs)/1.35 var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-1);
+  background: rgba(6, 9, 20, 0.74); border: 1px solid color-mix(in srgb, #ff6f9c 60%, transparent); border-radius: var(--r-pill);
+}
+.host-tag__name small { margin-left: 4px; font-size: inherit; color: #ff9fbd; }
+.host-tag__talk {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; cursor: pointer; pointer-events: auto;
+  font: 700 var(--fs-xs)/1 var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; color: #10142a;
+  background: #f5f7ff; border: 0; border-radius: var(--r-pill); box-shadow: 0 10px 26px -10px rgba(0, 0, 0, 0.7);
+  animation: bubble-in var(--dur-3) var(--ease-spring) both;
+}
+.host-tag__talk kbd { min-width: 20px; padding: 2px 5px; color: #fff; background: #ff4f86; border-radius: 6px; font: inherit; }
+.hostdlg {
+  position: fixed; left: 50%; bottom: 18px; z-index: 6; width: min(660px, calc(100vw - 24px)); transform: translateX(-50%);
+  display: grid; gap: 12px; padding: 16px 18px 18px; border-color: color-mix(in srgb, #ff6f9c 45%, var(--border-2));
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 111, 156, 0.12);
+  animation: rise var(--dur-3) var(--ease-out) both;
+}
+.hostdlg__head { display: flex; align-items: center; gap: 10px; }
+.hostdlg__head .eyebrow { margin: 0; }
+.hostdlg__name { font: 800 var(--fs-md)/1 var(--font-display); letter-spacing: 0.02em; color: #ff9fbd; }
+.hostdlg__head .iconbtn { margin-left: auto; }
+.hostdlg__line { margin: 0; min-height: 2.9em; font: 600 var(--fs-md)/1.45 var(--font-body); color: var(--text-1); cursor: default; }
+.hostdlg__caret { display: inline-block; width: 8px; height: 1em; margin-left: 2px; vertical-align: -2px; background: #ff9fbd; animation: blink 0.9s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.hostdlg__opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.hostdlg__opts--list { grid-template-columns: 1fr; }
+.hostdlg__opt {
+  display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 12px; cursor: pointer; text-align: left;
+  font: 700 var(--fs-sm)/1.2 var(--font-display); color: var(--text-1); background: var(--surface-2);
+  border: 1px solid var(--border-2); border-radius: var(--r-md);
+  transition: transform var(--dur-2) var(--ease-out), border-color var(--dur-2), background-color var(--dur-2);
+}
+.hostdlg__opt .icon { flex: none; color: #ff9fbd; }
+.hostdlg__opt small { margin-left: auto; font: 600 var(--fs-2xs)/1 var(--font-body); color: var(--text-3); }
+.hostdlg__opt:hover:not(:disabled), .hostdlg__opt:focus-visible { outline: none; background: var(--surface-3); border-color: color-mix(in srgb, #ff6f9c 70%, var(--border-2)); transform: translateX(2px); }
+.hostdlg__opt:disabled { opacity: 0.45; cursor: default; }
+.hostdlg__battle i { font-style: normal; color: var(--text-3); }
+.hostdlg__code { display: flex; gap: 8px; }
+.hostdlg__code .chat__input { letter-spacing: 0.18em; text-transform: uppercase; }
+@media (max-width: 560px) {
+  .hostdlg { bottom: 10px; padding: 14px; }
+  .hostdlg__opts { grid-template-columns: 1fr; }
+}

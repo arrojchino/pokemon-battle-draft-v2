@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { MAX_CHAT, MAX_HUB, type HubLine, type HubMember, type LiveBattle, type LobbySummary, type PlazaEmote, type Spot } from '@shared';
 import { DEFAULT_CHARACTER, characterById } from '../../characters/roster.js';
-import { useSettings } from '../../app/settings.js';
+import { useReducedMotion, useSettings } from '../../app/settings.js';
 import { useWorld } from '../../app/WorldProvider.js';
 import { useSession } from '../../net/session.js';
 import { hasHub } from '../../net/types.js';
@@ -11,6 +11,7 @@ import { Icon, Spinner } from '../primitives.js';
 import { GestureBar, ROOMY, bubbleMs, media } from './match/Plaza.js';
 import { PartnerAvatar, lobbyPrefs, partnerStyle } from './LobbyParts.js';
 import { useLobbies } from './MultiplayerScreen.js';
+import { HOST_NAME, HostDialog } from './HostDialog.js';
 
 type Props = { onBack: () => void; onPlay: () => void; onPartner: () => void };
 type Bubble = { id: number; text: string; until: number };
@@ -34,6 +35,7 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
   const { world } = useWorld();
   const session = useSession();
   const t = session.transport;
+  const reduced = useReducedMotion();
   const ok = hasHub(session);
   const online = session.link === 'online';
   const name = s.name.trim() || 'Trainer';
@@ -46,6 +48,16 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
   const [side, setSide] = useState(() => media(ROOMY));
   const youRef = useRef<string | null>(null); youRef.current = you;
   const seen = useRef(0);
+  // The plaza host: a prompt over her while this player's partner stands close, and the conversation.
+  const [hostNear, setHostNear] = useState(false);
+  const [talking, setTalking] = useState(false);
+  useEffect(() => {
+    if (!world) return;
+    const offs = [world.events.on('hostNear', ({ near }) => setHostNear(near)), world.events.on('hostTalk', () => setTalking(true))];
+    return () => offs.forEach(off => off());
+  }, [world]);
+  useEffect(() => { if (!ok) setTalking(false); }, [ok]);
+  const hostTag = useRef<HTMLDivElement>(null);
 
   // Hear the plaza while on this screen.
   useEffect(() => {
@@ -121,6 +133,13 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
         const y = Math.max(a.y, top + h);
         el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
       }
+      const ht = hostTag.current;
+      if (ht) {
+        world.anchor('host', a);
+        const fade = a.on ? tagOpacity(a.d ?? 0) : 0;
+        ht.style.opacity = String(ht.dataset.near ? 1 : fade);
+        if (a.on) ht.style.transform = `translate3d(${a.x.toFixed(1)}px, ${Math.max(a.y, top + 30).toFixed(1)}px, 0)`;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -184,7 +203,21 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
         <button type="button" className={`iconbtn iconbtn--text ${side ? 'is-on' : ''}`} aria-expanded={side} onClick={() => setSide(v => !v)}><Icon name="swords" />Battles</button>
       </header>
 
+      <div ref={hostTag} className="host-tag" data-near={hostNear && !talking ? '1' : undefined} style={{ opacity: 0 }}>
+        <div className="host-tag__in">
+          {hostNear && !talking && (
+            <button type="button" className="host-tag__talk" data-sfx="none" onClick={() => setTalking(true)}>
+              {media('(pointer: coarse)') ? 'Tap to talk' : <><kbd>E</kbd> Talk</>}
+            </button>
+          )}
+          <span className="host-tag__name">{HOST_NAME} <small>Plaza host</small></span>
+        </div>
+      </div>
       <HubChat open={open} setOpen={setOpen} unread={unread} chat={chat} you={you} names={names} world={world} onSend={text => t.hubChat(text)} />
+      {talking && (
+        <HostDialog world={world} trainer={name} trainers={count} online={online} busy={busy} reducedMotion={reduced}
+          onClose={() => setTalking(false)} onFind={() => setSide(true)} onCreate={onPlay} onWatch={watch} onJoin={join} />
+      )}
       {side && <BattlesPanel online={online} busy={busy} onJoin={join} onWatch={watch} onQuick={quick} onCreate={onPlay} onClose={() => setSide(false)} />}
     </main>
   );

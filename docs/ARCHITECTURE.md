@@ -67,6 +67,8 @@ Walk loops: the SV clips carry root motion (the origin bone travels through the 
 
 Gestures (protocol v7): `PLAZA_EMOTES` adds `happy`, `stretch`, `notice`, `nap`, `sit` and `rise`, each one the model's own clip (`glad01`, `refresh01`, `notice01`, `sleep01_*`, `rest01_*`); the original emote names stay valid for older clients and map to the nearest clip. Gestures are done standing still: one stops a walk to a spot, and a peer's gesture plays after the same delay as its movement and is skipped while that partner is walking. Clients show the gesture buttons only to servers that announce protocol 7 or later (`GESTURES_SINCE`). `ui/screens/match/Plaza.tsx` draws name tags and chat bubbles at `World.anchor()` and relays presence between the World and the transport. Partners are fitted in their relaxed idle (standing height); some battle stances crouch lower.
 
+The plaza host is client-only. `engine/world/PlazaHost.ts` places the presenter (`engine/npc/Presenter.ts`, a VRM driven by three-vrm, loaded with a dynamic import the first time the main plaza opens) at the far edge of the field, adds her footprint to the walker's bounds (`withObstacles`), turns her toward this player's partner within talking range and emits `hostNear` / `hostTalk`. E or a click on her opens `ui/screens/HostDialog.tsx`; a click from afar walks up first. While it is open `World.hostDialog()` holds walking input and frames both of them from the side. Every option calls existing paths: the Battles panel, `onPlay`, `watch(code)`, `join(code)`, and a summary built from `useLobbies`.
+
 ### Protocol v6: the main plaza and spectators
 
 | Addition | Shape |

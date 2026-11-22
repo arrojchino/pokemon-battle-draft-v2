@@ -44,6 +44,7 @@ While a room waits for a rival, and again before each coin call, the stadium flo
 **Plaza** on the title menu opens the main plaza, shared by every trainer in the menus (up to 20 at a time). It works the same way as the room plaza, on a bigger stadium: the platform is 1.6 times wider, the field 1.25 times, and walking speed follows your partner's height.
 
 - **Chat and gestures for everyone there:** lines pop up over the speaker's partner and the last 40 stay for newcomers; gestures play on every screen, in step with the walk; name tags fade with distance so a crowd stays readable.
+- **Mira, the plaza host:** stands at the far edge of the field. Walk up to her (or click her) and press **E** to talk: she finds you a battle, creates one, takes you to watch a live battle, joins a room by code, or tells you what's on right now, from the server's own lists. Walking waits while you talk; Escape leaves.
 - **Battles panel:** live battles in public rooms and open lobbies. **Quick match** and **Create** start your own.
 - **Watch:** follows a battle from the first trainer's side, with the same stage, camera and log as the players. HP arrives in percent, sets stay hidden, and spectators can't choose anything. **Stop watching** goes back to the plaza. Players see how many people are watching their room. The lobby browser in **Play online** lists live battles too.
 - The main plaza and watching need the battle server; the PeerJS fallback has neither.

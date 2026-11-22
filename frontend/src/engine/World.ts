@@ -18,7 +18,8 @@ import { StageFloor, MAX_SLOTS } from './world/Floor.js';
 import { Stadium } from './world/Stadium.js';
 import { Atmosphere } from './world/Atmosphere.js';
 import { Coin } from './world/Coin.js';
-import { Plaza, PLAZA_SPAWN, RIVAL, isMoveKey, type Walker } from './world/Plaza.js';
+import { Plaza, PLAZA_SPAWN, RIVAL, isMoveKey, platform, withObstacles, type Walker } from './world/Plaza.js';
+import { HOST_FRONT, HOST_OBSTACLE, HOST_SPOT, PlazaHost } from './world/PlazaHost.js';
 import { FIELD, WALL_R } from './world/dims.js';
 import { BattleStage } from './battle/BattleStage.js';
 
@@ -128,6 +129,16 @@ export class World {
   private fades = new Map<string, number>();
   /** Main plaza: the rig each member's partner uses (member id to rig key). */
   private hubRigs = new Map<string, string>();
+  /**
+   * The plaza host (main plaza only): whether this player's partner is close enough to talk, a walk up to her
+   * that ends in a conversation, walking input held while a dialogue is open, and the pointer over her.
+   */
+  readonly plazaHost = new PlazaHost();
+  private hostNear = false;
+  private talkOnArrival = false;
+  private inputLocked = false;
+  private hostHover = false;
+  private hubBounds = withObstacles(platform, [HOST_OBSTACLE]);
   private pendingLayout: Layout | null = null;
   private fade = 0;
   private fadeDir: -1 | 0 | 1 = 0;
@@ -198,6 +209,7 @@ export class World {
     this.rimB = new THREE.DirectionalLight('#6f8cff', 1.4); this.rimB.position.set(4, 2.5, -3.5);
     this.scene.add(this.rimA, this.rimB);
     this.scene.add(this.plaza.marker);
+    this.scene.add(this.plazaHost.group);
 
     this.buildTierDependent();
     this.buildEnvironmentMap();
@@ -468,6 +480,13 @@ export class World {
     const w = this.plaza.me;
     const l = this.layout;
     const h = (walking(l) ? this.rigs.get(l.mine)?.height : undefined) ?? 0.7;
+    if (l?.mode === 'hub' && this.inputLocked) {
+      // Talking to the host: a two-shot from the side, both of them above the dialogue box.
+      let dx = HOST_SPOT.x - w.x, dz = HOST_SPOT.z - w.z;
+      const d = Math.max(0.01, Math.hypot(dx, dz)); dx /= d; dz /= d;
+      const mx = (w.x + HOST_SPOT.x) / 2, mz = (w.z + HOST_SPOT.z) / 2, back = 0.9 + d * 0.3, out = 2.3 + d * 0.6;
+      return { pos: [mx + dz * out - dx * back, FLOOR_Y + 1.45, mz - dx * out - dz * back], target: [mx, FLOOR_Y + 0.32, mz], fov: 38, time: 0.9 };
+    }
     const f = THREE.MathUtils.clamp(Math.sqrt(h / 0.7), 0.85, 1.4);
     // The main plaza pulls back and up and looks further ahead: the other trainers are the point of it.
     const wide = l?.mode === 'hub' ? 1.55 : 1;
@@ -487,6 +506,13 @@ export class World {
 
   private applyLayout(l: Layout, modeChanged: boolean) {
     let slots: Slot[] = [];
+    const hub = l.mode === 'hub';
+    this.plazaHost.setActive(hub, this.reducedMotion);
+    this.plaza.bounds = hub ? this.hubBounds : platform;
+    if (!hub) {
+      this.talkOnArrival = false; this.inputLocked = false;
+      if (this.hostNear) { this.hostNear = false; this.events.emit('hostNear', { near: false }); }
+    }
     let accent: CharacterId | null = null;
     if (l.mode === 'title') { slots = [{ key: l.featured, x: 0.95, z: 0.15, facing: -0.32, focus: true }]; accent = l.featured; }
     if (l.mode === 'select') { slots = this.selectSlots(l.focus); accent = l.focus; }
@@ -635,6 +661,15 @@ export class World {
     const p = walking(l) ? this.rigs.get(l.mine)?.posture : null;
     return p === 'rest' ? 'sit' : p === 'sleep' ? 'nap' : null;
   }
+  /** A dialogue with the plaza host opened or closed: walking waits while it is open and she gestures to the options. */
+  hostDialog(open: boolean) {
+    this.inputLocked = open;
+    if (open) { this.plaza.keys.clear(); this.plaza.halt(); this.talkOnArrival = false; this.plazaHost.gesture('present'); }
+    else this.plazaHost.talk(false);
+  }
+  /** The host talks (mouth and hand beats) while her line types. */
+  hostTalk(on: boolean) { this.plazaHost.talk(on); }
+  hostGesture(kind: 'present' | 'nod' | 'point') { this.plazaHost.gesture(kind); }
   /**
    * Presence from someone else: where their partner stands now, or a gesture it played. `id` is a main-plaza
    * member id (a room's rival needs none).
@@ -668,6 +703,16 @@ export class World {
     out.on = false;
     const l = this.layout;
     if (!l || this.fade > 0.3) return out;
+    if (who === 'host') {
+      if (l.mode !== 'hub' || !this.plazaHost.ready) return out;
+      const hv = this.plazaHost.head(this.anchorV);
+      out.d = this.camera.position.distanceTo(hv);
+      hv.project(this.camera);
+      if (hv.z > 1 || Math.abs(hv.x) > 1.2 || hv.y < -1.1 || hv.y > 1.1) return out;
+      const r = this.canvas.getBoundingClientRect();
+      out.x = r.left + (hv.x * 0.5 + 0.5) * r.width; out.y = r.top + (0.5 - hv.y * 0.5) * r.height; out.on = true;
+      return out;
+    }
     let key: string | null | undefined = null;
     if (l.mode === 'hub') key = who === 'mine' ? l.mine : this.hubRigs.get(who);
     else if (l.mode === 'plaza' || l.mode === 'duo') key = who === 'mine' ? l.mine : who === 'theirs' ? this.theirsKey(l) : null;
@@ -697,6 +742,12 @@ export class World {
       if (w) { p.me.faceTo(w.x, w.z); this.plazaEmote('happy'); }
     }
     if (mine) { mine.place(p.me.x, p.me.z, p.me.face, true); mine.stride(p.me.speed, p.me.walk); }
+    if (l.mode === 'hub') {
+      const h = this.plazaHost.update(dt, p.me, mine?.height ?? 0.7);
+      if (h.greeted) this.events.emit('sound', { cue: 'npcGreet', pan: 0, gain: 0.8 });
+      if (h.near !== this.hostNear) { this.hostNear = h.near; this.events.emit('hostNear', { near: h.near }); }
+      if (h.near && this.talkOnArrival && p.me.speed < 0.05) { this.talkOnArrival = false; this.events.emit('hostTalk'); }
+    }
     // A glow under this player's partner and the three nearest others.
     this.floor.setSlot(0, p.me.x, p.me.z, 0.55 * this.framing(l.mine), 1);
     const dist = (w: Walker) => Math.hypot(w.x - p.me.x, w.z - p.me.z);
@@ -768,7 +819,7 @@ export class World {
     if (this.steering) this.steerTo(false);
   }
   private onDown(e: PointerEvent) {
-    if (!walking(this.layout) || e.button !== 0) return;
+    if (!walking(this.layout) || e.button !== 0 || this.inputLocked) return;
     this.onPointer(e);
     this.steering = true;
     this.steerTo(true);
@@ -779,21 +830,32 @@ export class World {
     if (!walking(l)) return;
     this.raycaster.setFromCamera(this.ndc, this.camera);
     if (press) {
+      // The host: talk now when close, otherwise walk up to her and talk on arrival.
+      if (l.mode === 'hub' && this.plazaHost.hit(this.raycaster)) {
+        this.steering = false;
+        if (this.hostNear) this.events.emit('hostTalk');
+        else { this.talkOnArrival = true; this.plaza.walkTo(HOST_FRONT.x, HOST_FRONT.z); }
+        return;
+      }
       const peers = this.peerKeys(l).filter(([, k]) => this.rigs.get(k)?.root.visible && this.hitboxes.has(k));
       const hit = this.raycaster.intersectObjects(peers.map(([, k]) => this.hitboxes.get(k)!), false)[0];
       const id = hit ? peers.find(([, k]) => this.hitboxes.get(k) === hit.object)?.[0] : undefined;
       if (id) { this.steering = false; this.plaza.approach(id); return; }
     }
-    if (this.raycaster.ray.intersectPlane(this.floorPlane, this.floorHit)) this.plaza.walkTo(this.floorHit.x, this.floorHit.z);
+    if (this.raycaster.ray.intersectPlane(this.floorPlane, this.floorHit)) { this.talkOnArrival = false; this.plaza.walkTo(this.floorHit.x, this.floorHit.z); }
   }
   /** Plaza: WASD or the arrow keys walk (plazas are for walking: there is no run). Keys typed into a field never move the partner. */
   private onKey(e: KeyboardEvent, down: boolean) {
     if (!walking(this.layout)) return;
+    const t = e.target as Element | null;
+    const typing = e.ctrlKey || e.metaKey || e.altKey || !!t?.closest?.('input, textarea, select, [contenteditable="true"]');
+    // E talks to the host when standing near her.
+    if (down && e.code === 'KeyE' && !e.repeat && !typing && !this.inputLocked && this.hostNear) { this.events.emit('hostTalk'); return; }
     if (!isMoveKey(e.code)) return;
     if (!down) { this.plaza.keys.delete(e.code); return; }
-    const t = e.target as Element | null;
-    if (e.ctrlKey || e.metaKey || e.altKey || t?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+    if (typing || this.inputLocked) return;
     this.plaza.keys.add(e.code);
+    this.talkOnArrival = false;
     if (e.code.startsWith('Arrow')) e.preventDefault();
   }
   private pickHover(overCanvas: boolean) {
@@ -804,6 +866,8 @@ export class World {
       const hit = this.raycaster.intersectObjects(boxes, false)[0];
       key = (hit?.object.userData.key as string | undefined) ?? null;
     }
+    const overHost = overCanvas && !key && this.layout?.mode === 'hub' && this.plazaHost.hit(this.raycaster);
+    if (overHost !== this.hostHover) { this.hostHover = overHost; if (!key) this.canvas.style.cursor = overHost ? 'pointer' : ''; }
     if (key !== this.hoverKey) {
       this.hoverKey = key;
       const l = this.layout;

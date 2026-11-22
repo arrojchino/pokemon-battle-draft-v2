@@ -20,6 +20,10 @@ export type WorldEvents = {
   /** Plaza: this player's partner moved (at most ten times a second) or played an emote. The app relays both to the rival. */
   plazaMove: Spot;
   plazaEmote: { emote: PlazaEmote };
+  /** Main plaza: this player's partner came within talking range of the plaza host, or left it. */
+  hostNear: { near: boolean };
+  /** Main plaza: this player asked to talk to the host (E nearby, a click on her, or arriving after one). */
+  hostTalk: void;
 };
 
 type Handler<T> = (payload: T) => void;

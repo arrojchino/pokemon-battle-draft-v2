@@ -20,6 +20,10 @@ Partner cries come from the PokeAPI cries repository (`cries/pokemon/latest/<dex
 
 The first 38 sets are the original game's. The other 62 are the main set of each species in Pokémon Showdown's Gen 9 Battle Factory data (`data/random-battles/gen9/factory-sets.json` in the MIT-licensed `pokemon-showdown` package; the sets are curated by Smogon), and every set's tier comes from Showdown's formats data. Role names and quips are original.
 
+## Plaza host (runtime)
+
+- `frontend/public/npc/presenter.vrm`: VRoid Studio sample "β Ver AvatarSample_4" by pixiv Inc., CC0 (listed under "CC0 license models" at https://vroid.pixiv.help/hc/en-us/articles/4402614652569), recoloured and repacked by `frontend/src/engine/npc/tools/pack_presenter.py`. The cap and headset are modelled in code (`engine/npc/accessories.ts`). It loads in its own chunk the first time the main plaza opens.
+
 ## Generated, not downloaded
 
 - The stadium: field, lines, stands, crowd, LED boards (canvas text), floodlights, sky, light shafts and motes are shaders and canvas textures generated at load (`engine/world/`).

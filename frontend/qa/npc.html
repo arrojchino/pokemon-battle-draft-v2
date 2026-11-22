@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>NPC presenter QA</title>
+<style>
+body{margin:0;background:#0b1020;color:#e8ecff;font:12px/1.35 system-ui,sans-serif;overflow:hidden}
+canvas{display:block}
+#ui{position:fixed;left:10px;top:10px;display:flex;flex-direction:column;gap:6px;max-width:360px}
+#ui .row{display:flex;flex-wrap:wrap;gap:4px}
+#ui button{background:#1b2347cc;color:#e8ecff;border:1px solid #3b4a8a;border-radius:6px;padding:4px 8px;font:12px system-ui;cursor:pointer}
+#ui button.on{background:#ff5a7a;border-color:#ff9db1;color:#fff}
+#info{position:fixed;right:10px;top:10px;background:#0b1020b0;border:1px solid #2a3570;border-radius:8px;padding:6px 10px;font:12px ui-monospace,monospace;white-space:pre;min-width:220px}
+#credit{position:fixed;left:10px;bottom:8px;color:#aab4e8;font-size:11px;opacity:.85}
+body.clean #ui,body.clean #info,body.clean #credit{display:none}
+</style></head>
+<body>
+<div id="ui">
+  <div class="row"><button data-act="greet">Greet</button><button data-act="talk" data-toggle>Talk</button><button data-act="present">Present</button><button data-act="point">Point</button><button data-act="nod">Nod</button></div>
+  <div class="row"><button data-act="attentive" data-toggle>Attentive</button><button data-act="look" data-toggle class="on">Look at marker</button><button data-act="turn" data-toggle class="on">Turn to marker</button><button data-act="reduced" data-toggle>Reduced motion</button></div>
+  <div class="row"><button data-cam="full">Full</button><button data-cam="threeq">3/4</button><button data-cam="dialogue">Dialogue</button><button data-cam="side">Side</button><button data-cam="back">Back</button><button data-cam="face">Face</button><button data-cam="game">Game 6 m</button></div>
+  <div style="color:#aab4e8">Drag the pink ring (the player) to move it. Orbit with the mouse elsewhere.</div>
+</div>
+<div id="info">loading…</div>
+<div id="credit">Model: VRoid Studio sample “β Ver AvatarSample_4” by pixiv Inc. (CC0), recoloured; cap and headset modelled in code.</div>
+<script type="module" src="./npc.ts"></script>
+</body></html>

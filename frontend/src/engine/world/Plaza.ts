@@ -33,6 +33,20 @@ export const platform: Bounds = (x, z) => {
   const r = Math.hypot(x, z);
   return r > PLAZA_R ? { x: (x * PLAZA_R) / r, z: (z * PLAZA_R) / r } : { x, z };
 };
+/** Something round standing on the ground that walkers go around (the plaza host, a fountain). */
+export type Obstacle = { x: number; z: number; r: number };
+/** Bounds that also keep walkers out of each obstacle: they slide around it, never through. */
+export function withObstacles(base: Bounds, obstacles: readonly Obstacle[]): Bounds {
+  return (x, z, r) => {
+    let at = base(x, z, r);
+    for (const o of obstacles) {
+      const dx = at.x - o.x, dz = at.z - o.z, d = Math.hypot(dx, dz), min = o.r + r;
+      if (d >= min) continue;
+      at = base(d > 1e-4 ? o.x + (dx / d) * min : o.x + min, d > 1e-4 ? o.z + (dz / d) * min : o.z, r);
+    }
+    return at;
+  };
+}
 
 /** One partner on the field: position, velocity and facing. Plazas are for walking: nobody runs. */
 export class Walker {

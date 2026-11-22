@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CHAT_KEEP, MAX_CHAT, cleanChat, createRoom, publicView, reduce, seatGuest, type RoomState, type Rng } from '../../shared/src/room.js';
 import { PLAZA_R, cleanSpot, parseClientMessage, parseServerMessage } from '../../shared/src/protocol.js';
-import { PLAZA_SPAWN, Plaza, REACH, RIVAL } from '../src/engine/world/Plaza.js';
+import { PLAZA_SPAWN, Plaza, REACH, RIVAL, platform, withObstacles } from '../src/engine/world/Plaza.js';
 
 const rng: Rng = { coin: () => 'heads', float: () => 0.25 };
 const host = { name: 'Ana', token: 'tok-a', avatar: 'greninja' as const };
@@ -188,6 +188,14 @@ describe('plaza walking', () => {
     expect(p.spot().x).toBeCloseTo(at.x, 6); expect(p.spot().z).toBeCloseTo(at.z, 6);
     expect(p.me.face).toBeCloseTo(Math.PI / 2, 1);
     expect(p.target).toBeNull();
+  });
+  it('walks around an obstacle instead of through it', () => {
+    const p = new Plaza(); p.enter({ x: 0, z: 0, face: Math.PI });
+    p.bounds = withObstacles(platform, [{ x: 0, z: -2, r: 0.3 }]);
+    p.walkTo(0, -4);
+    let closest = Infinity;
+    for (let t = 0; t < 8; t += 1 / 60) { p.update(1 / 60); closest = Math.min(closest, Math.hypot(p.me.x, p.me.z + 2)); }
+    expect(closest).toBeGreaterThanOrEqual(0.3 + p.me.radius - 1e-6);
   });
   it('finds who is within reach', () => {
     const p = new Plaza(); p.enter({ x: 0, z: 0, face: 0 });
