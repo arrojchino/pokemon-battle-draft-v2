@@ -1,42 +1,65 @@
 /**
- * Game audio, synthesized live with the Web Audio API: no effect files to download or license.
- * Sound effects only: the game deliberately has no background music.
+ * AudioManager: every sound in the game goes through here.
  *
- * Effects run through a little saturation and a short generated stadium reverb into a master gain
- * (volume and mute), so everything shares the same space. Partner Pokémon cries are the one recorded
- * sound, fetched at runtime from the PokéAPI cries repository. The context starts on the first
- * user gesture (browser autoplay rules) and is suspended when the tab is hidden.
+ * - Categories: each cue answers to one volume (music, environment, Pokémon cries, interface, battle). Each
+ *   category has its own fader, ducking stage and profile level into a master bus with a limiter and a soft
+ *   clipper, so nothing clips however many sounds pile up (see graph.ts, mix.ts).
+ * - Profiles ('menu' | 'plaza' | 'battle' | 'watch') crossfade the music piece and ambience beds and set the
+ *   cry policy: quiet and rare in menus, occasional in the plaza, normal in battle.
+ * - Synthesized: every effect, the plaza ambience and both music pieces are generated live with Web Audio
+ *   (synth.ts, ambience.ts, music.ts); nothing to download or license. Pokémon cries are the one recording,
+ *   fetched from the PokéAPI cries repository on first use, then treated once per species (analysis.ts:
+ *   loudness-normalized, harsh highs cut, length capped, soft-clipped) and throttled per species and globally.
+ * - Throttling: repeats of a cue inside its minimum gap are dropped, quick repeats get softer, and each
+ *   category has a voice limit. Big hits and cries duck the music briefly.
+ *
+ * The context starts on the first user gesture (autoplay rules) and fades out and suspends while the tab is
+ * hidden. `?audiotest` exposes the manager (`__sound`) and the analysis helpers (`__audioLab`) for QA renders.
  */
 import { pokemonCry } from '../assets.js';
+import { CRY, measure, mono, processCry, type CryStats, type Level } from './analysis.js';
+import { Ambience } from './ambience.js';
+import { Graph } from './graph.js';
+import {
+  ALL_CUES, AUDIO_DEFAULTS, CRY_DUCK, CRY_POLICY, CUE_CATEGORY, CUE_GAP, DEFAULT_GAP, DUCK, MAX_VOICES, PRIORITY, PROFILES,
+  REPEAT_FALLOFF, REPEAT_WINDOW, categoryGain, type AudioMix, type Category, type Cue, type Profile,
+} from './mix.js';
+import { MusicPlayer } from './music.js';
+import { Synth, playCue, type PlayOpts } from './synth.js';
 
-export type Cue =
-  // UI
-  | 'hover' | 'click' | 'confirm' | 'back' | 'toggle' | 'error' | 'join' | 'tick' | 'tickUrgent'
-  // Match flow
-  | 'coinFlip' | 'coinLand' | 'tossWin' | 'tossLose' | 'deal' | 'pick'
-  // Battle
-  | 'switchIn' | 'dash' | 'punch' | 'slash' | 'bite' | 'fire' | 'water' | 'zap' | 'beamCharge' | 'beam'
-  | 'orb' | 'orbHit' | 'rings' | 'wind' | 'leaves' | 'quake' | 'meteor' | 'meteorHit' | 'coins' | 'heal' | 'shield'
-  | 'buff' | 'debuff' | 'hazard' | 'status' | 'hit' | 'hitBig' | 'crit' | 'super' | 'resist' | 'miss' | 'faint' | 'tera'
-  | 'stamp' | 'ko' | 'win' | 'lose';
+export type { AudioMix, Category, Cue, Profile } from './mix.js';
+export type { PlayOpts } from './synth.js';
+export type CryOpts = { pan?: number; gain?: number; rate?: number };
+type CryEntry = { buf: AudioBuffer; stats: CryStats };
 
-export type PlayOpts = { gain?: number; pan?: number; pitch?: number };
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+/** Seeded PRNG so offline renders are repeatable. */
+const seeded = (seed: number) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+/** The profile a category is heard in most, for QA renders. */
+const homeProfile = (c: Category): Profile => (c === 'battle' || c === 'cries' ? 'battle' : c === 'ui' ? 'menu' : 'plaza');
 
-const midi = (n: number) => 440 * Math.pow(2, (n - 69) / 12);
-/** Level of the effects bus into the saturator (headroom); the player's volume sets the master gain. */
-const SFX_LEVEL = 0.9;
-
-class SoundEngine {
-  private ctx: BaseAudioContext | null = null;
+class AudioManager {
   private live: AudioContext | null = null;
-  private offline = false;
-  private master!: GainNode; private sfx!: GainNode; private verb!: ConvolverNode; private verbSend!: GainNode;
-  private noise: AudioBuffer | null = null;
-  private volume = 0.8;
-  private muted = false;
+  private g: Graph | null = null;
+  private synth: Synth | null = null;
+  private music: MusicPlayer | null = null;
+  private amb: Ambience | null = null;
+  private mix: AudioMix = { ...AUDIO_DEFAULTS };
+  private profile: Profile = 'menu';
   private last = new Map<Cue, number>();
-  private meter: AnalyserNode | null = null;
-  private cries = new Map<number, Promise<AudioBuffer>>();
+  private rep = new Map<Cue, number>();
+  private busy: Record<Category, number[]> = { music: [], ambience: [], cries: [], ui: [], battle: [] };
+  private cries = new Map<number, Promise<CryEntry>>();
+  private cryAt = -Infinity;
+  private cryBy = new Map<number, number>();
+  private cryEnds: number[] = [];
+  private lastUi = -Infinity;
+  private lastPreview = -Infinity;
 
   /** Create (or resume) the context. Safe to call on every gesture. */
   unlock() {
@@ -44,240 +67,216 @@ class SoundEngine {
     if (!this.live) {
       const ctx = new AudioContext({ latencyHint: 'interactive' });
       this.live = ctx;
-      this.build(ctx);
-      document.addEventListener('visibilitychange', () => { if (document.hidden) void ctx.suspend(); else void ctx.resume(); });
+      this.g = new Graph(ctx, this.mix, this.profile);
+      this.synth = new Synth(this.g);
+      this.music = new MusicPlayer(this.g);
+      this.amb = new Ambience(this.g);
+      document.addEventListener('visibilitychange', () => this.onVisibility());
+      window.setInterval(() => this.pump(), 100);
+      this.beds(3);
     }
-    if (this.live.state === 'suspended') void this.live.resume();
+    if (this.live.state === 'suspended' && !document.hidden) void this.live.resume().then(() => this.pump());
   }
 
-  /** Effects bus, saturation, reverb and meter for a context (live or offline). */
-  private build(ctx: BaseAudioContext) {
-    {
-      this.ctx = ctx; this.noise = null;
-      this.master = ctx.createGain();
-      const comp = ctx.createDynamicsCompressor();
-      comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
-      this.master.connect(comp).connect(ctx.destination);
-      this.meter = ctx.createAnalyser(); this.meter.fftSize = 512; comp.connect(this.meter);
-      // Gentle saturation on effects to glue the synth voices together.
-      const shaper = ctx.createWaveShaper();
-      const curve = new Float32Array(1024);
-      for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(x * 1.8) / Math.tanh(1.8); }
-      shaper.curve = curve; shaper.oversample = '2x';
-      this.sfx = ctx.createGain(); this.sfx.gain.value = SFX_LEVEL; this.sfx.connect(shaper).connect(this.master);
-      this.verb = ctx.createConvolver(); this.verb.buffer = this.impulse(1.6);
-      this.verbSend = ctx.createGain(); this.verbSend.gain.value = 0.22;
-      this.verbSend.connect(this.verb).connect(this.master);
-      this.applyVolume();
-    }
+  /** Player volumes (0..1 each) and mute; music and ambience stop entirely while silent. */
+  setMix(m: Partial<AudioMix>) {
+    const before = this.mix;
+    this.mix = { ...this.mix, ...m };
+    this.g?.setMix(this.mix);
+    const on = (x: AudioMix, c: Category) => categoryGain(x, c, this.profile) > 0;
+    if (on(before, 'music') !== on(this.mix, 'music') || on(before, 'ambience') !== on(this.mix, 'ambience')) this.beds(1.5);
+  }
+  /** Master volume and mute (kept for older callers; setMix covers every category). */
+  setVolume(volume: number, muted: boolean) { this.setMix({ master: volume, muted }); }
+  getMix(): AudioMix { return { ...this.mix }; }
+
+  /** Switch the soundscape: crossfades music and ambience, sets category levels and the cry policy. */
+  setProfile(p: Profile) {
+    if (!PROFILES.includes(p) || p === this.profile) return;
+    this.profile = p;
+    const fight = p === 'battle' || p === 'watch';
+    this.g?.setProfile(p, fight ? 1.2 : 2);
+    this.beds(fight ? 1.6 : 2.5);
+  }
+  get currentProfile(): Profile { return this.profile; }
+
+  private beds(fade: number) {
+    if (!this.music || !this.amb) return;
+    if (categoryGain(this.mix, 'music', this.profile) > 0) this.music.play(this.profile, fade); else this.music.stop(fade);
+    if (categoryGain(this.mix, 'ambience', this.profile) > 0) this.amb.start(this.profile, fade); else this.amb.stop(fade);
+    this.pump();
+  }
+  private pump() {
+    const ctx = this.live;
+    if (!ctx || ctx.state !== 'running') return;
+    const until = ctx.currentTime + 0.4;
+    this.music?.schedule(until); this.amb?.schedule(until);
+  }
+  private onVisibility() {
+    const ctx = this.live, g = this.g;
+    if (!ctx || !g) return;
+    if (document.hidden) { g.fadeOut(true, this.mix); window.setTimeout(() => { if (document.hidden) void ctx.suspend(); }, 160); }
+    else void ctx.resume().then(() => { g.fadeOut(false, this.mix); this.pump(); });
   }
 
+  /* ------------------------------------------------------------ effects */
+  /** Play a cue now. opts.gain scales it (0..1.5), pan places it (-1..1), pitch shifts it (step: <1 big, >1 small). */
+  play(cue: Cue, o: PlayOpts = {}) {
+    const g = this.g, s = this.synth, cat = CUE_CATEGORY[cue];
+    if (!g || !s || !cat || this.live?.state !== 'running' || categoryGain(this.mix, cat, this.profile) <= 0) return;
+    const ctx = g.ctx, now = ctx.currentTime, prev = this.last.get(cue) ?? -Infinity;
+    if (now - prev < (CUE_GAP[cue] ?? DEFAULT_GAP)) return;
+    const busy = (this.busy[cat] = this.busy[cat].filter(e => e > now));
+    if (busy.length >= MAX_VOICES[cat] && !PRIORITY.has(cue)) return;
+    const rep = now - prev < REPEAT_WINDOW ? Math.min(3, (this.rep.get(cue) ?? 0) + 1) : 0;
+    this.rep.set(cue, rep); this.last.set(cue, now);
+    // Schedule just past the next audio callback; anything earlier is already in the past when the render
+    // thread picks it up and a short envelope would collapse to silence.
+    const t = now + Math.max(0.015, (this.live?.baseLatency || 0) + 0.008);
+    s.bus = g.input[cat];
+    const ring = playCue(s, cue, t, {
+      gain: clamp(o.gain ?? 1, 0, 1.5) * Math.pow(REPEAT_FALLOFF, rep),
+      pan: o.pan === undefined ? undefined : clamp(o.pan, -1, 1),
+      pitch: o.pitch === undefined ? undefined : clamp(o.pitch, 0.5, 2),
+    });
+    busy.push(t + ring);
+    const d = DUCK[cue];
+    if (d) g.duck('music', d, ring);
+    if (cat === 'ui') this.lastUi = performance.now();
+  }
+  /** True when an interface cue played in the last `ms` milliseconds (lets generic click sounds step aside). */
+  uiPlayedWithin(ms: number) { return performance.now() - this.lastUi < ms; }
+
+  /* ------------------------------------------------------------ cries */
   /**
-   * Render one cue offline and report its peak and RMS. Deterministic (no device clock), so the
-   * automated check can prove every cue produces sound.
+   * A Pokémon's cry. Skipped (not queued) when the profile's policy says it would be too soon: another cry
+   * within `gap`, the same species within `cooldown`, or too many cries ringing. Rate below 1 lowers it.
    */
-  async renderCue(cue: Cue): Promise<{ peak: number; rms: number }> {
-    const keep = { ctx: this.ctx, master: this.master, sfx: this.sfx, verb: this.verb, verbSend: this.verbSend, meter: this.meter, noise: this.noise, last: this.last };
-    const off = new OfflineAudioContext(2, 44100 * 3, 44100);
-    this.build(off); this.offline = true; this.last = new Map();
-    this.master.gain.value = 0.8;
-    try { this.play(cue); } finally { this.offline = false; }
-    Object.assign(this, keep);
-    const buf = await off.startRendering();
-    const d = buf.getChannelData(0); let peak = 0, sum = 0;
-    for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > peak) peak = v; sum += v * v; }
-    return { peak, rms: Math.sqrt(sum / d.length) };
+  cry(dex: number, o: CryOpts = {}) {
+    const ctx = this.live;
+    if (!ctx || !this.g || ctx.state !== 'running' || !Number.isInteger(dex) || dex < 1) return;
+    if (categoryGain(this.mix, 'cries', this.profile) <= 0) return;
+    const now = ctx.currentTime, pol = CRY_POLICY[this.profile];
+    this.cryEnds = this.cryEnds.filter(e => e > now);
+    if (now - this.cryAt < pol.gap || now - (this.cryBy.get(dex) ?? -Infinity) < pol.cooldown || this.cryEnds.length >= pol.voices) return;
+    this.cryAt = now; this.cryBy.set(dex, now);
+    void this.loadCry(ctx, dex).then(e => {
+      // Decoding the first time can take a moment; a cry that would land late is dropped, not played out of sync.
+      if (this.live === ctx && ctx.currentTime - now < 0.8) this.startCry(e.buf, o);
+    }).catch(() => { /* no cry this time */ });
+  }
+  private startCry(buf: AudioBuffer, o: CryOpts) {
+    const g = this.g;
+    if (!g) return;
+    const ctx = g.ctx, t = ctx.currentTime + 0.012, rate = clamp(o.rate ?? 1, 0.7, 1.3);
+    const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = rate;
+    const v = ctx.createGain(); v.gain.value = clamp(o.gain ?? 1, 0, 1);
+    const p = ctx.createStereoPanner(); p.pan.value = clamp(o.pan ?? 0, -1, 1) * 0.8;
+    src.connect(v).connect(p).connect(g.input.cries);
+    src.start(t);
+    const dur = buf.duration / rate;
+    this.cryEnds.push(t + dur);
+    g.duck('music', CRY_DUCK.music, dur); g.duck('ambience', CRY_DUCK.ambience, dur);
+  }
+  /** Fetch, decode and treat a cry once per species (cached; a failed fetch is retried next time). */
+  private loadCry(ctx: BaseAudioContext, dex: number): Promise<CryEntry> {
+    let p = this.cries.get(dex);
+    if (!p) {
+      p = fetch(pokemonCry(dex))
+        .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.arrayBuffer(); })
+        .then(b => ctx.decodeAudioData(b))
+        .then(raw => {
+          const chs: Float32Array[] = [];
+          for (let c = 0; c < raw.numberOfChannels; c++) chs.push(raw.getChannelData(c));
+          const { out, stats } = processCry(mono(chs), raw.sampleRate);
+          const buf = ctx.createBuffer(1, out.length, raw.sampleRate);
+          buf.getChannelData(0).set(out);
+          return { buf, stats };
+        });
+      this.cries.set(dex, p);
+      p.catch(() => this.cries.delete(dex));
+    }
+    return p;
   }
 
-  /** Sound-effects volume (0..1) and mute; mute keeps the level so unmuting restores it. */
-  setVolume(volume: number, muted: boolean) { this.volume = volume; this.muted = muted; this.applyVolume(); }
-  private applyVolume() {
-    if (!this.ctx || this.offline) return;
-    this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume, this.ctx.currentTime, 0.05);
+  /** Settings preview: a representative sound of a category at its new level (throttled). */
+  preview(cat: Category, dex?: number) {
+    const now = performance.now();
+    if (now - this.lastPreview < 300 || this.live?.state !== 'running') return;
+    this.lastPreview = now;
+    if (cat === 'cries') {
+      const ctx = this.live;
+      if (dex) void this.loadCry(ctx, dex).then(e => { if (this.live === ctx) this.startCry(e.buf, {}); }).catch(() => { /* offline */ });
+      return;
+    }
+    const cue = ({ ui: 'confirm', battle: 'hit', ambience: 'step' } as Partial<Record<Category, Cue>>)[cat];
+    if (cue) this.play(cue);
   }
 
-  /** Peak output level right now (0..1), for diagnostics and tests. */
+  /* ------------------------------------------------------------ diagnostics */
+  private meterTap: ScriptProcessorNode | null = null;
+  private peak = 0;
+  /** Peak output level right now (0..1). */
   level() {
-    if (!this.meter) return 0;
-    const d = new Float32Array(this.meter.fftSize); this.meter.getFloatTimeDomainData(d);
+    if (!this.g) return 0;
+    const d = new Float32Array(this.g.meter.fftSize); this.g.meter.getFloatTimeDomainData(d);
     let m = 0; for (const v of d) m = Math.max(m, Math.abs(v)); return m;
   }
   get state() { return this.live?.state ?? 'none'; }
-  /** Test helper: continuously track the loudest sample until read (catches very short cues). */
-  private peak = 0; private tap: ScriptProcessorNode | null = null;
+  /** Test helper: the loudest output sample since the last call (catches very short cues). */
   takePeak() {
-    if (!this.ctx || !this.meter) return 0;
-    if (!this.tap) {
-      this.tap = this.ctx.createScriptProcessor(256, 1, 1);
-      this.tap.onaudioprocess = e => { const d = e.inputBuffer.getChannelData(0); for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > this.peak) this.peak = v; } };
-      const sink = this.ctx.createGain(); sink.gain.value = 0;
-      this.meter.connect(this.tap).connect(sink).connect(this.ctx.destination);
+    const g = this.g;
+    if (!g) return 0;
+    if (!this.meterTap) {
+      const tap = g.ctx.createScriptProcessor(256, 1, 1);
+      tap.onaudioprocess = e => { const d = e.inputBuffer.getChannelData(0); for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > this.peak) this.peak = v; } };
+      const sink = g.ctx.createGain(); sink.gain.value = 0;
+      g.meter.connect(tap).connect(sink).connect(g.ctx.destination);
+      this.meterTap = tap;
     }
     const p = this.peak; this.peak = 0; return p;
   }
 
-  /* ------------------------------------------------------------ building blocks */
-  private impulse(seconds: number) {
-    const ctx = this.ctx!; const len = Math.floor(ctx.sampleRate * seconds);
-    const b = ctx.createBuffer(2, len, ctx.sampleRate);
-    for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6) * (i < 400 ? i / 400 : 1); }
-    return b;
-  }
-  private noiseBuf() {
-    if (!this.noise) {
-      const ctx = this.ctx!; const len = ctx.sampleRate * 2;
-      this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
-      const d = this.noise.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    }
-    return this.noise;
-  }
-  /** An output for one voice: gain envelope → optional pan → bus (+ reverb send). */
-  private out(t: number, peak: number, attack: number, decay: number, o: PlayOpts = {}, bus: AudioNode = this.sfx, wet = true) {
-    const ctx = this.ctx!;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak * (o.gain ?? 1)), t + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
-    let node: AudioNode = g;
-    if (o.pan) { const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, o.pan)); g.connect(p); node = p; }
-    node.connect(bus);
-    if (wet) node.connect(this.verbSend);
-    return g;
-  }
-  private tone(type: OscillatorType, f0: number, f1: number, t: number, dur: number, peak: number, o: PlayOpts = {}, attack = 0.005, bus?: AudioNode) {
-    const ctx = this.ctx!;
-    const osc = ctx.createOscillator(); osc.type = type;
-    const p = o.pitch ?? 1;
-    osc.frequency.setValueAtTime(f0 * p, t);
-    if (f1 !== f0) osc.frequency.exponentialRampToValueAtTime(Math.max(20, f1 * p), t + dur);
-    osc.connect(this.out(t, peak, attack, dur, o, bus));
-    osc.start(t); osc.stop(t + attack + dur + 0.05);
-    return osc;
-  }
-  private hiss(t: number, dur: number, peak: number, filter: BiquadFilterType, f0: number, f1: number, q = 1, o: PlayOpts = {}, attack = 0.005, bus?: AudioNode) {
-    const ctx = this.ctx!;
-    const src = ctx.createBufferSource(); src.buffer = this.noiseBuf(); src.loop = true;
-    const f = ctx.createBiquadFilter(); f.type = filter; f.Q.value = q;
-    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + attack + dur);
-    src.connect(f).connect(this.out(t, peak, attack, dur, o, bus));
-    src.start(t, Math.random() * 1.5); src.stop(t + attack + dur + 0.05);
-  }
-  private fm(carrier: number, ratio: number, index: number, t: number, dur: number, peak: number, o: PlayOpts = {}) {
-    const ctx = this.ctx!; const p = o.pitch ?? 1;
-    const c = ctx.createOscillator(); const m = ctx.createOscillator(); const mg = ctx.createGain();
-    c.frequency.value = carrier * p; m.frequency.value = carrier * ratio * p; mg.gain.setValueAtTime(carrier * index, t); mg.gain.exponentialRampToValueAtTime(1, t + dur);
-    m.connect(mg).connect(c.frequency);
-    c.connect(this.out(t, peak, 0.002, dur, o));
-    c.start(t); m.start(t); c.stop(t + dur + 0.05); m.stop(t + dur + 0.05);
-  }
-  private thud(t: number, f: number, peak: number, dur = 0.25, o: PlayOpts = {}) { this.tone('sine', f * 2.2, f, t, dur, peak, o, 0.002); }
-
-  /* ------------------------------------------------------------ cues */
-  play(cue: Cue, o: PlayOpts = {}) {
-    const ctx = this.ctx;
-    if (!ctx || (!this.offline && ctx.state !== 'running')) return;
-    // Throttle identical cues (hover storms, multi-hit spam).
-    const now = ctx.currentTime; const prev = this.last.get(cue) ?? -1;
-    if (now - prev < (cue === 'hover' ? 0.05 : 0.025)) return;
-    this.last.set(cue, now);
-    // Schedule just past the next audio callback; anything earlier is already in the past when the
-    // render thread picks it up and a short envelope would collapse to silence.
-    const t = this.offline ? 0.02 : now + Math.max(0.015, ((ctx as AudioContext).baseLatency || 0) + 0.008);
-    const r = (a: number, b: number) => a + Math.random() * (b - a);
-    switch (cue) {
-      case 'hover': this.tone('square', 1900, 1700, t, 0.025, 0.035, o); break;
-      case 'click': this.thud(t, 120, 0.4, 0.08, o); this.hiss(t, 0.04, 0.12, 'bandpass', 3000, 2000, 2, o); break;
-      case 'toggle': this.tone('square', 600, 900, t, 0.05, 0.08, o); break;
-      case 'confirm': [0, 4, 7].forEach((n, i) => this.tone('square', midi(64 + n), midi(64 + n), t + i * 0.06, 0.12, 0.09, o)); this.thud(t, 90, 0.4, 0.2, o); break;
-      case 'back': this.tone('square', 500, 260, t, 0.12, 0.08, o); break;
-      case 'error': this.tone('sawtooth', 150, 110, t, 0.3, 0.15, o); this.tone('sawtooth', 157, 113, t, 0.3, 0.12, o); break;
-      case 'join': [0, 7, 12].forEach((n, i) => this.fm(midi(69 + n), 3.5, 2, t + i * 0.08, 0.5, 0.12, o)); break;
-      case 'tick': this.tone('square', 1200, 1200, t, 0.03, 0.06, o); break;
-      case 'tickUrgent': this.tone('square', 1600, 1600, t, 0.05, 0.11, o); this.tone('square', 1600, 1600, t + 0.09, 0.05, 0.09, o); break;
-      case 'coinFlip': this.fm(2600, 2.76, 3, t, 0.5, 0.12, o); this.hiss(t, 0.35, 0.08, 'highpass', 4000, 6000, 1, o); break;
-      case 'coinLand': [0, 0.11, 0.19, 0.24].forEach((d, i) => this.fm(3100 - i * 120, 2.76, 2.5, t + d, 0.25 - i * 0.04, 0.16 / (i + 1), o)); this.thud(t, 140, 0.2, 0.1, o); break;
-      case 'tossWin': [0, 3, 7, 12].forEach((n, i) => this.tone('square', midi(67 + n), midi(67 + n), t + i * 0.07, 0.16, 0.08, o)); break;
-      case 'tossLose': this.tone('sawtooth', midi(55), midi(48), t, 0.6, 0.1, o, 0.02); break;
-      case 'deal': for (let i = 0; i < 6; i++) this.hiss(t + i * 0.05, 0.07, 0.1, 'bandpass', 2500, 1200, 1.5, o); break;
-      case 'pick': this.thud(t, 70, 0.6, 0.35, o); this.hiss(t, 0.25, 0.15, 'lowpass', 2500, 300, 1, o); break;
-
-      case 'switchIn': this.tone('sawtooth', 110, 880, t, 0.35, 0.07, o, 0.02); this.hiss(t, 0.4, 0.08, 'bandpass', 600, 5000, 4, o, 0.05); this.fm(880, 1.5, 1.5, t + 0.33, 0.35, 0.07, o); break;
-      case 'dash': this.hiss(t, 0.32, 0.25, 'bandpass', 500, 2600, 1.4, o, 0.08); break;
-      case 'punch': this.thud(t, 65, 0.9, 0.25, o); this.hiss(t, 0.09, 0.4, 'lowpass', 3000, 400, 1, o); break;
-      case 'slash': this.hiss(t, 0.18, 0.35, 'bandpass', 7000, 2500, 3, o, 0.01); this.tone('sawtooth', 2400, 900, t, 0.12, 0.05, o); this.thud(t + 0.03, 90, 0.4, 0.15, o); break;
-      case 'bite': [0, 0.08].forEach(d => { this.hiss(t + d, 0.06, 0.35, 'bandpass', 3000, 1500, 2, o); this.thud(t + d, 110, 0.4, 0.08, o); }); break;
-      case 'fire': this.hiss(t, 0.75, 0.32, 'lowpass', 900, 3200, 0.7, o, 0.08); this.hiss(t, 0.7, 0.12, 'bandpass', 180, 400, 2, o, 0.05); for (let i = 0; i < 8; i++) this.hiss(t + r(0, 0.6), 0.02, 0.15, 'highpass', 3000, 3000, 1, o); break;
-      case 'water': this.hiss(t, 0.7, 0.28, 'bandpass', 1500, 900, 0.8, o, 0.06); for (let i = 0; i < 6; i++) this.tone('sine', r(500, 1400), r(1500, 2600), t + r(0, 0.6), 0.06, 0.05, o); break;
-      case 'zap': for (let i = 0; i < 5; i++) { const d = i * 0.06 + r(0, 0.03); this.hiss(t + d, 0.05, 0.35, 'highpass', 2000, 6000, 1, o); this.tone('square', r(60, 120), r(40, 80), t + d, 0.06, 0.15, o); } break;
-      case 'beamCharge': this.tone('sawtooth', 120, 900, t, 0.18, 0.08, o, 0.01); break;
-      case 'beam': this.tone('sawtooth', 220, 210, t, 0.7, 0.1, o, 0.02); this.tone('sawtooth', 223, 214, t, 0.7, 0.1, o, 0.02); this.hiss(t, 0.7, 0.12, 'bandpass', 2400, 2400, 6, o, 0.02); break;
-      case 'orb': this.tone('sine', 300, 900, t, 0.5, 0.12, o, 0.02); this.fm(300, 0.5, 4, t, 0.5, 0.05, o); break;
-      case 'orbHit': this.thud(t, 80, 0.6, 0.3, o); this.hiss(t, 0.25, 0.2, 'lowpass', 4000, 500, 1, o); break;
-      case 'rings': for (let i = 0; i < 3; i++) this.fm(r(300, 500), 1.01, 6, t + i * 0.09, 0.35, 0.07, o); break;
-      case 'wind': this.hiss(t, 1.0, 0.25, 'bandpass', 400, 1800, 3, o, 0.25); break;
-      case 'leaves': for (let i = 0; i < 12; i++) this.hiss(t + r(0, 0.7), 0.05, 0.12, 'bandpass', r(2000, 5000), 1500, 3, o); break;
-      case 'quake': this.tone('sine', 55, 30, t, 1.1, 0.9, o, 0.02); this.hiss(t, 1.0, 0.5, 'lowpass', 300, 60, 1, o, 0.03); for (let i = 0; i < 6; i++) this.thud(t + r(0.05, 0.6), r(45, 90), 0.35, 0.2, o); break;
-      case 'meteor': this.tone('sine', 1800, 300, t, 0.6, 0.06, o, 0.02); this.hiss(t, 0.6, 0.12, 'bandpass', 3000, 600, 4, o, 0.2); break;
-      case 'meteorHit': this.thud(t, 50, 1, 0.5, o); this.hiss(t, 0.5, 0.4, 'lowpass', 2500, 150, 1, o); break;
-      case 'coins': for (let i = 0; i < 14; i++) this.fm(r(2200, 3600), 2.76, 2, t + r(0, 0.8), 0.15, 0.06, o); break;
-      case 'heal': [0, 4, 7, 12, 16].forEach((n, i) => this.fm(midi(72 + n), 2, 1, t + i * 0.07, 0.4, 0.06, o)); break;
-      case 'shield': this.fm(220, 2, 3, t, 0.9, 0.12, o); this.tone('sine', 440, 445, t, 0.9, 0.06, o, 0.05); break;
-      case 'buff': [0, 5, 7, 12].forEach((n, i) => this.tone('square', midi(60 + n), midi(60 + n), t + i * 0.05, 0.09, 0.06, o)); break;
-      case 'debuff': [12, 7, 5, 0].forEach((n, i) => this.tone('square', midi(55 + n), midi(55 + n), t + i * 0.05, 0.09, 0.05, o)); break;
-      case 'hazard': for (let i = 0; i < 5; i++) { this.thud(t + i * 0.07 + 0.5, r(150, 260), 0.25, 0.08, o); this.hiss(t + i * 0.07 + 0.5, 0.04, 0.15, 'bandpass', 3500, 2000, 3, o); } this.hiss(t, 0.4, 0.1, 'bandpass', 800, 2000, 2, o, 0.1); break;
-      case 'status': this.tone('triangle', 700, 300, t, 0.3, 0.08, o); this.tone('triangle', 740, 320, t + 0.05, 0.3, 0.06, o); break;
-      case 'hit': this.thud(t, 90, 0.6, 0.18, o); this.hiss(t, 0.1, 0.25, 'lowpass', 3000, 500, 1, o); break;
-      case 'hitBig': this.thud(t, 55, 1, 0.4, o); this.hiss(t, 0.3, 0.45, 'lowpass', 5000, 200, 1, o); this.tone('sawtooth', 300, 60, t, 0.25, 0.08, o); break;
-      case 'crit': this.hiss(t, 0.15, 0.5, 'highpass', 5000, 8000, 1, o); this.tone('square', 1800, 1200, t, 0.1, 0.08, o); break;
-      case 'super': this.tone('square', midi(76), midi(76), t, 0.08, 0.08, o); this.tone('square', midi(83), midi(83), t + 0.08, 0.14, 0.08, o); break;
-      case 'resist': this.tone('triangle', 300, 200, t, 0.2, 0.08, o); break;
-      case 'miss': this.hiss(t, 0.25, 0.2, 'bandpass', 1200, 4000, 2, o, 0.05); this.tone('sine', 800, 500, t + 0.1, 0.15, 0.05, o); break;
-      case 'faint': this.tone('sawtooth', 440, 55, t, 1.1, 0.12, o, 0.01); this.tone('sawtooth', 446, 56, t, 1.1, 0.1, o, 0.01); this.hiss(t + 0.2, 0.9, 0.12, 'bandpass', 3000, 200, 2, o); break;
-      case 'tera': [0, 7, 12, 16, 19, 24].forEach((n, i) => this.fm(midi(64 + n), 3.01, 2, t + i * 0.05, 0.8, 0.07, o)); this.hiss(t, 0.8, 0.15, 'highpass', 3000, 9000, 1, o, 0.05); this.thud(t, 50, 0.6, 0.5, o); break;
-      case 'stamp': this.hiss(t, 0.22, 0.25, 'highpass', 2500, 5000, 0.8, o, 0.01); this.thud(t + 0.02, 75, 0.7, 0.2, o); break;
-      case 'ko': this.thud(t, 40, 1, 0.6, o); this.tone('square', midi(43), midi(31), t, 0.6, 0.12, o); break;
-      case 'win': [0, 4, 7, 12, 7, 12, 16, 19].forEach((n, i) => this.tone('square', midi(60 + n), midi(60 + n), t + i * 0.09, i === 7 ? 0.6 : 0.1, 0.09, o)); this.thud(t, 60, 0.5, 0.3, o); break;
-      case 'lose': [0, -1, -2, -3].forEach((n, i) => this.wah(midi(55 + n), t + i * 0.32, i === 3 ? 0.9 : 0.28, o)); break;
-    }
-  }
-
-  /** Comic trombone for losing. */
-  private wah(f: number, t: number, dur: number, o: PlayOpts) {
-    const ctx = this.ctx!;
-    const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.setValueAtTime(f, t);
-    if (dur > 0.5) { const lfo = ctx.createOscillator(); const lg = ctx.createGain(); lfo.frequency.value = 6; lg.gain.value = f * 0.02; lfo.connect(lg).connect(osc.frequency); lfo.start(t); lfo.stop(t + dur + 0.1); }
-    const flt = ctx.createBiquadFilter(); flt.type = 'lowpass'; flt.Q.value = 6;
-    flt.frequency.setValueAtTime(300, t); flt.frequency.linearRampToValueAtTime(1600, t + 0.12); flt.frequency.linearRampToValueAtTime(500, t + dur);
-    osc.connect(flt).connect(this.out(t, 0.16, 0.02, dur, o));
-    osc.start(t); osc.stop(t + dur + 0.1);
-  }
-
   /**
-   * A Pokémon's cry (PokéAPI cries repository, OGG), fetched on first use and cached. Plays straight into
-   * the master bus (no saturation: it is a recording) with a touch of the stadium reverb. Rate below 1
-   * lowers and slows it. Fails silently offline or where the browser cannot decode OGG.
+   * QA: render one cue offline through the full mix (default volumes unless `mix` overrides them, in the
+   * profile it is usually heard in) and measure it. Deterministic (seeded randomness, no device clock).
    */
-  cry(dex: number, o: { pan?: number; gain?: number; rate?: number } = {}) {
-    const ctx = this.live;
-    if (!ctx || ctx.state !== 'running' || !Number.isInteger(dex) || dex < 1) return;
-    let p = this.cries.get(dex);
-    if (!p) {
-      p = fetch(pokemonCry(dex)).then(r => { if (!r.ok) throw new Error(String(r.status)); return r.arrayBuffer(); }).then(b => ctx.decodeAudioData(b));
-      this.cries.set(dex, p);
-      p.catch(() => this.cries.delete(dex));
-    }
-    void p.then(buf => {
-      if (this.ctx !== ctx) return;
-      const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = o.rate ?? 1;
-      const g = ctx.createGain(); g.gain.value = 0.55 * (o.gain ?? 1);
-      const pan = ctx.createStereoPanner(); pan.pan.value = Math.max(-1, Math.min(1, o.pan ?? 0));
-      src.connect(g).connect(pan).connect(this.master);
-      const send = ctx.createGain(); send.gain.value = 0.35; pan.connect(send).connect(this.verbSend);
-      src.start(ctx.currentTime + 0.01);
-    }).catch(() => { /* no cry this time */ });
+  async renderCue(cue: Cue, opt: { profile?: Profile; mix?: Partial<AudioMix>; seconds?: number; gain?: number; pitch?: number } = {}) {
+    const cat = CUE_CATEGORY[cue], profile = opt.profile ?? homeProfile(cat), sr = 48000;
+    const off = new OfflineAudioContext(2, Math.round(sr * (opt.seconds ?? (cue === 'introSwell' ? 7 : 3))), sr);
+    const g = new Graph(off, { ...AUDIO_DEFAULTS, ...opt.mix }, profile);
+    const s = new Synth(g); s.rnd = seeded(7); s.bus = g.input[cat];
+    const ring = playCue(s, cue, 0.02, { gain: opt.gain, pitch: opt.pitch });
+    const b = await off.startRendering();
+    const lv = measure([b.getChannelData(0), b.getChannelData(1)], sr);
+    return { cue, category: cat, profile, ring, ...lv, rms: Math.pow(10, lv.rmsDb / 20) };
+  }
+  /** QA: decode, treat and render one cry offline; returns the treatment stats and the output level. */
+  async renderCry(dex: number, opt: { profile?: Profile; mix?: Partial<AudioMix>; gain?: number } = {}) {
+    const sr = 48000;
+    const e = await this.loadCry(this.live ?? new OfflineAudioContext(1, sr, sr), dex);
+    const off = new OfflineAudioContext(2, Math.round(sr * (e.buf.duration + 0.9)), sr);
+    const g = new Graph(off, { ...AUDIO_DEFAULTS, ...opt.mix }, opt.profile ?? 'battle');
+    const src = off.createBufferSource(); src.buffer = e.buf;
+    const v = off.createGain(); v.gain.value = opt.gain ?? 1;
+    src.connect(v).connect(g.input.cries); src.start(0.02);
+    const b = await off.startRendering();
+    return { dex, ...e.stats, out: measure([b.getChannelData(0), b.getChannelData(1)], sr) as Level };
+  }
+  /** QA: render a profile's music and/or ambience for `seconds` (seeded) and measure it. */
+  async renderBeds(profile: Profile, seconds = 16, opt: { mix?: Partial<AudioMix>; only?: 'music' | 'ambience' } = {}) {
+    const sr = 48000, off = new OfflineAudioContext(2, Math.round(sr * seconds), sr);
+    const g = new Graph(off, { ...AUDIO_DEFAULTS, ...opt.mix }, profile), rnd = seeded(11);
+    if (opt.only !== 'ambience') { const m = new MusicPlayer(g, rnd); m.play(profile, 0.01); m.schedule(seconds); }
+    if (opt.only !== 'music') { const a = new Ambience(g, rnd); a.start(profile, 0.01); a.schedule(seconds); }
+    const b = await off.startRendering();
+    return { profile, only: opt.only ?? 'both', ...measure([b.getChannelData(0), b.getChannelData(1)], sr) };
   }
 }
 
-export const sound = new SoundEngine();
-// Diagnostics hook for the automated audio check (?audiotest); inert otherwise.
-if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('audiotest')) (window as unknown as { __sound: SoundEngine }).__sound = sound;
+export type SoundEngine = AudioManager;
+export const sound = new AudioManager();
+// Diagnostics hooks for the automated audio check (?audiotest); inert otherwise.
+if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('audiotest')) {
+  Object.assign(window as object, { __sound: sound, __audioLab: { measure, processCry, CRY, categoryGain, AUDIO_DEFAULTS, ALL_CUES, CUE_CATEGORY } });
+}

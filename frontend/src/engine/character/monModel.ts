@@ -74,6 +74,8 @@ export type MonModel = {
   materials: THREE.Material[];
   /** Eye-texture blink (HOME models). */
   blink?: Blink;
+  /** Ground speed of the walk loop at normal playback, units per second (from its root motion); null when unknown. */
+  walkSpeed?: number | null;
 };
 
 /**
@@ -259,6 +261,7 @@ function instance(src: Source, height: number, metal?: RegExp): MonModel {
     mx.stopAllAction(); mx.uncacheRoot(model);
   } else box = visibleBox(model);
   measureStrikes(model, src.clips);
+  const pace = measureStride(model, src.clips);
   const size = box.getSize(new THREE.Vector3());
   const c = box.getCenter(new THREE.Vector3());
   // Fit the height; wide (wings) and long (tails, serpents) bodies may extend further before they shrink.
@@ -267,7 +270,7 @@ function instance(src: Source, height: number, metal?: RegExp): MonModel {
   model.position.multiplyScalar(s).add(new THREE.Vector3(-c.x * s, -box.min.y * s, -c.z * s));
   const root = new THREE.Group();
   root.add(model);
-  return { root, clips: src.clips, height: size.y * s, radius: Math.max(size.x, size.z) * s * 0.5, materials, blink: src.blink };
+  return { root, clips: src.clips, height: size.y * s, radius: Math.max(size.x, size.z) * s * 0.5, materials, blink: src.blink, walkSpeed: pace ? pace * s : null };
 }
 
 /** Bounds of the meshes that are actually drawn (visible all the way up, with at least one visible material). */
@@ -317,6 +320,41 @@ function measureStrikes(model: THREE.Object3D, clips: THREE.AnimationClip[]) {
   model.updateMatrixWorld(true);
 }
 
+/**
+ * Ground speed of each walk and run loop at normal playback (units per second, at the model's own scale), from
+ * its root motion. These loops carry the origin bone forward through the cycle and jump it back when they loop,
+ * so a partner walking on the spot slid ahead and snapped back every cycle. The drift comes out of the clip (it
+ * loops seamlessly in place) and its length becomes the pace at which the feet keep their grip. Once per clip:
+ * clips are shared by every instance of a species.
+ */
+const paces = new WeakMap<THREE.AnimationClip, number>();
+function measureStride(model: THREE.Object3D, clips: THREE.AnimationClip[]): number | null {
+  model.updateMatrixWorld(true);
+  const scale = new THREE.Vector3();
+  for (const clip of clips) {
+    if (!/(walk01_loop|run01_loop)$/.test(clip.name) || paces.has(clip)) continue;
+    let best: { track: THREE.KeyframeTrack; dx: number; dz: number } | null = null;
+    for (const track of clip.tracks) {
+      if (!track.name.endsWith('.position') || track.values.length < 6) continue;
+      const v = track.values, n = v.length / 3;
+      const dx = v[(n - 1) * 3] - v[0], dz = v[(n - 1) * 3 + 2] - v[2];
+      if (!best || Math.hypot(dx, dz) > Math.hypot(best.dx, best.dz)) best = { track, dx, dz };
+    }
+    if (!best || Math.hypot(best.dx, best.dz) < 1e-4) { paces.set(clip, 0); continue; }
+    // The drift is in the bone's parent space, which may be scaled.
+    const bone = model.getObjectByName(best.track.name.slice(0, best.track.name.lastIndexOf('.')));
+    if (bone?.parent) bone.parent.getWorldScale(scale); else scale.set(1, 1, 1);
+    paces.set(clip, Math.hypot(best.dx * scale.x, best.dz * scale.z) / Math.max(1e-3, clip.duration));
+    const { times, values } = best.track, t0 = times[0], span = Math.max(1e-6, times[times.length - 1] - t0);
+    for (let i = 0; i < times.length; i++) {
+      const k = (times[i] - t0) / span;
+      values[i * 3] -= best.dx * k; values[i * 3 + 2] -= best.dz * k;
+    }
+  }
+  const walk = findClip(clips, ['walk01_loop', 'run01_loop']);
+  return walk ? paces.get(walk) || null : null;
+}
+
 /** First clip whose name ends with one of the Scarlet/Violet action names (defaultwait01_loop, glad01, attack01…). */
 export function findClip(clips: THREE.AnimationClip[], names: readonly string[]): THREE.AnimationClip | null {
   for (const n of names) { const c = clips.find(x => x.name.endsWith(n)); if (c) return c; }
@@ -354,6 +392,16 @@ export function auditModel(m: MonModel) {
 
 type MatState = { color: THREE.Color | null; emissive: THREE.Color | null; opacity: number; transparent: boolean; depthWrite: boolean };
 type Act = THREE.AnimationAction & { hold?: boolean };
+/** Idle stance: relaxed, battle-ready, asleep, or resting (sitting). */
+export type Posture = 'default' | 'battle' | 'sleep' | 'rest';
+/**
+ * Fade an action's weight from `from` to `to` over `d` seconds. three's fadeIn and fadeOut always start from 0
+ * and 1, so cutting one blend short with another (stopping, then walking again at once) made the pose jump.
+ */
+function fadeWeight(a: THREE.AnimationAction, from: number, to: number, d: number) {
+  a.weight = 1;
+  (a as unknown as { _scheduleFading(d: number, from: number, to: number): void })._scheduleFading(Math.max(1e-3, d), from, to);
+}
 
 /**
  * One Pokémon body on stage. Animation runs as a small state machine over the model's own clips: an
@@ -372,8 +420,12 @@ export class MonBody {
   /** True when the clips cover a full battle: idle, attack, damage and faint. */
   readonly battleSet: boolean;
   readonly proc: ProceduralRig;
+  /** Ground speed of the walk loop at normal playback (units per second), or null when unknown. */
+  readonly walkSpeed: number | null;
+  /** Actions that may still carry weight, so each new blend fades every one of them from where it is. */
+  private live = new Set<Act>();
   private mixer: THREE.AnimationMixer | null = null;
-  private idleKind: 'default' | 'battle' | 'sleep';
+  private idleKind: Posture;
   private idleAction: THREE.AnimationAction | null = null;
   private current: Act | null = null;
   private fidgetIn = 6 + Math.random() * 6;
@@ -390,6 +442,7 @@ export class MonBody {
 
   constructor(private model: MonModel, idle: 'default' | 'battle' = 'default') {
     this.root = model.root; this.height = model.height; this.radius = model.radius; this.idleKind = idle;
+    this.walkSpeed = model.walkSpeed ?? null;
     this.battleSet = hasBattleSet(model.clips);
     // Older single-clip models loop their one clip as the idle (their bind pose is often not a stance).
     this.animated = model.clips.length > 0;
@@ -427,32 +480,42 @@ export class MonBody {
     for (const e of this.eyes) e.tex.offset.set(e.x + du, e.y - dv);
   }
 
-  private idleClip(kind: 'default' | 'battle' | 'sleep') {
+  private idleClip(kind: Posture) {
     const c = this.model.clips;
     if (kind === 'sleep') return findClip(c, ['sleep01_loop']);
+    if (kind === 'rest') return findClip(c, ['rest01_loop']);
     return findClip(c, kind === 'battle' ? ['battlewait01_loop', 'defaultwait01_loop'] : ['defaultwait01_loop', 'battlewait01_loop']) ?? c[0] ?? null;
   }
 
-  /** Idle stance: relaxed, battle-ready, or asleep (models with a sleep loop; others droop procedurally). */
-  setIdle(kind: 'default' | 'battle' | 'sleep') {
+  /**
+   * Idle stance: relaxed, battle-ready, asleep or resting (models with a sleep loop; others droop procedurally;
+   * resting needs the model's own sitting loop). Returns false when the model cannot take that stance.
+   */
+  setIdle(kind: Posture): boolean {
     const was = this.idleKind;
+    if (kind === 'rest' && !this.idleClip('rest')) return false;
     this.idleKind = kind;
     this.proc.drowsy = kind === 'sleep';
-    if (!this.mixer) return;
+    if (!this.mixer) return true;
     const clip = this.idleClip(kind) ?? this.idleClip('battle');
-    if (!clip) return;
-    const next = this.mixer.clipAction(clip);
-    if (next === this.idleAction) return;
-    // Falling asleep and waking play their transition clips first when the model has them.
-    const into = kind === 'sleep' ? findClip(this.model.clips, ['sleep01_start']) : was === 'sleep' ? findClip(this.model.clips, ['sleep01_end']) : null;
-    next.reset().setLoop(THREE.LoopRepeat, Infinity);
+    if (!clip) return false;
+    const next = this.mixer.clipAction(clip) as Act;
+    if (next === this.idleAction) return true;
+    // Lying down, sitting down and getting up play their own transition clips first when the model has them.
+    const c = this.model.clips;
+    const into = kind === 'sleep' ? findClip(c, ['sleep01_start']) : kind === 'rest' ? findClip(c, ['rest01_start'])
+      : was === 'sleep' ? findClip(c, ['sleep01_end']) : was === 'rest' ? findClip(c, ['rest01_end']) : null;
+    next.setLoop(THREE.LoopRepeat, Infinity);
     const prevIdle = this.idleAction;
     this.idleAction = next;
-    if (into && this.current === prevIdle) { this.act([into.name]); return; }
-    next.play();
-    if (prevIdle && this.current === prevIdle) prevIdle.crossFadeTo(next, 0.35, false);
-    if (!this.current || this.current === prevIdle) this.current = next;
+    if (into && this.current === prevIdle) { this.act([into.name], { fade: 0.25 }); return true; }
+    if (!this.current || this.current === prevIdle) this.blend(next, 0.35, true);
+    return true;
   }
+  /** The stance the idle is in. */
+  get posture(): Posture { return this.idleKind; }
+  /** Length of the first of these clips the model has, in seconds (0 when none). */
+  clipLength(names: readonly string[]) { return findClip(this.model.clips, names)?.duration ?? 0; }
 
   /** Play a one-shot clip by action name; returns its duration in seconds, or 0 when the model has none of them. */
   act(names: readonly string[], opts: { speed?: number; hold?: boolean; fade?: number } = {}): number {
@@ -460,10 +523,8 @@ export class MonBody {
     const clip = findClip(this.model.clips, names);
     if (!clip) return 0;
     const a = this.mixer.clipAction(clip) as Act;
-    a.reset(); a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; a.timeScale = opts.speed ?? 1;
-    a.enabled = true; a.setEffectiveWeight(1); a.play();
-    if (this.current && this.current !== a) this.current.crossFadeTo(a, opts.fade ?? 0.15, false);
-    this.current = a;
+    a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; a.timeScale = opts.speed ?? 1;
+    this.blend(a, opts.fade ?? 0.15, true);
     a.hold = !!opts.hold;
     return clip.duration / (opts.speed ?? 1);
   }
@@ -485,13 +546,13 @@ export class MonBody {
     if (next === this.gait) return true;
     const prev = this.gait;
     this.gait = next;
-    const to = next ?? this.idleAction;
+    const to = (next ?? this.idleAction) as Act | null;
     if (!to || (!next && this.current !== prev)) return true;
-    to.reset().setLoop(THREE.LoopRepeat, Infinity);
+    to.setLoop(THREE.LoopRepeat, Infinity);
     to.timeScale = next ? rate : 1;
-    to.play();
-    if (this.current && this.current !== to) this.current.crossFadeTo(to, 0.22, false);
-    this.current = to; (to as Act).hold = false;
+    // Walking again while the walk is still fading out picks it up where it is: no restart, no pop.
+    this.blend(to, next ? 0.25 : 0.35, false);
+    to.hold = false;
     return true;
   }
   /** Loop a clip until the next action. */
@@ -500,12 +561,30 @@ export class MonBody {
     const clip = findClip(this.model.clips, names);
     if (!clip) return false;
     const a = this.mixer.clipAction(clip) as Act;
-    a.reset().setLoop(THREE.LoopRepeat, Infinity).play();
-    if (this.current && this.current !== a) this.current.crossFadeTo(a, 0.25, false);
-    this.current = a; a.hold = true;
+    a.setLoop(THREE.LoopRepeat, Infinity);
+    this.blend(a, 0.25, true);
+    a.hold = true;
     return true;
   }
   has(names: readonly string[]) { return !!findClip(this.model.clips, names); }
+  /**
+   * Make `to` the playing action: every other action that still carries weight fades out from where it is while
+   * `to` fades in from where it is, so the weights always add up and nothing pops. `fresh` starts it from its
+   * first frame (one-shots); otherwise an action that is still fading out is picked back up where it is.
+   */
+  private blend(to: Act, d: number, fresh: boolean) {
+    const w0 = to.isRunning() ? to.getEffectiveWeight() : 0;
+    if (fresh || w0 < 0.01) to.reset();
+    to.enabled = true; to.play();
+    fadeWeight(to, w0, 1, d);
+    for (const a of this.live) {
+      if (a === to) continue;
+      if (!a.enabled || !a.isScheduled()) { this.live.delete(a); continue; }
+      fadeWeight(a, a.getEffectiveWeight(), 0, d);
+    }
+    this.live.add(to);
+    this.current = to;
+  }
   /**
    * Play an attack-type clip so its strike lands `inSeconds` from now (speed clamped to stay natural).
    * Returns false when the model has none of the clips.
@@ -520,11 +599,9 @@ export class MonBody {
   private backToIdle() {
     const cur = this.current;
     // While walking, a finished one-shot hands back to the walk instead of the idle.
-    const base = this.gait ?? this.idleAction;
+    const base = (this.gait ?? this.idleAction) as Act | null;
     if (!base || !cur || cur === base || cur.hold) return;
-    base.reset().play();
-    cur.crossFadeTo(base, 0.3, false);
-    this.current = base;
+    this.blend(base, 0.3, false);
   }
 
   /** Back to a clean idle: no held pose, tint, flash or fade (a revived Pokémon coming back, for instance). */
@@ -532,7 +609,7 @@ export class MonBody {
     this.flash = 0; this.tint = 0; this.opacity = 1; this.dirty = true;
     if (!this.mixer) return;
     this.mixer.stopAllAction();
-    this.current = null; this.idleAction = null;
+    this.current = null; this.idleAction = null; this.gait = null; this.live.clear();
     const kind = this.idleKind === 'sleep' ? 'battle' : this.idleKind;
     this.idleKind = kind; this.proc.drowsy = false;
     this.setIdle(kind);

@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import type { CharacterId, CoinSide, PlazaEmote, Spot } from '@shared';
 import { DEFAULT_CHARACTER, characterById, type Emote } from '../characters/roster.js';
 import { CameraDirector, type Shot } from './CameraDirector.js';
-import { FLOOR_Y, MonRig } from './character/MonRig.js';
+import { FLOOR_Y, MonRig, type Gesture } from './character/MonRig.js';
 import { MON_RIM, hasModel, loadMonModel } from './character/monModel.js';
 import { monSize } from './character/size.js';
 import { Emitter, type WorldEvents } from './events.js';
@@ -18,7 +18,7 @@ import { StageFloor, MAX_SLOTS } from './world/Floor.js';
 import { Stadium } from './world/Stadium.js';
 import { Atmosphere } from './world/Atmosphere.js';
 import { Coin } from './world/Coin.js';
-import { Plaza, PLAZA_SPAWN, REACH, RIVAL, isMoveKey, type Walker } from './world/Plaza.js';
+import { Plaza, PLAZA_SPAWN, RIVAL, isMoveKey, type Walker } from './world/Plaza.js';
 import { FIELD, WALL_R } from './world/dims.js';
 import { BattleStage } from './battle/BattleStage.js';
 
@@ -45,6 +45,14 @@ export type Layout =
 export type HubPeer = { id: string; partner: CharacterId; at: Spot };
 type WalkLayout = Extract<Layout, { mode: 'plaza' | 'hub' }>;
 const walking = (l: Layout | null | undefined): l is WalkLayout => l?.mode === 'plaza' || l?.mode === 'hub';
+/**
+ * Plaza emotes as authored gestures. Older clients still send the original set: each maps to the nearest real
+ * clip, and a spar maps to nothing (no fighting in a plaza).
+ */
+const GESTURES: Partial<Record<PlazaEmote, Gesture>> = {
+  happy: 'happy', stretch: 'stretch', notice: 'notice', nap: 'nap', sit: 'sit',
+  greet: 'notice', excited: 'happy', thumbs: 'happy', twirl: 'happy', bow: 'notice',
+};
 type Pair = { mine: CharacterId | null; theirs: CharacterId | null };
 /** A screen point for overlays (CSS pixels, viewport); `on` is false when the partner is off screen. */
 export type Anchor = { x: number; y: number; on: boolean; d?: number };
@@ -97,6 +105,8 @@ export class World {
   private rimWhite = new THREE.Color('#dfe8ff');
   private hitboxes = new Map<string, THREE.Mesh>();
   private layout: Layout | null = null;
+  /** What the stage is showing (title, select, duo, victory, arena, plaza, hub), or null before the first layout. */
+  get stage(): Layout['mode'] | null { return this.layout?.mode ?? null; }
   private slots: Slot[] = [];
   private raycaster = new THREE.Raycaster();
   private ndc = new THREE.Vector2(0, 0);
@@ -202,7 +212,7 @@ export class World {
     this.listen(window, 'pointercancel', () => { this.steering = false; });
     this.listen(window, 'keydown', e => this.onKey(e as KeyboardEvent, true));
     this.listen(window, 'keyup', e => this.onKey(e as KeyboardEvent, false));
-    this.listen(window, 'blur', () => { this.plaza.keys.clear(); this.plaza.running = false; this.steering = false; });
+    this.listen(window, 'blur', () => { this.plaza.keys.clear(); this.steering = false; });
     this.listen(document, 'visibilitychange', () => (document.hidden ? this.stop() : this.start()));
     this.listen(canvas, 'webglcontextlost', e => { e.preventDefault(); this.stop(); this.events.emit('contextLost'); });
     this.listen(canvas, 'webglcontextrestored', () => { this.start(); this.events.emit('contextRestored'); });
@@ -494,7 +504,7 @@ export class World {
       for (const [id, key] of this.peerKeys(l)) { const w = p.peer(id); slots.push({ key, x: w.x, z: w.z, facing: w.face, focus: false }); }
       accent = l.mine;
     } else {
-      for (const rig of this.rigs.values()) { rig.stride(0, 1, 2); rig.setFade(1); }
+      for (const rig of this.rigs.values()) { rig.stride(0, 1); rig.setFade(1); }
       this.fades.clear();
       this.plaza.keys.clear(); this.steering = false; this.plaza.marker.visible = false;
       this.key.position.copy(KEY_POS); this.key.target.position.set(0, 1, 0);
@@ -583,37 +593,71 @@ export class World {
     this.hubRigs.set(o.id, key);
     return key;
   }
-  /** This player's partner plays an emote ('plazaEmote' tells the app to relay it). A spar makes whoever is within reach flinch. */
+  /**
+   * This player's partner plays a gesture: its own authored clip ('plazaEmote' tells the app to relay it). Nap and
+   * Sit toggle; nothing else plays while it is lying down or sitting.
+   */
   plazaEmote(e: PlazaEmote) {
     const l = this.layout;
     if (!walking(l)) return;
-    const p = this.plaza, near = e === 'punch' ? p.nearest(REACH) : null;
-    if (near) { const w = p.peer(near); p.me.faceTo(w.x, w.z); }
-    this.emoteKey(l.mine, e);
-    this.events.emit('plazaEmote', { emote: e });
-    if (near) this.flinch(this.peerKeys(l).find(([id]) => id === near)?.[1] ?? null);
+    const rig = this.rigs.get(l.mine), g = GESTURES[e];
+    if (!rig || !g) return;
+    if (rig.resting) {
+      if (g === 'nap' || g === 'sit') { this.plaza.hold = rig.rise(); this.events.emit('plazaEmote', { emote: 'rise' }); }
+      return;
+    }
+    // Gestures are done standing still: one stops a walk to a spot, and none plays while the keys walk.
+    const p = this.plaza;
+    if (p.keys.size) return;
+    p.halt(); rig.stride(0, 1);
+    if (this.gestureKey(l.mine, g)) this.events.emit('plazaEmote', { emote: e });
+  }
+  /** Play a gesture on a rig; a happy one comes with the Pokémon's cry (at most once every few seconds each). */
+  private gestureKey(key: string, g: Gesture): boolean {
+    const rig = this.rigs.get(key);
+    if (!rig?.gesture(g)) return false;
+    if (g !== 'happy' || !rig.root.visible) return true;
+    const now = performance.now();
+    if (now - (this.lastCry.get(key) ?? -1e9) < 3500) return true;
+    this.lastCry.set(key, now);
+    this.events.emit('cry', { dex: rig.character.dex, pan: Math.max(-1, Math.min(1, rig.root.position.x / 3)), gain: 0.6, rate: 1 });
+    return true;
+  }
+  /** The gestures this player's partner can play in the plaza (its model's own clips). */
+  gestures(): Gesture[] {
+    const l = this.layout;
+    const rig = walking(l) ? this.rigs.get(l.mine) : undefined;
+    return rig ? (['happy', 'stretch', 'sit', 'nap'] as const).filter(g => rig.canGesture(g)) : [];
+  }
+  /** 'sit' or 'nap' while this player's partner sits or sleeps after a gesture, else null. */
+  resting(): 'sit' | 'nap' | null {
+    const l = this.layout;
+    const p = walking(l) ? this.rigs.get(l.mine)?.posture : null;
+    return p === 'rest' ? 'sit' : p === 'sleep' ? 'nap' : null;
   }
   /**
-   * Presence from someone else: where their partner stands now, or an emote it played. `id` is a main-plaza
-   * member id (a room's rival needs none). A spar makes whoever stands nearest within reach flinch, this
-   * player's partner included.
+   * Presence from someone else: where their partner stands now, or a gesture it played. `id` is a main-plaza
+   * member id (a room's rival needs none).
    */
   plazaPresence(m: ({ type: 'move' } & Spot) | { type: 'emote'; emote: PlazaEmote }, id = RIVAL) {
     const l = this.layout;
     if (!walking(l)) return;
     if (m.type === 'move') { this.plaza.hear(id, m); return; }
-    const keys = this.peerKeys(l), key = keys.find(([pid]) => pid === id)?.[1];
-    if (!key) return;
-    this.emoteKey(key, m.emote);
-    if (m.emote !== 'punch') return;
-    const p = this.plaza, from = p.peer(id);
-    const gapTo = (w: Walker) => Math.hypot(from.x - w.x, from.z - w.z) - from.radius - w.radius;
-    const other = p.nearest(REACH, from);
-    const mine = gapTo(p.me);
-    if (mine < REACH && (!other || mine <= gapTo(p.peer(other)))) this.flinch(l.mine);
-    else if (other) this.flinch(keys.find(([pid]) => pid === other)?.[1] ?? null);
+    // A gesture plays in step with the walk, which is drawn a fraction of a second behind the reports.
+    const g = m.emote === 'rise' ? 'rise' : GESTURES[m.emote];
+    if (g) window.setTimeout(() => this.peerGesture(id, g), this.plaza.delayOf(id) * 1000);
   }
-  private flinch(key: string | null) { if (key) window.setTimeout(() => this.emoteKey(key, 'surprised'), 280); }
+  private peerGesture(id: string, g: Gesture | 'rise') {
+    const l = this.layout;
+    if (!walking(l)) return;
+    const key = this.peerKeys(l).find(([pid]) => pid === id)?.[1];
+    const rig = key ? this.rigs.get(key) : undefined;
+    if (!key || !rig) return;
+    if (g === 'rise') { rig.rise(); return; }
+    // Gestures are for standing still: one that arrives while that partner walks (an older client) is skipped.
+    if (rig.resting || (this.plaza.peers.get(id)?.w.speed ?? 0) > 0.25) return;
+    this.gestureKey(key, g);
+  }
   /** Send this player's spot again on the next frame (someone just arrived or reconnected). */
   plazaResend() { this.plaza.resend(); }
   /**
@@ -640,17 +684,19 @@ export class World {
   private stepWalk(l: WalkLayout, dt: number) {
     const p = this.plaza;
     const mine = this.rigs.get(l.mine);
-    p.me.size(mine?.height ?? 0.7);
+    p.me.size(mine?.height ?? 0.7, mine?.walkSpeed);
     const peers = this.peerKeys(l);
-    for (const [id, key] of peers) { const rig = this.rigs.get(key); p.peer(id).size(rig?.height ?? 0.7); p.setHere(id, !!rig?.isShown); }
+    for (const [id, key] of peers) { const rig = this.rigs.get(key); p.peer(id).size(rig?.height ?? 0.7, rig?.walkSpeed); p.setHere(id, !!rig?.isShown); }
+    // Walking off from a nap or a rest: the partner gets up with its own clip first (the walk waits for it).
+    if (mine?.resting && p.wantsToMove && p.hold <= 0) { p.hold = mine.rise(); this.events.emit('plazaEmote', { emote: 'rise' }); }
     const out = p.update(dt);
     if (out) this.events.emit('plazaMove', out);
     if (p.arrived) {
       const w = p.peers.get(p.arrived)?.w;
       p.arrived = null;
-      if (w) { p.me.faceTo(w.x, w.z); this.plazaEmote('greet'); }
+      if (w) { p.me.faceTo(w.x, w.z); this.plazaEmote('happy'); }
     }
-    if (mine) { mine.place(p.me.x, p.me.z, p.me.face, true); mine.stride(p.me.speed, p.me.walk, p.me.run); }
+    if (mine) { mine.place(p.me.x, p.me.z, p.me.face, true); mine.stride(p.me.speed, p.me.walk); }
     // A glow under this player's partner and the three nearest others.
     this.floor.setSlot(0, p.me.x, p.me.z, 0.55 * this.framing(l.mine), 1);
     const dist = (w: Walker) => Math.hypot(w.x - p.me.x, w.z - p.me.z);
@@ -667,7 +713,9 @@ export class World {
       const rig = this.rigs.get(key);
       if (!rig) continue;
       const w = p.peer(id);
-      rig.place(w.x, w.z, w.face, true); rig.stride(w.speed, w.walk, w.run);
+      rig.place(w.x, w.z, w.face, true);
+      if (rig.resting && w.speed > 0.15) rig.rise();
+      rig.stride(w.speed, w.walk);
       const rx = w.x - c.x, rz = w.z - c.z;
       const along = (rx * px + rz * pz) / pl, off = Math.abs(rx * pz - rz * px) / pl;
       const blocks = !!mine && along > 0.3 && along < pl && off < w.radius + p.me.radius + rig.height * 0.35;
@@ -738,10 +786,9 @@ export class World {
     }
     if (this.raycaster.ray.intersectPlane(this.floorPlane, this.floorHit)) this.plaza.walkTo(this.floorHit.x, this.floorHit.z);
   }
-  /** Plaza: WASD or the arrow keys walk, Shift runs. Keys typed into a field never move the partner. */
+  /** Plaza: WASD or the arrow keys walk (plazas are for walking: there is no run). Keys typed into a field never move the partner. */
   private onKey(e: KeyboardEvent, down: boolean) {
     if (!walking(this.layout)) return;
-    this.plaza.running = e.shiftKey;
     if (!isMoveKey(e.code)) return;
     if (!down) { this.plaza.keys.delete(e.code); return; }
     const t = e.target as Element | null;

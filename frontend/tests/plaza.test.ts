@@ -57,6 +57,7 @@ describe('plaza protocol', () => {
     expect(parseClientMessage({ type: 'move', x: '1', z: 0, face: 0 })).toBeNull();
     expect(parseClientMessage({ type: 'emote', emote: 'twirl' })).toEqual({ type: 'emote', emote: 'twirl' });
     expect(parseClientMessage({ type: 'emote', emote: 'faceplant' })).toBeNull();
+    for (const g of ['happy', 'stretch', 'nap', 'sit', 'rise']) expect(parseClientMessage({ type: 'emote', emote: g })).toEqual({ type: 'emote', emote: g });
   });
   it('checks presence and chat arriving at a client', () => {
     expect(parseServerMessage({ type: 'move', seat: 1, x: 1, z: 2, face: 0 })).toEqual({ type: 'move', seat: 1, x: 1, z: 2, face: 0 });
@@ -90,7 +91,10 @@ describe('plaza walking', () => {
     expect(Math.abs(p.me.face)).toBeGreaterThan(Math.PI - 0.2); // facing away from the camera
     expect(sent.length).toBeLessThanOrEqual(21);
     expect(sent.length).toBeGreaterThan(10);
-    p.running = true; run(p, 10);
+    // Plazas only walk: holding W for long never goes past the walking pace (or the edge).
+    let fastest = 0;
+    for (let t = 0; t < 10; t += 1 / 60) { p.update(1 / 60); fastest = Math.max(fastest, p.me.speed); }
+    expect(fastest).toBeLessThanOrEqual(p.me.walk + 1e-6);
     expect(Math.hypot(p.me.x, p.me.z)).toBeCloseTo(PLAZA_R, 6);
     p.keys.clear(); run(p, 1);
     expect(p.me.speed).toBe(0);
@@ -134,7 +138,58 @@ describe('plaza walking', () => {
     run(p, 1);
     expect(p.arrived).toBeNull();
   });
-  it('finds who is within reach of a spar', () => {
+  it('turns before it sets off instead of snapping round', () => {
+    const p = new Plaza(); p.enter({ x: 0, z: 0, face: 0 });
+    p.keys.add('KeyW'); // straight behind it
+    p.update(1 / 60);
+    expect(Math.abs(p.me.face)).toBeLessThan(0.3);
+    expect(p.me.speed).toBeLessThan(0.05);
+    run(p, 1);
+    expect(Math.abs(p.me.face)).toBeGreaterThan(Math.PI - 0.05);
+  });
+  it('replays a peer at an even pace a fraction of a second behind its reports', () => {
+    const p = new Plaza(); p.enter({ x: 0, z: 5, face: 0 });
+    p.peer('m1', { x: -4, z: 0, face: Math.PI / 2 }); p.setHere('m1', true);
+    // Reports ten times a second, walking +x at 1.2 units per second.
+    const paces: number[] = [];
+    let x = -4;
+    for (let f = 0; f < 240; f++) {
+      if (f % 6 === 0) { x += 0.12; p.hear('m1', { x, z: 0, face: Math.PI / 2 }); }
+      p.update(1 / 60);
+      if (f > 60 && f < 230) paces.push(p.peer('m1').speed);
+    }
+    const avg = paces.reduce((a, b) => a + b, 0) / paces.length;
+    expect(avg).toBeGreaterThan(1.0); expect(avg).toBeLessThan(1.4);
+    expect(Math.min(...paces)).toBeGreaterThan(0.7); // no stop-and-go between reports
+    expect(p.peer('m1').x).toBeLessThan(x); // drawn behind the newest report
+    expect(x - p.peer('m1').x).toBeLessThan(0.45);
+  });
+  it('keeps a peer moving evenly when its reports come slower than usual', () => {
+    const p = new Plaza(); p.enter({ x: 0, z: 5, face: 0 });
+    p.peer('m1', { x: -4, z: 0, face: Math.PI / 2 }); p.setHere('m1', true);
+    const paces: number[] = [];
+    let x = -4;
+    for (let f = 0; f < 480; f++) {
+      if (f % 15 === 0) { x += 0.3; p.hear('m1', { x, z: 0, face: Math.PI / 2 }); } // four a second, 1.2 units per second
+      p.update(1 / 60);
+      if (f > 240 && f < 470) paces.push(p.peer('m1').speed);
+    }
+    expect(Math.min(...paces)).toBeGreaterThan(0.8);
+    expect(Math.max(...paces)).toBeLessThan(1.6);
+  });
+  it('stops on the spot for a gesture and keeps a turn going', () => {
+    const p = new Plaza(); p.enter({ x: 0, z: 0, face: 0 });
+    p.walkTo(0, 4); run(p, 0.6);
+    expect(p.me.speed).toBeGreaterThan(0.3);
+    p.me.faceTo(p.me.x + 3, p.me.z); p.halt();
+    expect(p.me.speed).toBe(0);
+    const at = p.spot();
+    run(p, 1);
+    expect(p.spot().x).toBeCloseTo(at.x, 6); expect(p.spot().z).toBeCloseTo(at.z, 6);
+    expect(p.me.face).toBeCloseTo(Math.PI / 2, 1);
+    expect(p.target).toBeNull();
+  });
+  it('finds who is within reach', () => {
     const p = new Plaza(); p.enter({ x: 0, z: 0, face: 0 });
     p.peer('m1', { x: 0.9, z: 0, face: 0 }); p.peer('m2', { x: 0, z: 3, face: 0 }); p.peer('m3', { x: -0.75, z: 0, face: 0 });
     for (const id of ['m1', 'm2', 'm3']) p.setHere(id, true);

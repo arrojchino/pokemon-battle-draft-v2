@@ -1,8 +1,23 @@
 import type { ReactNode } from 'react';
-import { UI_SCALES, displayOf, settings, useReducedMotion, useSettings } from '../../app/settings.js';
+import { UI_SCALES, displayOf, settings, useReducedMotion, useSettings, type Settings } from '../../app/settings.js';
+import { sound, type Category } from '../../audio/sound.js';
+import { characterById } from '../../characters/roster.js';
 import { Icon, ScreenHeader, Segmented, Slider, Toggle, toast, type IconName } from '../primitives.js';
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+/** One volume per sound category, below the master. */
+const AUDIO_SLIDERS = [
+  { key: 'musicVolume', label: 'Music', cat: 'music' },
+  { key: 'ambienceVolume', label: 'Environment', cat: 'ambience' },
+  { key: 'criesVolume', label: 'Pokémon cries', cat: 'cries' },
+  { key: 'uiVolume', label: 'Interface', cat: 'ui' },
+  { key: 'battleVolume', label: 'Battle effects', cat: 'battle' },
+] as const satisfies readonly { key: keyof Settings; label: string; cat: Category }[];
+
+/** A sample of the category at its new level once the slider rests (cries use your partner's). */
+let previewTimer = 0;
+const previewSoon = (cat: Category, dex?: number) => { window.clearTimeout(previewTimer); previewTimer = window.setTimeout(() => sound.preview(cat, dex), 160); };
 
 function Section({ icon, title, children }: { icon: IconName; title: string; children: ReactNode }) {
   return (
@@ -31,8 +46,12 @@ export function SettingsPanel() {
   return (
     <div className="settings">
       <Section icon="volume" title="Audio">
-        <Slider label="Sound effects" value={s.volume} disabled={s.muted} onChange={v => settings.set({ volume: v })} />
-        <Toggle label="Mute all sound" hint="The game has sound effects only, no background music." checked={s.muted} onChange={v => settings.set({ muted: v })} />
+        <Slider label="Master volume" value={s.volume} disabled={s.muted} format={pct} onChange={v => { settings.set({ volume: v }); previewSoon('ui'); }} />
+        {AUDIO_SLIDERS.map(a => (
+          <Slider key={a.key} label={a.label} value={s[a.key]} disabled={s.muted} format={pct}
+            onChange={v => { settings.set({ [a.key]: v } as Partial<Settings>); previewSoon(a.cat, characterById(s.partner)?.dex); }} />
+        ))}
+        <Toggle label="Mute all sound" hint="Music, ambience, cries and effects. Your volumes are kept for when you unmute." checked={s.muted} onChange={v => settings.set({ muted: v })} />
       </Section>
 
       <Section icon="monitor" title="Graphics">

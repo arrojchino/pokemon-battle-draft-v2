@@ -8,6 +8,9 @@ import { MonBody, type MonModel } from './monModel.js';
 export const FLOOR_Y = 0.205;
 
 type Off = { x: number; y: number; z: number; rx: number; ry: number; rz: number; sy: number };
+/** Plaza gestures: authored clips every partner model has (sitting: most of them). Nothing procedural, no fighting. */
+export type Gesture = 'happy' | 'stretch' | 'notice' | 'nap' | 'sit';
+const GESTURE_CLIPS: Record<'happy' | 'stretch' | 'notice', readonly string[]> = { happy: ['glad01'], stretch: ['refresh01'], notice: ['notice01'] };
 type Motion = { dur: number; clip?: readonly string[]; f: (u: number, o: Off) => void };
 
 const hop = (u: number, n: number, h: number) => h * Math.abs(Math.sin(u * Math.PI * n));
@@ -74,7 +77,7 @@ export class MonRig {
   private clock = Math.random() * 10;
   facing = 0; facingTarget = 0; private facingV = { v: 0 };
   hovered = false; focused = false;
-  private strideSpeed = 0; private strideClip = false;
+  private strideSpeed = 0; private strideClip = false; private moving = false;
   reducedMotion = false;
 
   constructor(model: MonModel | null, readonly character: Character) {
@@ -145,12 +148,47 @@ export class MonRig {
     this.body?.setOpacity(a);
     if (this.card) { this.card.material.opacity = a; this.card.material.transparent = true; }
   }
-  /** Plaza locomotion: walk or run loops matched to the ground speed (units per second); idle when still. */
-  stride(speed: number, walk: number, run: number) {
-    const kind = speed < 0.1 ? null : speed > (walk + run) * 0.5 ? 'run' : 'walk';
-    const rate = kind === 'run' ? THREE.MathUtils.clamp(speed / run, 0.75, 1.35) : kind === 'walk' ? THREE.MathUtils.clamp(speed / walk, 0.6, 1.35) : 1;
-    this.strideSpeed = kind ? speed : 0;
-    this.strideClip = this.body ? this.body.gaitTo(kind, rate) : false;
+  /**
+   * Plaza locomotion: the walk loop at the rate that keeps its feet on the ground (the model's measured stride;
+   * `pace` when it has none), or the idle when still. A little hysteresis keeps a partner easing to a stop from
+   * flickering between walking and standing.
+   */
+  stride(speed: number, pace: number) {
+    if (this.moving ? speed < 0.05 : speed > 0.12) this.moving = !this.moving;
+    const natural = this.body?.walkSpeed ?? pace;
+    const rate = THREE.MathUtils.clamp(speed / Math.max(0.05, natural), 0.6, 1.6);
+    this.strideSpeed = this.moving ? speed : 0;
+    this.strideClip = this.body ? this.body.gaitTo(this.moving ? 'walk' : null, rate) : false;
+  }
+  /** The walk loop's natural ground speed (units per second), when the model's root motion gave it away. */
+  get walkSpeed(): number | null { return this.body?.walkSpeed ?? null; }
+  /**
+   * Play a plaza gesture: the model's own authored clip, nothing procedural on top. A nap or a rest holds until
+   * `rise()`. Returns false when this model has no clip for it.
+   */
+  gesture(g: Gesture): boolean {
+    const b = this.body;
+    if (!b?.animated) return false;
+    if (g === 'nap') return b.setIdle('sleep');
+    if (g === 'sit') return b.setIdle('rest');
+    return b.act(GESTURE_CLIPS[g], { fade: 0.3 }) > 0;
+  }
+  canGesture(g: Gesture): boolean {
+    const b = this.body;
+    if (!b?.animated) return false;
+    return b.has(g === 'nap' ? ['sleep01_loop'] : g === 'sit' ? ['rest01_loop'] : GESTURE_CLIPS[g]);
+  }
+  /** Lying down or sitting, after a gesture. */
+  get resting() { const p = this.body?.posture; return p === 'sleep' || p === 'rest'; }
+  /** The idle stance (null without a model). */
+  get posture() { return this.body?.posture ?? null; }
+  /** Get up from a nap or a rest with the model's own clip; returns about how long that takes, in seconds. */
+  rise(): number {
+    const b = this.body;
+    if (!b || !this.resting) return 0;
+    const d = b.clipLength([b.posture === 'sleep' ? 'sleep01_end' : 'rest01_end']);
+    b.setIdle('default');
+    return Math.min(1.4, d * 0.8);
   }
 
   lookAt(world: THREE.Vector3) {

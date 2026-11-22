@@ -1,19 +1,57 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { MAX_CHAT, type ChatLine, type PlazaEmote, type PublicRoom } from '@shared';
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
+import { GESTURES_SINCE, MAX_CHAT, type ChatLine, type PlazaEmote, type PublicRoom } from '@shared';
 import type { Anchor, World } from '../../../engine/World.js';
+import type { Gesture } from '../../../engine/character/MonRig.js';
 import type { Transport } from '../../../net/types.js';
 import { sound } from '../../../audio/sound.js';
 import { Icon, type IconName } from '../../primitives.js';
 import type { MatchModel } from './model.js';
 
-export const EMOTES: { emote: PlazaEmote; label: string; icon: IconName }[] = [
-  { emote: 'greet', label: 'Wave', icon: 'users' },
-  { emote: 'excited', label: 'Cheer', icon: 'star' },
-  { emote: 'twirl', label: 'Spin', icon: 'refresh' },
-  { emote: 'bow', label: 'Bow', icon: 'crown' },
-  { emote: 'thumbs', label: 'Nice', icon: 'check' },
-  { emote: 'punch', label: 'Spar', icon: 'swords' },
+/** Plaza gestures: each plays the partner model's own authored clip (Sit only where the model has one). */
+export const EMOTES: { emote: PlazaEmote & Gesture; label: string; icon: IconName }[] = [
+  { emote: 'happy', label: 'Happy', icon: 'star' },
+  { emote: 'stretch', label: 'Stretch', icon: 'spark' },
+  { emote: 'sit', label: 'Sit', icon: 'heart' },
+  { emote: 'nap', label: 'Nap', icon: 'moon' },
 ];
+type GestureState = { list: Gesture[]; resting: 'sit' | 'nap' | null };
+const NO_GESTURES: GestureState = { list: [], resting: null };
+/**
+ * The gestures this player's partner can play (its model's own clips; none until it has loaded) and whether it
+ * sits or naps; nothing when the server predates them (protocol v7; PeerJS rooms always have them).
+ */
+function useGestures(world: World | null, transport: Transport): GestureState {
+  const snap = useSyncExternalStore(transport.subscribe, transport.getSnapshot);
+  const [state, setState] = useState<GestureState>(NO_GESTURES);
+  useEffect(() => {
+    if (!world) return;
+    const read = () => setState(cur => {
+      const list = world.gestures(), resting = world.resting();
+      return list.join() === cur.list.join() && resting === cur.resting ? cur : { list, resting };
+    });
+    read();
+    const t = window.setInterval(read, 250);
+    return () => window.clearInterval(t);
+  }, [world]);
+  return snap.kind === 'peer' || (snap.serverProtocol ?? 0) >= GESTURES_SINCE ? state : NO_GESTURES;
+}
+/** The gesture buttons. While the partner sits or naps, that button gets it up and the others wait. */
+export function GestureBar({ world, transport, onGesture }: { world: World | null; transport: Transport; onGesture: (g: PlazaEmote) => void }) {
+  const { list, resting } = useGestures(world, transport);
+  if (!list.length) return null;
+  return (
+    <div className="chat__emotes" role="group" aria-label="Gestures">
+      {EMOTES.filter(x => list.includes(x.emote)).map(x => {
+        const on = x.emote === resting;
+        return (
+          <button key={x.emote} type="button" className="emote" aria-pressed={on} disabled={!!resting && !on} onClick={() => onGesture(x.emote)}>
+            <Icon name={x.icon} size={15} /><span>{on ? (resting === 'sit' ? 'Stand up' : 'Wake up') : x.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 const NO_LINES: ChatLine[] = [];
 /** A line stays over its speaker's partner for a few seconds, longer for longer lines. */
 export const bubbleMs = (text: string) => Math.min(9000, 3500 + text.length * 55);
@@ -181,13 +219,7 @@ export function PlazaHud({ world, room, m, transport, walking }: { world: World 
             ))}
             {!lines.length && <li className="chat__empty">{m.hasOpponent ? `Say hi to ${m.oppName}. Lines also pop up over your partner.` : 'Waiting for a rival. They can read this when they join.'}</li>}
           </ol>
-          {walking && (
-            <div className="chat__emotes" role="group" aria-label="Emotes">
-              {EMOTES.map(x => (
-                <button key={x.emote} type="button" className="emote" onClick={() => emote(x.emote)}><Icon name={x.icon} size={15} /><span>{x.label}</span></button>
-              ))}
-            </div>
-          )}
+          {walking && <GestureBar world={world} transport={transport} onGesture={emote} />}
           <form className="chat__form" onSubmit={send}>
             <input ref={inputRef} className="chat__input" value={text} onChange={e => setText(e.target.value)} maxLength={MAX_CHAT}
               placeholder={m.hasOpponent ? `Message ${m.oppName}` : 'Leave a message'} aria-label="Chat message" enterKeyHint="send" autoComplete="off"
@@ -198,7 +230,7 @@ export function PlazaHud({ world, room, m, transport, walking }: { world: World 
             <p className="chat__hint">
               {touch
                 ? <>Tap the floor to walk there. Tap your rival's partner to go say hello.</>
-                : <><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to walk, <kbd>Shift</kbd> to run. Click the floor to go there, or your rival's partner to say hello. <kbd>Enter</kbd> chats.</>}
+                : <><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to walk. Click the floor to go there, or your rival's partner to say hello. <kbd>Enter</kbd> chats.</>}
             </p>
           )}
         </section>

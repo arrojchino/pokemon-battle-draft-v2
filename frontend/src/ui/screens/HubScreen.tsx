@@ -8,7 +8,7 @@ import { hasHub } from '../../net/types.js';
 import type { Anchor, HubPeer } from '../../engine/World.js';
 import { sound } from '../../audio/sound.js';
 import { Icon, Spinner } from '../primitives.js';
-import { EMOTES, ROOMY, bubbleMs, media } from './match/Plaza.js';
+import { GestureBar, ROOMY, bubbleMs, media } from './match/Plaza.js';
 import { PartnerAvatar, lobbyPrefs, partnerStyle } from './LobbyParts.js';
 import { useLobbies } from './MultiplayerScreen.js';
 
@@ -198,6 +198,7 @@ function HubChat({ open, setOpen, unread, chat, you, names, world, onSend }: {
   const logRef = useRef<HTMLOListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastEmote = useRef(0);
+  const { transport } = useSession();
   const lastId = chat.length ? chat[chat.length - 1].id : 0;
   useEffect(() => { const el = logRef.current; if (el) el.scrollTop = el.scrollHeight; }, [lastId, open]);
   // Enter opens the chat and focuses the field (when nothing else has the keyboard).
@@ -246,9 +247,7 @@ function HubChat({ open, setOpen, unread, chat, you, names, world, onSend }: {
         ))}
         {!chat.length && <li className="chat__empty">Say hi to everyone here. Lines also pop up over your partner.</li>}
       </ol>
-      <div className="chat__emotes" role="group" aria-label="Emotes">
-        {EMOTES.map(x => <button key={x.emote} type="button" className="emote" onClick={() => emote(x.emote)}><Icon name={x.icon} size={15} /><span>{x.label}</span></button>)}
-      </div>
+      <GestureBar world={world} transport={transport} onGesture={emote} />
       <form className="chat__form" onSubmit={send}>
         <input ref={inputRef} className="chat__input" value={text} onChange={e => setText(e.target.value)} maxLength={MAX_CHAT} placeholder="Message the plaza"
           aria-label="Chat message" enterKeyHint="send" autoComplete="off" onKeyDown={e => { if (e.key === 'Escape') e.currentTarget.blur(); }} />
@@ -257,7 +256,7 @@ function HubChat({ open, setOpen, unread, chat, you, names, world, onSend }: {
       <p className="chat__hint">
         {touch
           ? <>Tap the floor to walk there. Tap someone's partner to go say hello.</>
-          : <><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to walk, <kbd>Shift</kbd> to run. Click the floor to go there, or someone's partner to say hello. <kbd>Enter</kbd> chats.</>}
+          : <><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to walk. Click the floor to go there, or someone's partner to say hello. <kbd>Enter</kbd> chats.</>}
       </p>
     </section>
   );

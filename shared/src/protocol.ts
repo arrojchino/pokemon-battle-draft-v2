@@ -20,15 +20,22 @@ import { cleanChat, normalizeBestOf, type BattleMode, type ChatLine, type GameAc
  *     it `hubMove`, `hubEmote` and `hubChat` reach everyone else there. `watch` follows a room without a seat
  *     (its state and the public stream of its battle); `lobbies` also lists live battles. Clients send these
  *     only to servers whose `hello.protocol` is at least HUB_SINCE.
+ * v7: plaza gestures are the partner models' own clips (`happy`, `stretch`, `notice`, `nap`, `sit`, `rise`); the
+ *     original emotes stay valid for older clients. Plazas are walk-only. Clients send the new gestures only to
+ *     servers whose `hello.protocol` is at least GESTURES_SINCE.
  * Servers accept every older client message unchanged, and older clients can read newer state.
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 export const LOBBIES_SINCE = 4;
 export const PLAZA_SINCE = 5;
 export const HUB_SINCE = 6;
+export const GESTURES_SINCE = 7;
 
-/** Reactions a partner can play in the plaza (a subset of the stage emotes). */
-export const PLAZA_EMOTES = ['greet', 'excited', 'twirl', 'bow', 'thumbs', 'punch'] as const;
+/**
+ * Gestures a partner can play in a plaza. The first six (v7) are the models' own clips; `rise` gets up from a nap
+ * or a rest. The rest are the original emotes, still accepted from older clients.
+ */
+export const PLAZA_EMOTES = ['happy', 'stretch', 'notice', 'nap', 'sit', 'rise', 'greet', 'excited', 'twirl', 'bow', 'thumbs', 'punch'] as const;
 export type PlazaEmote = (typeof PLAZA_EMOTES)[number];
 export const isPlazaEmote = (v: unknown): v is PlazaEmote => typeof v === 'string' && (PLAZA_EMOTES as readonly string[]).includes(v);
 /** Partners walk the stage platform inside this radius (stage units); the authority pulls anything further back to it. */

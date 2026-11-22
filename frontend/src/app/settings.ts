@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { CHARACTER_IDS, isCharacterId, type CharacterId } from '@shared';
 import type { EffectsLevel, QualityPref, RenderScale } from '../engine/quality.js';
+import { AUDIO_DEFAULTS, mixFromSettings } from '../audio/mix.js';
 
 export type MotionPref = 'system' | 'reduced' | 'full';
 export type CameraStyle = 'cinematic' | 'steady';
@@ -21,8 +22,13 @@ export type Settings = {
   highContrast: boolean;
   /** Reduce flashing: no lightning, screen flashes or flicker. */
   calm: boolean;
-  /* Audio: sound effects only, the game has no music */
+  /* Audio, each 0..1: `volume` is the master; then one volume per category (see audio/mix.ts) and mute */
   volume: number;
+  musicVolume: number;
+  ambienceVolume: number;
+  criesVolume: number;
+  uiVolume: number;
+  battleVolume: number;
   muted: boolean;
   /* Identity and room preferences */
   partner: CharacterId;
@@ -36,9 +42,15 @@ export const UI_SCALES = [0.9, 1, 1.1, 1.25] as const;
 const KEY = 'pab-settings';
 const query = new URLSearchParams(location.search);
 
+/** Audio defaults (master 70%, music 30%, environment 25%, cries 15%, interface 35%, battle 45%). */
+export const AUDIO_SETTINGS_DEFAULTS = {
+  volume: AUDIO_DEFAULTS.master, musicVolume: AUDIO_DEFAULTS.music, ambienceVolume: AUDIO_DEFAULTS.ambience,
+  criesVolume: AUDIO_DEFAULTS.cries, uiVolume: AUDIO_DEFAULTS.ui, battleVolume: AUDIO_DEFAULTS.battle, muted: false,
+} satisfies Partial<Settings>;
+
 const DISPLAY_DEFAULTS = {
   quality: 'auto', renderScale: 'auto', effects: 'full', performance: false, perf: false,
-  motion: 'system', camera: 'cinematic', uiScale: 1, highContrast: false, calm: false, volume: 0.8, muted: false,
+  motion: 'system', camera: 'cinematic', uiScale: 1, highContrast: false, calm: false, ...AUDIO_SETTINGS_DEFAULTS,
 } satisfies Partial<Settings>;
 
 const pick = <T,>(values: readonly T[], v: unknown, fallback: T): T => values.find(x => x === v) ?? fallback;
@@ -51,6 +63,7 @@ function load(): Settings {
   try { s = JSON.parse(localStorage.getItem(KEY) || '{}') as Partial<Settings>; } catch { /* ignore */ }
   firstVisit = !isCharacterId(s.partner);
   const d = DISPLAY_DEFAULTS;
+  const a = mixFromSettings(s);
   return {
     quality: pick(['auto', 'low', 'medium', 'high'] as const, query.get('quality') ?? s.quality, d.quality),
     renderScale: pick(['auto', 0.5, 0.75, 1] as const, s.renderScale, d.renderScale),
@@ -62,8 +75,8 @@ function load(): Settings {
     uiScale: pick(UI_SCALES, s.uiScale, d.uiScale),
     highContrast: s.highContrast === true,
     calm: s.calm === true,
-    volume: typeof s.volume === 'number' ? Math.min(1, Math.max(0, s.volume)) : d.volume,
-    muted: query.has('mute') || s.muted === true,
+    volume: a.master, musicVolume: a.music, ambienceVolume: a.ambience, criesVolume: a.cries, uiVolume: a.ui, battleVolume: a.battle,
+    muted: query.has('mute') || a.muted,
     partner: isCharacterId(s.partner) ? s.partner : CHARACTER_IDS[Math.floor(Math.random() * CHARACTER_IDS.length)],
     name: typeof s.name === 'string' ? s.name.slice(0, 24) : '',
     showdownName: typeof s.showdownName === 'string' ? s.showdownName.slice(0, 18) : '',
