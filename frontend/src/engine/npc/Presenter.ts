@@ -127,6 +127,15 @@ export class Presenter {
   private smoothing = 30;
 
   static async load(opts: PresenterOptions = {}): Promise<Presenter> {
+    const { vrm, bytes } = await Presenter.fetchVrm(opts);
+    return Presenter.fromVrm(vrm, bytes, opts);
+  }
+
+  /**
+   * Download and parse the model only. Split from `fromVrm` so a caller can let a frame pass between the
+   * parse and the rig and accessory build, instead of doing both in one long task.
+   */
+  static async fetchVrm(opts: PresenterOptions = {}): Promise<{ vrm: VRM; bytes: number }> {
     const loader = new GLTFLoader();
     loader.register(parser => new VRMLoaderPlugin(parser));
     const url = opts.url ?? `${import.meta.env.BASE_URL}npc/presenter.vrm`;
@@ -137,6 +146,11 @@ export class Presenter {
     VRMUtils.removeUnnecessaryVertices(gltf.scene);
     VRMUtils.combineSkeletons(gltf.scene);
     VRMUtils.rotateVRM0(vrm);
+    return { vrm, bytes };
+  }
+
+  /** Build the presenter (rig, recolour, cap and headset) on a parsed model. */
+  static fromVrm(vrm: VRM, bytes: number, opts: PresenterOptions = {}): Presenter {
     const p = new Presenter(vrm, opts);
     p.bytes = bytes;
     return p;

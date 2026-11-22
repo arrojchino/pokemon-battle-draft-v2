@@ -22,6 +22,8 @@ export type WorldEvents = {
   plazaEmote: { emote: PlazaEmote };
   /** Main plaza: this player's partner came within talking range of the plaza host, or left it. */
   hostNear: { near: boolean };
+  /** Getting the main plaza ready behind its entry veil (`World.prepareHub`): 0..1 and what is happening. */
+  hubProgress: { progress: number; label: string };
   /** Main plaza: this player asked to talk to the host (E nearby, a click on her, or arriving after one). */
   hostTalk: void;
 };

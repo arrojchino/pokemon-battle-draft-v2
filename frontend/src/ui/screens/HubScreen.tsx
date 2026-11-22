@@ -86,6 +86,28 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
   }, [world, ok, t]);
 
   const others = useMemo<HubPeer[]>(() => members.filter(m => m.id !== you).map(m => ({ id: m.id, partner: m.avatar ?? DEFAULT_CHARACTER, at: { x: m.x, z: m.z, face: m.face } })), [members, you]);
+  // The entry veil covers the cut into the plaza until everything in it is ready (World.prepareHub): the host,
+  // the partners of whoever is already here, the stands. It waits for the roster (or 1.2 s), and the whole
+  // entry is capped at about 4 s from here.
+  const mountedAt = useRef(performance.now());
+  const [entry, setEntry] = useState<{ p: number; label: string; done: boolean; quick: boolean; gone: boolean }>({ p: 0, label: 'Entering the plaza', done: false, quick: false, gone: false });
+  const [waited, setWaited] = useState(false);
+  useEffect(() => { if (!ok) return; const tm = window.setTimeout(() => setWaited(true), 1200); return () => window.clearTimeout(tm); }, [ok]);
+  const othersRef = useRef(others); othersRef.current = others;
+  const entering = useRef(false);
+  useEffect(() => {
+    if (!world || !ok || entering.current || (you === null && !waited)) return;
+    entering.current = true;
+    const t0 = performance.now();
+    const off = world.events.on('hubProgress', e => setEntry(v => (v.done ? v : { ...v, p: e.progress, label: e.label })));
+    const budget = Math.max(1500, 4000 - (t0 - mountedAt.current));
+    void world.prepareHub(othersRef.current.map(o => o.partner), budget).then(() => {
+      off(); world.hubShown();
+      setEntry(v => ({ ...v, p: 1, done: true, quick: performance.now() - t0 < 350 }));
+    });
+    return () => off();
+  }, [world, ok, you, waited]);
+  useEffect(() => { if (!entry.done || entry.gone) return; const tm = window.setTimeout(() => setEntry(v => ({ ...v, gone: true })), entry.quick ? 300 : 700); return () => window.clearTimeout(tm); }, [entry.done, entry.gone, entry.quick]);
   useEffect(() => {
     if (!world) return;
     world.setLayout(ok ? { mode: 'hub', mine: s.partner, spawn, others } : { mode: 'title', featured: s.partner });
@@ -185,6 +207,19 @@ export function HubScreen({ onBack, onPlay, onPartner }: Props) {
 
   return (
     <main className="screen hub is-plaza">
+      {!entry.gone && (
+        <div className={`veil hubveil ${entry.done ? 'is-done' : ''} ${entry.quick ? 'is-quick' : ''}`} style={{ '--p': entry.p } as CSSProperties} role="status" aria-live="polite" aria-busy={!entry.done}>
+          <div className="veil__inner">
+            <div className="veil__ball" aria-hidden="true">
+              <svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="37" pathLength={100} /><circle className="veil__ring" cx="40" cy="40" r="37" pathLength={100} /></svg>
+              <span className="spinner" />
+            </div>
+            <p className="veil__brand"><span className="veil__pre">Pokémon</span><strong className="veil__title">Plaza</strong><span className="jp veil__jp">広場</span></p>
+            <div className="veil__bar"><i /></div>
+            <small className="num">{entry.done ? 'Welcome' : entry.label} · {Math.round(entry.p * 100)}%</small>
+          </div>
+        </div>
+      )}
       <div className="ptags" aria-hidden="true">
         {you && tagFor(you, name, true)}
         {members.filter(m => m.id !== you).map(m => tagFor(m.id, m.name, false))}

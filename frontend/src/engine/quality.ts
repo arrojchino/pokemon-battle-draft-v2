@@ -63,6 +63,10 @@ export class AdaptiveQuality {
   private settled = false;
   /** While true (in battle), only the resolution adapts: a tier change rebuilds and recompiles. */
   hold = false;
+  /** Seconds left during which frame times are recorded but not acted on (a known one-off spike, such as entering the plaza). */
+  private quiet = 0;
+  /** Ignore the next `seconds` of frame times for adapting (they still show in the stats). */
+  mute(seconds: number) { this.quiet = Math.max(this.quiet, seconds); this.acc = 0; this.frames = 0; }
   readonly samples = new Float32Array(240); private si = 0; private filled = 0;
   constructor(private onTierDown: () => boolean, private onTierUp: () => boolean, public tiers = true, public resolution = true) {}
 
@@ -70,6 +74,7 @@ export class AdaptiveQuality {
   push(frameMs: number, dt: number): boolean {
     this.samples[this.si] = frameMs; this.si = (this.si + 1) % this.samples.length; this.filled = Math.min(this.filled + 1, this.samples.length);
     if (!this.tiers && !this.resolution) return false;
+    if (this.quiet > 0) { this.quiet -= dt; return false; }
     this.acc += frameMs; this.frames++; this.cool -= dt;
     if (this.frames < 90 || this.cool > 0) return false;
     const avg = this.acc / this.frames; this.acc = 0; this.frames = 0;

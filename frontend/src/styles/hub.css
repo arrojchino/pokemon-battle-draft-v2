@@ -112,3 +112,9 @@
   .hostdlg { bottom: 10px; padding: 14px; }
   .hostdlg__opts { grid-template-columns: 1fr; }
 }
+
+/* ---------- plaza entry veil (extends .veil): covers the cut in, lifts once the plaza is ready ---------- */
+.hubveil { z-index: calc(var(--z-veil) - 1); pointer-events: auto; }
+.hubveil.is-done { pointer-events: none; }
+.hubveil.is-quick { transition-duration: 0.25s; }
+.hubveil .veil__title { font-size: clamp(26px, 4vw, 40px); }

@@ -1758,10 +1758,10 @@ export class BattleStage {
    * Compile every effect's shaders now (pooled meshes are hidden until first use, and the renderer only
    * compiles what is visible), so no move stalls a frame compiling the first time it is played.
    */
-  prewarm(renderer: THREE.WebGLRenderer, scene: THREE.Scene) {
+  prewarm(compile: (o: THREE.Object3D) => Promise<unknown>) {
     const hidden: THREE.Object3D[] = [];
     this.group.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
-    const done = renderer.compileAsync(this.group, this.camera, scene);
+    const done = compile(this.group);
     for (const o of hidden) o.visible = false;
     return done;
   }

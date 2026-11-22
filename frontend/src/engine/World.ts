@@ -103,6 +103,9 @@ export class World {
   private lastCry = new Map<string, number>();
   private prepared = new Set<number>();
   private prewarmed = false;
+  /** The plaza entry in progress (see `prepareHub`). */
+  private hubEntry: Promise<void> | null = null;
+  private hubPrefetched = false;
   private rimWhite = new THREE.Color('#dfe8ff');
   private hitboxes = new Map<string, THREE.Mesh>();
   private layout: Layout | null = null;
@@ -386,7 +389,7 @@ export class World {
     // The 3D model when the Pokémon 3D API has one; otherwise (or offline) the official artwork card.
     const model = hasModel(c.dex) ? loadMonModel(c.dex, monSize(c.dex), (l, t) => this.reportProgress(key, l, t, c.name)).catch(() => null) : Promise.resolve(null);
     // Compile the model's shaders before it is shown, so its first frame on stage does not hitch.
-    const compiled = model.then(m => (m ? this.renderer.compileAsync(m.root, this.camera, this.scene).then(() => m, () => m) : m));
+    const compiled = model.then(m => (m ? this.compile(m.root).then(() => m, () => m) : m));
     p = compiled.then(m => {
       if (this.disposed) return null;
       const rig = new MonRig(m, c);
@@ -410,6 +413,19 @@ export class World {
   isLoaded(id: CharacterId) { return this.rigs.has(id); }
 
   /**
+   * Compile `obj`'s shaders exactly as the frame will draw it: against this scene's lights, into the post
+   * chain's linear target. Compiling with no target set builds the on-screen variant (sRGB output, tone
+   * mapping on), which the scene never uses, so the real program still compiled on the first visible frame.
+   */
+  compile(obj: THREE.Object3D, camera: THREE.Camera = this.camera): Promise<unknown> {
+    const prev = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this.composer.readBuffer);
+    const done = this.renderer.compileAsync(obj, camera, this.scene);
+    this.renderer.setRenderTarget(prev);
+    return done;
+  }
+
+  /**
    * Get battling Pokémon ready before they are sent out: download each model and compile its shaders
    * against this scene now, so a switch-in never waits on the network or stalls a frame compiling.
    */
@@ -417,9 +433,62 @@ export class World {
     for (const dex of dexes) {
       if (this.prepared.has(dex) || !hasModel(dex)) continue;
       this.prepared.add(dex);
-      void loadMonModel(dex, monSize(dex)).then(m => this.renderer.compileAsync(m.root, this.camera, this.scene).finally(() => { for (const mat of m.materials) mat.dispose(); })).catch(() => this.prepared.delete(dex));
+      void loadMonModel(dex, monSize(dex)).then(m => this.compile(m.root).finally(() => { for (const mat of m.materials) mat.dispose(); })).catch(() => this.prepared.delete(dex));
     }
   }
+
+  /**
+   * Download and compile the plaza host while the player idles on the title screen, so the plaza usually
+   * opens with nothing left to do. Skipped on the low tier and when the browser asks to save data.
+   */
+  prefetchHub() {
+    if (this.hubPrefetched || this.tier === 'low') return;
+    const nav = navigator as Navigator & { connection?: { saveData?: boolean } };
+    if (nav.connection?.saveData) return;
+    this.hubPrefetched = true;
+    const idle = (cb: () => void) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(cb, { timeout: 4000 }) : setTimeout(cb, 1500));
+    idle(() => { if (!this.disposed) void this.plazaHost.prepare(this.renderer, o => this.compile(o)).catch(() => { this.hubPrefetched = false; }); });
+  }
+
+  /**
+   * Everything the main plaza shows, ready before it is uncovered: the host downloaded, built, uploaded and
+   * compiled, and the partners of the trainers already there loaded and compiled (`ensureRig`). Reports
+   * `hubProgress`; resolves when all of that is done and the plaza has been drawn twice behind the veil, or
+   * after `timeoutMs`, so the plaza never waits forever (whatever is late fades in when it arrives).
+   * Adaptive quality ignores the frames of the entry, so its one-off cost never lowers the tier.
+   */
+  prepareHub(partners: readonly CharacterId[], timeoutMs = 4000): Promise<void> {
+    const t0 = performance.now();
+    this.adaptive.mute(timeoutMs / 1000 + 2);
+    let host = this.plazaHost.loaded ? 1 : 0, mons = 0;
+    const want = [...new Set(partners)].filter(id => !this.rigs.has(id));
+    const report = () => {
+      const progress = Math.min(1, host * 0.7 + (want.length ? mons / want.length : 1) * 0.3);
+      const label = host < 1 ? 'Calling Mira' : mons < want.length ? 'Greeting trainers' : 'Opening the stands';
+      this.events.emit('hubProgress', { progress, label });
+    };
+    report();
+    const hostP = this.plazaHost.prepare(this.renderer, o => this.compile(o), f => { host = f; report(); }).catch(() => { host = 1; report(); });
+    const monsP = Promise.all(want.map(id => this.ensureRig(id).finally(() => { mons++; report(); })));
+    // The plaza must be applied (the screen cut ends in the dark) and drawn with everything in it.
+    const applied = () => new Promise<void>(res => {
+      const check = () => (this.disposed || (!this.pendingLayout && this.layout?.mode === 'hub') ? res() : requestAnimationFrame(check));
+      check();
+    });
+    const drawn = () => new Promise<void>(res => requestAnimationFrame(() => requestAnimationFrame(() => res())));
+    const done = Promise.all([hostP, monsP, applied()]).then(drawn);
+    const timeout = new Promise<void>(res => window.setTimeout(res, timeoutMs));
+    const entry = Promise.race([done, timeout]).then(() => {
+      if (this.hubEntry === entry) this.hubEntry = null;
+      this.lastHubEntry = { ms: Math.round(performance.now() - t0), complete: host >= 1 && mons >= want.length, timings: { ...this.plazaHost.timings } };
+    });
+    this.hubEntry = entry;
+    return entry;
+  }
+  /** How the last plaza entry went (for profiling). */
+  lastHubEntry: { ms: number; complete: boolean; timings: object } | null = null;
+  /** The entry veil has lifted: from here on, anything that arrives late fades in. */
+  hubShown() { this.plazaHost.expose(); }
 
   // ---------------------------------------------------------------- layout & camera
   setLayout(layout: Layout) {
@@ -560,7 +629,7 @@ export class World {
     if (l.mode === 'arena') {
       // The partners leave the field to the battling Pokémon.
       accent = l.mine;
-      if (!this.prewarmed) { this.prewarmed = true; void this.battle.prewarm(this.renderer, this.scene).catch(() => { this.prewarmed = false; }); }
+      if (!this.prewarmed) { this.prewarmed = true; void this.battle.prewarm(o => this.compile(o)).catch(() => { this.prewarmed = false; }); }
       if (modeChanged && !this.reducedMotion) this.battle.cam.intro();
     } else this.battle.clear();
     if (l.mode === 'victory') {

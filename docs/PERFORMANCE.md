@@ -65,3 +65,23 @@ Resource hygiene (scripted checks):
 - Adaptive quality no longer bounces between tiers: once a tier proves too slow it is not retried for the session, and tiers never change during a battle (only the render resolution does). Each tier change rebuilds the post chain and recompiles shaders, which showed up as a hitch every few seconds on machines near the 60 fps line.
 - The battle stage compiles every effect's shaders when the arena opens (pooled meshes are hidden, and the renderer only compiles what is visible), Team Preview downloads and compiles all twelve Pokémon models, and partners compile before they are shown.
 - Hit recoil is a smooth damped sway instead of a random per-frame jitter, hit-stop is limited to crits and super-effective hits, and camera beats glide into each other instead of cutting twice per move.
+
+## Entering the main plaza
+
+Measured on a GeForce GT 1030 (Chrome, ANGLE D3D11), high tier, static build, frame times from `requestAnimationFrame`:
+
+| | Before | After |
+|---|---|---|
+| First entry, longest frame | 2,133 ms (one long task of 2,103 ms when the host first drew) | 100 ms, behind the entry veil |
+| First entry, frames over 33 ms after the veil lifts | n/a (no veil) | 0 |
+| Second entry | | veil up 250 ms, longest frame 16.8 ms |
+| Slow network (0.7 MB/s, cold cache): veil times out at 4.0 s, the host arrives 7 s later and fades in | | longest frame 50.1 ms, no long tasks |
+| 7 entries and exits | | geometries 131, textures 71, programs 67, unchanged; tier stays high |
+
+What it was: every precompile in the app (partners, battling Pokémon, battle effects) called `compileAsync` with no render target bound, which builds the on-screen variant of each program (sRGB output, tone mapping on). The scene is drawn into the post chain's linear target, so the real program still compiled on the first visible frame. `World.compile` binds the composer's target first; all precompiles go through it. On top of that, the host's first frame built her blend-shape and skinning textures and uploaded her buffers and textures.
+
+How it works now:
+- `PlazaHost.prepare` runs one step per frame: download and parse, build (rig, cap, headset), upload textures two per frame (`initTexture`), compile the opaque and the transparent (fade) variants against the real lights, then one off-screen draw per mesh with a flat material (buffers, skinning and blend-shape textures; the worst mesh costs 22 ms). Her shadow casters switch on behind the veil, or three per frame if she arrives on an uncovered plaza, where she fades in over 0.7 s.
+- The title screen prefetches her with `requestIdleCallback` when the server has a plaza (`World.prefetchHub`), except on the low tier or with Save-Data on.
+- `World.prepareHub` (behind the veil in `HubScreen`) waits for the host, the partners of the trainers already there and two drawn frames, capped at 4 s, and reports `hubProgress` for the veil.
+- `AdaptiveQuality.mute` ignores frame times for the entry window, so a one-off spike never lowers the resolution or the tier.

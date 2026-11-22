@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isRoomCode } from '@shared';
 import { useSession } from '../net/session.js';
 import { firstVisit, useSettings } from './settings.js';
-import { WorldProvider } from './WorldProvider.js';
+import { WorldProvider, useWorld } from './WorldProvider.js';
+import { hasHub } from '../net/types.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
 import { useAudio } from './useAudio.js';
 import { useApplySettings } from './applySettings.js';
@@ -29,6 +30,10 @@ function Shell() {
   const [partnerReturn, setPartnerReturn] = useState<Screen>('title');
   const [dialog, setDialog] = useState<'settings' | 'credits' | null>(null);
   const invite = inviteFromUrl();
+  // With a plaza on the server, get its host ready while the player idles on the title screen.
+  const { world } = useWorld();
+  const hub = hasHub(session);
+  useEffect(() => { if (world && hub && screen === 'title') world.prefetchHub(); }, [world, hub, screen]);
   useSettingsOpener(useCallback(() => setDialog('settings'), []));
 
   useEffect(() => { if (session.error) toast(session.error, 'error'); }, [session.errorId, session.error]);
