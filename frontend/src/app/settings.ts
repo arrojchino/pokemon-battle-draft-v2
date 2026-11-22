@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from 'react';
-import { isCharacterId, type CharacterId } from '@shared';
+import { CHARACTER_IDS, isCharacterId, type CharacterId } from '@shared';
 import type { EffectsLevel, QualityPref, RenderScale } from '../engine/quality.js';
-import { DEFAULT_CHARACTER } from '../characters/roster.js';
 
 export type MotionPref = 'system' | 'reduced' | 'full';
 export type CameraStyle = 'cinematic' | 'steady';
@@ -44,9 +43,13 @@ const DISPLAY_DEFAULTS = {
 
 const pick = <T,>(values: readonly T[], v: unknown, fallback: T): T => values.find(x => x === v) ?? fallback;
 
+/** No partner saved yet: a first visit. It starts with a random partner and opens on the partner choice. */
+export let firstVisit = false;
+
 function load(): Settings {
   let s: Partial<Settings> = {};
   try { s = JSON.parse(localStorage.getItem(KEY) || '{}') as Partial<Settings>; } catch { /* ignore */ }
+  firstVisit = !isCharacterId(s.partner);
   const d = DISPLAY_DEFAULTS;
   return {
     quality: pick(['auto', 'low', 'medium', 'high'] as const, query.get('quality') ?? s.quality, d.quality),
@@ -61,7 +64,7 @@ function load(): Settings {
     calm: s.calm === true,
     volume: typeof s.volume === 'number' ? Math.min(1, Math.max(0, s.volume)) : d.volume,
     muted: query.has('mute') || s.muted === true,
-    partner: isCharacterId(s.partner) ? s.partner : DEFAULT_CHARACTER,
+    partner: isCharacterId(s.partner) ? s.partner : CHARACTER_IDS[Math.floor(Math.random() * CHARACTER_IDS.length)],
     name: typeof s.name === 'string' ? s.name.slice(0, 24) : '',
     showdownName: typeof s.showdownName === 'string' ? s.showdownName.slice(0, 18) : '',
     format: typeof s.format === 'string' ? s.format : 'gen9customgame',

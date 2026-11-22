@@ -139,6 +139,8 @@
 .ptile.is-on .ptile__art { filter: none; transform: scale(1.1); }
 .ptile:focus-visible { outline: none; box-shadow: var(--ring); }
 .ptile .sprite--missing { font: 700 var(--fs-xs)/1 var(--font-display); color: var(--text-2); }
+.shop__actions { display: grid; grid-template-columns: auto 1fr; gap: var(--s-2); }
+@media (max-width: 420px) { .shop__actions { grid-template-columns: 1fr; } }
 .shop__keys { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); }
 .shop__keys kbd {
   min-width: 22px; padding: 2px 6px; text-align: center; font: 600 var(--fs-2xs)/1.5 var(--font-display); letter-spacing: 0.04em; color: var(--text-2);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
-import type { GameAction, PublicRoom, Seat } from '@shared';
+import { PLAZA_SINCE, type GameAction, type PublicRoom, type Seat } from '@shared';
 import { characterById } from '../../characters/roster.js';
 import { useSettings } from '../../app/settings.js';
 import { useWorld } from '../../app/WorldProvider.js';
@@ -14,6 +14,7 @@ import { CompletePanel, DraftBoard, IntervalPanel } from './match/Panels.js';
 import { TossPanel, TossResultPanel, WaitingPanel } from './match/LobbyPanels.js';
 import { BattlePanel } from './match/BattlePanel.js';
 import { HistoryDrawer } from './match/HistoryDrawer.js';
+import { PlazaHud } from './match/Plaza.js';
 import { BattleArena } from './match/BattleArena.js';
 import { BattleController } from '../../battle/controller.js';
 import { sound } from '../../audio/sound.js';
@@ -69,6 +70,9 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
   // (a slower client may still be animating the last turn) and the player continues or it auto-dismisses.
   const showArena = !!arena && !arena.dismissed && (room.phase === 'battle' || (!!arenaSnap && arenaSnap.state.phase !== 'idle'));
   const dismissArena = () => setArena(a => (a ? { ...a, dismissed: true } : a));
+  // The plaza: while waiting for a rival and until the coin is called, the stage is a place to walk and talk.
+  const chatty = room.protocol >= PLAZA_SINCE;
+  const plaza = chatty && !showArena && (!m.hasOpponent || room.phase === 'calls');
   useEffect(() => {
     if (!arena || arena.reacted || !battleOver || !world || !arenaSnap) return;
     arena.reacted = true;
@@ -94,6 +98,8 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
     let layout: Layout;
     if (showArena && m.theirs) {
       layout = { mode: 'arena', mine: m.mine, theirs: m.theirs };
+    } else if (plaza) {
+      layout = { mode: 'plaza', mine: m.mine, theirs: m.theirs, seat: m.me };
     } else if (room.phase === 'complete' && m.seriesWinner !== null) {
       const winnerIsMe = m.seriesWinner === m.me;
       layout = { mode: 'victory', winner: (winnerIsMe ? m.mine : m.theirs) ?? m.mine, loser: winnerIsMe ? m.theirs : m.mine };
@@ -102,7 +108,7 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
       layout = { mode: 'duo', mine: m.mine, theirs: m.theirs, shot, coin: m.hasOpponent && (room.phase === 'calls' || room.phase === 'spin') };
     }
     world.setLayout(layout);
-  }, [world, room.phase, m, showArena]);
+  }, [world, room.phase, m, showArena, plaza]);
 
   // Attach the battle bridge after the layout so a late stage is resynced onto the arena.
   useEffect(() => {
@@ -180,11 +186,13 @@ export function MatchScreen({ room, seat, transport, link }: { room: PublicRoom;
   };
 
   return (
-    <main className={`screen match phase-${room.phase} ${showArena ? 'has-arena' : ''}`} style={{ '--partner': partnerColor } as CSSProperties}>
+    <main className={`screen match phase-${room.phase} ${showArena ? 'has-arena' : ''} ${plaza ? 'is-plaza' : ''}`} style={{ '--partner': partnerColor } as CSSProperties}>
+      {chatty && !showArena && room.phase !== 'pick' && <PlazaHud world={world} room={room} m={m} transport={transport} walking={plaza} />}
       <Scoreboard room={room} m={m} />
       <div className="roombar">
         <span className={`dot ${link === 'online' ? 'dot--on' : link === 'connecting' ? 'dot--wait' : ''}`} title={`Link ${link}`} />
         <span className="roombar__code mono" title={room.code}>{room.code.length > 10 ? room.code.slice(0, 8) + '…' : room.code}</span>
+        {room.watchers > 0 && <span className="roombar__watch" title={`${room.watchers} watching this room`}><Icon name="eye" size={14} />{room.watchers}</span>}
         <CopyButton className="iconbtn iconbtn--text" label="Invite" getText={() => inviteLink(room.code)} />
         <button className="iconbtn iconbtn--text" onClick={() => setHistory(h => !h)} aria-expanded={history}><Icon name="history" />History</button>
         <details className="roombar__menu">

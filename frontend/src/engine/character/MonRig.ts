@@ -74,6 +74,7 @@ export class MonRig {
   private clock = Math.random() * 10;
   facing = 0; facingTarget = 0; private facingV = { v: 0 };
   hovered = false; focused = false;
+  private strideSpeed = 0; private strideClip = false;
   reducedMotion = false;
 
   constructor(model: MonModel | null, readonly character: Character) {
@@ -139,6 +140,19 @@ export class MonRig {
     if (instant) { this.pos.snap(); this.facing = facing; this.facingV.v = 0; this.root.position.copy(this.pos.value); this.root.rotation.y = facing; }
   }
 
+  /** See-through (plaza: when it stands between the camera and the player's own partner). 1 is solid. */
+  setFade(a: number) {
+    this.body?.setOpacity(a);
+    if (this.card) { this.card.material.opacity = a; this.card.material.transparent = true; }
+  }
+  /** Plaza locomotion: walk or run loops matched to the ground speed (units per second); idle when still. */
+  stride(speed: number, walk: number, run: number) {
+    const kind = speed < 0.1 ? null : speed > (walk + run) * 0.5 ? 'run' : 'walk';
+    const rate = kind === 'run' ? THREE.MathUtils.clamp(speed / run, 0.75, 1.35) : kind === 'walk' ? THREE.MathUtils.clamp(speed / walk, 0.6, 1.35) : 1;
+    this.strideSpeed = kind ? speed : 0;
+    this.strideClip = this.body ? this.body.gaitTo(kind, rate) : false;
+  }
+
   lookAt(world: THREE.Vector3) {
     this.lookWorld.copy(world);
     this.root.updateMatrixWorld();
@@ -172,6 +186,11 @@ export class MonRig {
     }
     // Breathing for models without their own idle loop.
     if (!this.body?.animated && !this.reducedMotion) { o.sy *= 1 + Math.sin(this.clock * 2.1) * 0.012; o.y += Math.sin(this.clock * 1.3) * 0.008; }
+    // Without a walk clip (and for artwork cards) the partner hops along instead.
+    if (this.strideSpeed > 0 && !this.strideClip && !this.reducedMotion) {
+      const ph = this.clock * (7 + this.strideSpeed * 2);
+      o.y += Math.abs(Math.sin(ph)) * 0.06; o.rz += Math.sin(ph) * 0.05;
+    }
 
     this.yaw += (this.yawTarget - this.yaw) * dampFactor(this.card ? 8 : 3, dt);
     const s = Math.max(0.001, this.appear) * (this.hovered ? 1.04 : 1);

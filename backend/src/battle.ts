@@ -16,6 +16,8 @@ export type BattleHooks = {
   send(seat: Seat, lines: string[], reset: boolean, deadline: number | null): void;
   status(status: 'preview' | 'active' | 'ended', turn: number): void;
   end(winner: Seat | null, turns: number): void;
+  /** Lines of the public stream (what a spectator may see: HP as percentages, no requests). */
+  watch?(lines: string[]): void;
 };
 
 export type BattleTiming = { decisionMs: number; previewMs: number };
@@ -30,6 +32,7 @@ const DEFAULT_TIMING: BattleTiming = { decisionMs: 150_000, previewMs: 90_000 };
 export class BattleSession {
   private streams: ReturnType<typeof getPlayerStreams>;
   private logs: Pair<string[]> = [[], []];
+  private publicLog: string[] = [];
   private deadlines: Pair<number | null> = [null, null];
   private timers: Pair<ReturnType<typeof setTimeout> | null> = [null, null];
   private turn = 0;
@@ -41,7 +44,7 @@ export class BattleSession {
     // Identical display names would make |win| ambiguous; the simulator only needs them distinct.
     const n: Pair<string> = [names[0], names[1] === names[0] ? `${names[1]} (2)` : names[1]];
     const pack = (t: Pokemon[]) => Teams.pack(Teams.import(teamImport(t)));
-    void this.pump(0); void this.pump(1); void this.watch(n);
+    void this.pump(0); void this.pump(1); void this.watch(n); void this.pumpPublic();
     void this.streams.omniscient.write(
       `>start ${JSON.stringify({ formatid: BATTLE_FORMAT })}\n` +
       `>player p1 ${JSON.stringify({ name: n[0], team: pack(teams[0]) })}\n` +
@@ -69,6 +72,18 @@ export class BattleSession {
       this.hooks.send(seat, lines, false, this.deadlines[seat]);
     }
   }
+
+  /** The spectator channel: kept whole for late arrivals and passed on as it comes. */
+  private async pumpPublic() {
+    for await (const chunk of this.streams.spectator) {
+      const lines = chunk.split('\n').filter(l => l && !l.startsWith('|debug|') && !l.startsWith('|t:|'));
+      if (!lines.length) continue;
+      this.publicLog.push(...lines);
+      this.hooks.watch?.(lines);
+    }
+  }
+  /** The public stream so far, for a spectator who just arrived. */
+  spectatorLog() { return this.publicLog.slice(); }
 
   private async watch(names: Pair<string>) {
     for await (const chunk of this.streams.omniscient) {

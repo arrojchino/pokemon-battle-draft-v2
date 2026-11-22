@@ -40,6 +40,12 @@ export function PartnerSelect({ onBack, onConfirm, confirmLabel }: { onBack: () 
     world?.pulse();
     if (world?.isLoaded(id)) window.setTimeout(() => world.emote(id, characterById(id)!.personality.on.select), 350);
   };
+  /** Any partner but the one on show. */
+  const surprise = () => {
+    const others = ROSTER.filter(r => r.id !== focus);
+    sound.play('toggle');
+    pick(others[Math.floor(Math.random() * others.length)].id);
+  };
   const confirm = () => {
     if (confirmed.current) return;
     confirmed.current = true;
@@ -94,9 +100,12 @@ export function PartnerSelect({ onBack, onConfirm, confirmLabel }: { onBack: () 
             ><Sprite artId={r.dex} name={r.name} eager className="ptile__art" /></button>
           ))}
         </div>
-        <button type="button" className="btn btn--primary btn--xl btn--block" onClick={confirm} disabled={confirming}>
-          <Icon name="check" />{confirmLabel.replace('{name}', c.name)}
-        </button>
+        <div className="shop__actions">
+          <button type="button" className="btn btn--ghost btn--xl" onClick={surprise} disabled={confirming} title="A random partner"><Icon name="dice" />Surprise me</button>
+          <button type="button" className="btn btn--primary btn--xl" onClick={confirm} disabled={confirming}>
+            <Icon name="check" />{confirmLabel.replace('{name}', c.name)}
+          </button>
+        </div>
         <p className="shop__keys" aria-hidden="true"><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> choose <kbd>Enter</kbd> confirm <kbd>Esc</kbd> back</p>
       </section>
     </main>

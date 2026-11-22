@@ -17,6 +17,21 @@ export type BattleMode = 'app' | 'showdown';
 export type Visibility = 'public' | 'private';
 export type BattleStatus = { id: number; status: 'preview' | 'active' | 'ended'; turn: number };
 
+/** One line of room chat. `id` grows by one per line, so a client can tell new lines from ones it has shown. */
+export type ChatLine = { id: number; seat: Seat; text: string };
+/** Longest chat line, in characters (code points). */
+export const MAX_CHAT = 140;
+/** The room keeps only its most recent lines. */
+export const CHAT_KEEP = 40;
+
+/** Strip control and bidi characters, collapse whitespace, clamp to MAX_CHAT code points. React escapes on render. */
+export function cleanChat(v: unknown): string {
+  const s = typeof v === 'string' ? v : '';
+  // eslint-disable-next-line no-control-regex
+  const out = s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '').replace(/\s+/g, ' ').trim();
+  return Array.from(out).slice(0, MAX_CHAT).join('').trim();
+}
+
 export type RoomState = {
   code: string;
   players: Pair<SeatRecord | null>;
@@ -38,6 +53,8 @@ export type RoomState = {
   mode: BattleMode;
   battle: BattleStatus | null;
   visibility: Visibility;
+  /** Recent chat, oldest first (at most CHAT_KEEP lines). Both seats see all of it. */
+  chat: ChatLine[];
 };
 
 /** What a rival may know about a set before it is revealed in battle: species and types (Team Preview). */
@@ -45,7 +62,7 @@ export type RivalPreview = Pick<Pokemon, 'name' | 'id' | 'artId' | 'types'>;
 
 /** What clients receive. Same field names as protocol v1 so older clients keep working. */
 export type PublicPlayer = { name: string; avatar: CharacterId | null; connected: boolean };
-export type PublicRoom = Omit<RoomState, 'players'> & { players: Pair<PublicPlayer | null>; protocol: number; rival: RivalPreview[] | null };
+export type PublicRoom = Omit<RoomState, 'players'> & { players: Pair<PublicPlayer | null>; protocol: number; rival: RivalPreview[] | null; watchers: number };
 
 export type GameAction =
   | { type: 'call'; side: CoinSide }
@@ -57,7 +74,9 @@ export type GameAction =
   | { type: 'next' }
   | { type: 'reset'; bestOf: 3 | 5 }
   | { type: 'avatar'; avatar: CharacterId }
-  | { type: 'mode'; mode: BattleMode };
+  | { type: 'mode'; mode: BattleMode }
+  /** Protocol v5: a chat line from this seat (cleaned by the authority). */
+  | { type: 'chat'; text: string };
 
 /** Actions only the authority itself may apply (never parsed from a client message). */
 export type ServerAction =
@@ -75,7 +94,7 @@ const randomSeat = (rng: Rng): Seat => (rng.float() < 0.5 ? 0 : 1);
 export function createRoom(code: string, host: SeatRecord, bestOf: 3 | 5, mode: BattleMode = 'showdown', visibility: Visibility = 'private'): RoomState {
   return {
     code, players: [host, null], bestOf, phase: 'calls', caller: null, calls: [null, null], result: null, tossWinner: null,
-    candidates: null, teams: [[], []], wins: [0, 0], games: 0, history: [], mode, battle: null, visibility,
+    candidates: null, teams: [[], []], wins: [0, 0], games: 0, history: [], mode, battle: null, visibility, chat: [],
   };
 }
 
@@ -98,8 +117,8 @@ const recordWin = (s: RoomState, w: Seat, turns?: number) => {
  */
 export function reduce(room: RoomState, seat: Seat, action: GameAction | ServerAction, rng: Rng): ReduceResult {
   const s = clone(room);
-  // Rooms persisted by older hosts lack mode/battle (v2), visibility (v3) or the caller (v3).
-  s.mode ??= 'showdown'; s.battle ??= null; s.visibility ??= 'private';
+  // Rooms persisted by older hosts lack mode/battle (v2), visibility (v3), the caller (v3) or chat (v5).
+  s.mode ??= 'showdown'; s.battle ??= null; s.visibility ??= 'private'; s.chat ??= [];
   if (s.caller === undefined) s.caller = s.players[1] ? randomSeat(rng) : null;
   const fail = (error: string): ReduceResult => ({ ok: false, error });
   switch (action.type) {
@@ -161,6 +180,14 @@ export function reduce(room: RoomState, seat: Seat, action: GameAction | ServerA
       s.mode = action.mode;
       return { ok: true, room: s };
     }
+    case 'chat': {
+      if (!s.players[seat]) return fail('Not seated');
+      const text = cleanChat(action.text);
+      if (!text) return fail('Write something first');
+      s.chat.push({ id: (s.chat[s.chat.length - 1]?.id ?? 0) + 1, seat, text });
+      if (s.chat.length > CHAT_KEEP) s.chat.splice(0, s.chat.length - CHAT_KEEP);
+      return { ok: true, room: s };
+    }
     case 'next': {
       if (s.phase !== 'between') return fail('Not between games');
       clearRound(s);
@@ -196,14 +223,16 @@ export function seatForToken(room: RoomState, token: unknown): Seat | null {
  * What one seat receives. Bearer tokens never leave the authority, and nothing the viewer has not earned
  * is sent: the two dealt teams go only to the toss winner while they choose, and during a game each player
  * gets their own six in full but only the rival's species and types (Team Preview). Finished games are
- * revealed in `history`.
+ * revealed in `history`. A spectator (`viewer` null) sees neither dealt team nor either six during a game: the
+ * battle's public stream shows them what the trainers reveal. `watchers` counts the spectators.
  */
-export function publicView(room: RoomState, connected: Pair<boolean>, protocol: number, viewer: Seat): PublicRoom {
+export function publicView(room: RoomState, connected: Pair<boolean>, protocol: number, viewer: Seat | null, watchers = 0): PublicRoom {
   const players = room.players.map((p, i) => (p ? { name: p.name, avatar: p.avatar, connected: connected[i] } : null)) as Pair<PublicPlayer | null>;
-  const view: PublicRoom = { ...clone(room), players, protocol, rival: null };
-  if (room.phase === 'pick' && room.tossWinner !== viewer) view.candidates = null;
-  if (room.phase === 'battle') {
-    const opp = (1 - viewer) as Seat;
+  const view: PublicRoom = { ...clone(room), players, protocol, rival: null, watchers };
+  if (room.phase === 'pick' && (viewer === null || room.tossWinner !== viewer)) view.candidates = null;
+  if (room.phase === 'battle' && viewer === null) view.teams = [[], []];
+  else if (room.phase === 'battle') {
+    const opp = (1 - viewer!) as Seat;
     view.rival = room.teams[opp].map(({ name, id, artId, types }) => ({ name, id, ...(artId === undefined ? {} : { artId }), types }));
     view.teams[opp] = [];
   }

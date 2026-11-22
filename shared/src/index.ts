@@ -5,3 +5,4 @@ export * from './room.js';
 export * from './protocol.js';
 export * from './moves.js';
 export * from './typechart.js';
+export * from './heights.js';

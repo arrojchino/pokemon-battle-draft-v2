@@ -21,19 +21,20 @@ function Plate({ side, name, partner, wins, target, online, you, active }: { sid
   );
 }
 
-export function Scoreboard({ room, m }: { room: PublicRoom; m: MatchModel }) {
+/** `watch`: a spectator's scoreboard (nobody is "you"; both trainers' links shown). */
+export function Scoreboard({ room, m, watch = false }: { room: PublicRoom; m: MatchModel; watch?: boolean }) {
   const left = 0, right = 1;
   const partnerOf = (s: 0 | 1) => (s === m.me ? m.mine : m.theirs);
-  const onlineOf = (s: 0 | 1) => (s === m.me ? true : room.players[s] ? m.oppConnected : null);
+  const onlineOf = (s: 0 | 1) => (watch ? room.players[s]?.connected ?? null : s === m.me ? true : room.players[s] ? m.oppConnected : null);
   return (
     <header className="scoreboard" aria-label="Series score">
-      <Plate side="l" name={m.names[left]} partner={partnerOf(left)} wins={room.wins[left]} target={m.target} online={onlineOf(left)} you={m.me === left} active={room.tossWinner === left && room.phase === 'pick'} />
+      <Plate side="l" name={m.names[left]} partner={partnerOf(left)} wins={room.wins[left]} target={m.target} online={onlineOf(left)} you={!watch && m.me === left} active={room.tossWinner === left && room.phase === 'pick'} />
       <div className="scoreboard__mid">
         <span className="scoreboard__phase">{PHASE_LABEL[room.phase]}</span>
         <strong className="scoreboard__score"><b>{room.wins[0]}</b><i>–</i><b>{room.wins[1]}</b></strong>
         <span className="scoreboard__game">Game {m.gameNo} · Best of {room.bestOf}</span>
       </div>
-      <Plate side="r" name={room.players[right]?.name ?? 'Waiting…'} partner={partnerOf(right)} wins={room.wins[right]} target={m.target} online={onlineOf(right)} you={m.me === right} active={room.tossWinner === right && room.phase === 'pick'} />
+      <Plate side="r" name={room.players[right]?.name ?? 'Waiting…'} partner={partnerOf(right)} wins={room.wins[right]} target={m.target} online={onlineOf(right)} you={!watch && m.me === right} active={room.tossWinner === right && room.phase === 'pick'} />
     </header>
   );
 }

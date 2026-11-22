@@ -1,22 +1,22 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react';
-import type { BattleMode, LobbySummary, Visibility } from '@shared';
+import type { BattleMode, Visibility } from '@shared';
 import { characterById } from '../../characters/roster.js';
 import { settings, useSettings } from '../../app/settings.js';
 import { useWorld } from '../../app/WorldProvider.js';
 import { useSession } from '../../net/session.js';
-import { hasLobbies } from '../../net/types.js';
+import { hasHub, hasLobbies, type LobbyList } from '../../net/types.js';
 import { Icon, ScreenHeader, Segmented, Spinner } from '../primitives.js';
 import { MODE_LABEL, PartnerAvatar, lobbyPrefs, partnerStyle } from './LobbyParts.js';
 
 type Tab = 'browse' | 'create' | 'join';
-type Props = { mode: 'create' | 'join'; inviteCode: string; onBack: () => void; onChangePartner: () => void };
+type Props = { mode: 'create' | 'join'; inviteCode: string; onBack: () => void; onChangePartner: () => void; onPlaza?: () => void };
 
 const waited = (ms: number) => { const m = Math.floor(ms / 60000); return m < 1 ? 'just opened' : `waiting ${m} min`; };
 
-/** Open public lobbies, refreshed every few seconds while the list is on screen. */
-function useLobbies(enabled: boolean) {
+/** Open public lobbies and live battles, refreshed every few seconds while the list is on screen. */
+export function useLobbies(enabled: boolean) {
   const { transport } = useSession();
-  const [data, setData] = useState<{ lobbies: LobbySummary[]; now: number } | null>(null);
+  const [data, setData] = useState<LobbyList | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const refresh = useCallback(async () => {
@@ -38,12 +38,13 @@ function useLobbies(enabled: boolean) {
  * Multiplayer hub: a trainer card (name, partner, Quick join) beside three ways in. Public lobbies and
  * Quick join appear only when the dedicated server supports them; peer rooms are invite-only.
  */
-export function MultiplayerScreen({ mode, inviteCode, onBack, onChangePartner }: Props) {
+export function MultiplayerScreen({ mode, inviteCode, onBack, onChangePartner, onPlaza }: Props) {
   const s = useSettings();
   const c = characterById(s.partner)!;
   const { world } = useWorld();
   const session = useSession();
   const lobbies = hasLobbies(session);
+  const hub = hasHub(session);
   const [picked, setPicked] = useState<Tab | null>(mode === 'join' || inviteCode ? 'join' : null);
   const tab: Tab = picked ?? (lobbies ? 'browse' : 'create');
   const [busy, setBusy] = useState(false);
@@ -82,6 +83,7 @@ export function MultiplayerScreen({ mode, inviteCode, onBack, onChangePartner }:
             <button type="button" className="btn btn--gold btn--xl" disabled={busy || !online} onClick={quick}><Icon name="bolt" />Quick join</button>
             <small className="hint">Takes the public lobby that has waited longest, or opens one for the next trainer.</small>
           </>}
+          {hub && onPlaza && <button type="button" className="btn btn--ghost" onClick={onPlaza}><Icon name="users" />Go to the plaza</button>}
           <p className="mp__status">
             <span className={`dot ${online ? 'dot--on' : session.link === 'connecting' ? 'dot--wait' : ''}`} />
             {session.kind === 'backend' ? 'Dedicated server' : 'Peer relay (the room creator hosts)'} · {online ? 'connected' : session.link}
@@ -97,7 +99,8 @@ export function MultiplayerScreen({ mode, inviteCode, onBack, onChangePartner }:
             ))}
           </div>
           <div className="mp__body" key={tab}>
-            {tab === 'browse' && <LobbyBrowser busy={busy} online={online} onJoin={join} onCreate={() => { lobbyPrefs.visibility = 'public'; setPicked('create'); }} onQuick={quick} />}
+            {tab === 'browse' && <LobbyBrowser busy={busy} online={online} onJoin={join} onCreate={() => { lobbyPrefs.visibility = 'public'; setPicked('create'); }} onQuick={quick}
+              onWatch={hub ? code => { session.transport.clearError(); session.transport.watch(code); } : undefined} />}
             {tab === 'create' && <CreateLobby busy={busy} lobbies={lobbies} battles={session.transport.supportsBattles} onCreate={(bestOf, visibility) => start(() => session.transport.create(name('Player 1'), bestOf, s.partner, battleMode, visibility))} />}
             {tab === 'join' && <JoinByCode busy={busy} initial={inviteCode} onJoin={join} />}
           </div>
@@ -107,7 +110,7 @@ export function MultiplayerScreen({ mode, inviteCode, onBack, onChangePartner }:
   );
 }
 
-function LobbyBrowser({ busy, online, onJoin, onCreate, onQuick }: { busy: boolean; online: boolean; onJoin: (code: string) => void; onCreate: () => void; onQuick: () => void }) {
+function LobbyBrowser({ busy, online, onJoin, onCreate, onQuick, onWatch }: { busy: boolean; online: boolean; onJoin: (code: string) => void; onCreate: () => void; onQuick: () => void; onWatch?: (code: string) => void }) {
   const { data, loading, error, refresh } = useLobbies(online);
   const [q, setQ] = useState('');
   const [bestOf, setBestOf] = useState<0 | 3 | 5>(0);
@@ -169,7 +172,25 @@ function LobbyBrowser({ busy, online, onJoin, onCreate, onQuick }: { busy: boole
           </div>
         </div>
       )}
-      <p className="lobbies__foot hint">{total} open · refreshes every few seconds</p>
+      {onWatch && !!data?.live.length && (
+        <section className="lobbies__live" aria-label="Live battles">
+          <p className="eyebrow"><span className="jp">観戦</span> Live battles</p>
+          <ul className="lobbies__list">
+            {data.live.map((b, i) => (
+              <li key={b.code} className="lobby" style={{ ...partnerStyle(b.avatars[0]), '--i': i } as CSSProperties}>
+                <PartnerAvatar id={b.avatars[0]} />
+                <div className="lobby__text">
+                  <strong>{b.names[0]} vs {b.names[1]}</strong>
+                  <small>{b.wins[0]}–{b.wins[1]} · Turn {Math.max(1, b.turn)}{b.watchers ? ` · ${b.watchers} watching` : ''}</small>
+                </div>
+                <div className="lobby__tags"><span className="badge">Best of {b.bestOf}</span></div>
+                <button type="button" className="btn btn--sm" onClick={() => onWatch(b.code)}><Icon name="eye" size={14} />Watch</button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <p className="lobbies__foot hint">{total} open{data?.live.length ? ` · ${data.live.length} live` : ''} · refreshes every few seconds</p>
     </div>
   );
 }

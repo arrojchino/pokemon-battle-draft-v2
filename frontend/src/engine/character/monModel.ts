@@ -244,10 +244,12 @@ function instance(src: Source, height: number, metal?: RegExp): MonModel {
   });
   model.updateMatrixWorld(true);
   // Measure in the idle pose: some models (single-clip ones especially) have a bind pose far from how
-  // they actually stand, which would throw the height and centre off.
+  // they actually stand, which would throw the height and centre off. The relaxed idle comes first: it is
+  // how a Pokémon stands (Pokédex height), while some battle stances crouch low (Greninja is ~1.6x
+  // taller standing, so fitting its crouch made the standing partner far too big).
   // Only what shows in that pose counts (HOME models hide their props until an attack brings them out).
   // Measure before the mixer stops: stopping restores the bind pose.
-  const pose = findClip(src.clips, ['battlewait01_loop', 'defaultwait01_loop']) ?? src.clips[0];
+  const pose = findClip(src.clips, ['defaultwait01_loop', 'battlewait01_loop']) ?? src.clips[0];
   let box: THREE.Box3;
   if (pose) {
     const mx = new THREE.AnimationMixer(model);
@@ -465,6 +467,33 @@ export class MonBody {
     a.hold = !!opts.hold;
     return clip.duration / (opts.speed ?? 1);
   }
+  private gait: THREE.AnimationAction | null = null;
+  private gaits: Record<'walk' | 'run', THREE.AnimationClip | null> | null = null;
+  /**
+   * Locomotion: loop the walk or run at a playback rate, or settle back into the idle (null). Starting to
+   * move cuts a one-shot short (a fidget, an emote); stopping lets one finish first. Returns false when the
+   * model has no such clip.
+   */
+  gaitTo(kind: 'walk' | 'run' | null, rate = 1): boolean {
+    if (!this.mixer) return false;
+    const c = this.model.clips;
+    this.gaits ??= { walk: findClip(c, ['walk01_loop', 'run01_loop']) ?? null, run: findClip(c, ['run01_loop', 'walk01_loop']) ?? null };
+    const clip = kind ? this.gaits[kind] : null;
+    if (kind && !clip) return false;
+    const next = clip ? this.mixer.clipAction(clip) : null;
+    if (next) next.timeScale = rate;
+    if (next === this.gait) return true;
+    const prev = this.gait;
+    this.gait = next;
+    const to = next ?? this.idleAction;
+    if (!to || (!next && this.current !== prev)) return true;
+    to.reset().setLoop(THREE.LoopRepeat, Infinity);
+    to.timeScale = next ? rate : 1;
+    to.play();
+    if (this.current && this.current !== to) this.current.crossFadeTo(to, 0.22, false);
+    this.current = to; (to as Act).hold = false;
+    return true;
+  }
   /** Loop a clip until the next action. */
   loop(names: readonly string[]): boolean {
     if (!this.mixer) return false;
@@ -490,10 +519,12 @@ export class MonBody {
   }
   private backToIdle() {
     const cur = this.current;
-    if (!this.idleAction || !cur || cur === this.idleAction || cur.hold) return;
-    this.idleAction.reset().play();
-    cur.crossFadeTo(this.idleAction, 0.3, false);
-    this.current = this.idleAction;
+    // While walking, a finished one-shot hands back to the walk instead of the idle.
+    const base = this.gait ?? this.idleAction;
+    if (!base || !cur || cur === base || cur.hold) return;
+    base.reset().play();
+    cur.crossFadeTo(base, 0.3, false);
+    this.current = base;
   }
 
   /** Back to a clean idle: no held pose, tint, flash or fade (a revived Pokémon coming back, for instance). */

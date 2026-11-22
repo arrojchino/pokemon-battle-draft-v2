@@ -120,7 +120,8 @@ export class BattleModel {
   private seq = 0;
   private pendingCrit = false;
   private pendingEffect: Effectiveness = 'normal';
-  constructor(mySide: SideId) { this.state = emptyState(mySide); }
+  /** `spectator`: nobody's side is "yours"; the log names each trainer. */
+  constructor(mySide: SideId, private spectator = false) { this.state = emptyState(mySide); }
 
   /** Team-preview entries are keyed by species until the battle reveals their in-battle name. */
   private provisional = new Set<MonView>();
@@ -143,7 +144,12 @@ export class BattleModel {
     }
     return m;
   }
-  private name(m: MonView) { return sideOf(m.key) === this.state.mySide ? m.species : `the opposing ${m.species}`; }
+  private name(m: MonView) {
+    if (this.spectator) return `${this.state.sides[sideOf(m.key)].name}'s ${m.species}`;
+    return sideOf(m.key) === this.state.mySide ? m.species : `the opposing ${m.species}`;
+  }
+  /** Whose side of the field, as the log says it. */
+  private whose(side: SideId) { return this.spectator ? `${this.state.sides[side].name}'s` : side === this.state.mySide ? 'your' : "the opponent's"; }
   private cap(s: string) { return s.charAt(0).toUpperCase() + s.slice(1); }
   private log(text: string, kind: LogKind = 'info') { this.state.log.push({ id: ++this.seq, text, kind }); if (this.state.log.length > 400) this.state.log.splice(0, 100); }
 
@@ -183,7 +189,7 @@ export class BattleModel {
         const prev = s.sides[side].mons.find(x => x.key === s.sides[side].active);
         if (prev && prev !== m) { prev.boosts = {}; prev.transformed = null; }
         s.sides[side].active = m.key;
-        this.log(side === s.mySide ? `Go! ${m.species}!` : `${s.sides[side].name} sent out ${m.species}!`, 'switch');
+        this.log(side === s.mySide && !this.spectator ? `Go! ${m.species}!` : `${s.sides[side].name} sent out ${m.species}!`, 'switch');
         fx.push({ kind: 'switch', side, mon: m });
         break;
       }
@@ -256,8 +262,8 @@ export class BattleModel {
       case '-weather': { if (kw.upkeep === undefined) { s.weather = args[0] === 'none' ? null : args[0]; this.log(WEATHER[args[0]] ?? `${args[0]} started.`); } break; }
       case '-fieldstart': { const f = clean(args[0]); if (!s.field.includes(f)) s.field.push(f); this.log(`${f} took effect.`); break; }
       case '-fieldend': { const f = clean(args[0]); s.field = s.field.filter(x => x !== f); this.log(`${f} ended.`); break; }
-      case '-sidestart': { const side = sideOf(args[0]); const c = clean(args[1]); if (!s.sides[side].conditions.includes(c)) s.sides[side].conditions.push(c); this.log(`${c} was set on ${side === s.mySide ? 'your' : "the opponent's"} side.`); break; }
-      case '-sideend': { const side = sideOf(args[0]); const c = clean(args[1]); s.sides[side].conditions = s.sides[side].conditions.filter(x => x !== c); this.log(`${c} ended on ${side === s.mySide ? 'your' : "the opponent's"} side.`); break; }
+      case '-sidestart': { const side = sideOf(args[0]); const c = clean(args[1]); if (!s.sides[side].conditions.includes(c)) s.sides[side].conditions.push(c); this.log(`${c} was set on ${this.whose(side)} side.`); break; }
+      case '-sideend': { const side = sideOf(args[0]); const c = clean(args[1]); s.sides[side].conditions = s.sides[side].conditions.filter(x => x !== c); this.log(`${c} ended on ${this.whose(side)} side.`); break; }
       case '-enditem': { const m = this.mon(args[0]); m.item = null; m.revealed.item = true; this.log(kw.eat !== undefined ? `${this.cap(this.name(m))} ate its ${args[1]}.` : `${this.cap(this.name(m))}'s ${args[1]} ${from === 'Knock Off' || kw.from?.includes('Knock Off') ? 'was knocked off' : 'was used up'}.`); break; }
       case '-item': { const m = this.mon(args[0]); m.item = args[1] ?? m.item; m.revealed.item = true; this.log(`${this.cap(this.name(m))} has ${args[1]}${from ? ` (${from})` : ''}.`); break; }
       case '-ability': { const m = this.mon(args[0]); m.revealed.ability = args[1] ?? m.revealed.ability; this.log(`[${this.cap(this.name(m))}'s ${args[1]}]`); break; }

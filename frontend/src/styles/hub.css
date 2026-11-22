@@ -1,0 +1,66 @@
+/* The main plaza: a bar across the top, the chat bottom-left, battles on the right. The field stays clear. */
+.hub { padding: 0; }
+.hub__bar {
+  position: absolute; z-index: 6; top: 14px; left: 16px; right: 16px; display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px 7px 6px; background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-2); border-radius: var(--r-lg);
+  animation: rise var(--dur-4) var(--ease-out) both;
+}
+.hub__title { display: grid; gap: 2px; min-width: 0; }
+.hub__title .eyebrow { margin: 0; }
+.hub__title strong { font: 700 var(--fs-sm)/1.2 var(--font-display); color: var(--text-1); white-space: nowrap; }
+.hub__title small { font-weight: 500; color: var(--text-3); }
+.hub__spacer { flex: 1; }
+.hub__partner { gap: 8px; }
+.hub__partner .mp-avatar { margin-left: -4px; }
+.hub__bar .iconbtn.is-on { color: var(--accent); }
+
+.hub .chat, .hub .chat-toggle { top: auto; bottom: 16px; left: 16px; }
+.hub .chat { max-height: min(460px, calc(100vh - 110px)); }
+
+.hub__side {
+  position: absolute; z-index: 5; top: 82px; right: 16px; max-height: calc(100% - 98px); width: min(340px, calc(100vw - 32px));
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--s-3); padding: var(--s-4);
+  animation: rise var(--dur-4) var(--ease-out) both;
+}
+.hub__sidehead { display: flex; align-items: center; justify-content: space-between; margin: -4px -6px -4px 0; }
+.hub__sidehead .eyebrow { margin: 0; }
+.hub__subhead { margin: var(--s-5) 0 var(--s-2); }
+.hub__scroll { overflow-y: auto; padding-right: 4px; }
+.hub__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.hub__row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--border-2); border-left: 3px solid var(--partner, var(--border-3));
+  animation: rise var(--dur-3) var(--ease-out) both;
+}
+.hub__vs { display: flex; flex: none; }
+.hub__vs .mp-avatar + .mp-avatar { margin-left: -9px; }
+.hub__rowtext { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.hub__rowtext strong { font: 700 var(--fs-sm)/1.25 var(--font-display); color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hub__rowtext strong i { font-style: normal; font-weight: 500; color: var(--text-3); }
+.hub__rowtext small { font-size: var(--fs-2xs); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hub__empty { margin: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--text-3); }
+.hub__actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.hub__off {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100vw - 32px));
+  display: grid; gap: var(--s-3); justify-items: start; padding: var(--s-5);
+}
+.hub__off .eyebrow, .hub__off p { margin: 0; }
+
+/* Spectators: the watch badge in the room bar, the waiting panel, and the live list in the lobby browser. */
+.roombar__watch { display: inline-flex; align-items: center; gap: 5px; padding: 0 6px; font: 700 var(--fs-2xs)/1 var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); }
+.roombar__watch .icon { color: var(--accent); }
+.watch__panel .eyebrow { margin: 0; }
+.lobbies__live { display: grid; gap: var(--s-2); margin-top: var(--s-4); }
+.lobbies__live .eyebrow { margin: 0; }
+
+@media (max-width: 860px) {
+  .hub__side { top: auto; bottom: 16px; max-height: min(58vh, 520px); }
+  .hub__title small { display: none; }
+}
+@media (max-width: 560px) {
+  .hub__bar { top: 10px; left: 10px; right: 10px; gap: 4px; }
+  .hub__partner { display: none; }
+  .hub .chat, .hub .chat-toggle { bottom: 12px; left: 12px; }
+  .hub__side { left: 10px; right: 10px; bottom: 10px; width: auto; }
+}

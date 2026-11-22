@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { STADIUM } from './dims.js';
 
 /**
  * Air over the field: faint light shafts from the floodlights across the field and slow motes drifting
@@ -34,7 +35,7 @@ export class Atmosphere {
       for (const lamp of lamps.filter(l => l.z < 0)) {
         const dir = new THREE.Vector3().subVectors(lamp, target);
         const len = dir.length();
-        const geo = new THREE.CylinderGeometry(0.6, 4.2, len, 32, 1, true);
+        const geo = new THREE.CylinderGeometry(0.6 * STADIUM, 4.2 * STADIUM, len, 32, 1, true);
         const m = new THREE.Mesh(geo, this.shaftMat);
         m.position.copy(target).addScaledVector(dir, 0.5);
         m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
@@ -44,10 +45,10 @@ export class Atmosphere {
     }
 
     // Motes: a few hundred specks drifting up through the light, animated in the vertex shader.
-    const N = 320;
+    const N = Math.round(320 * STADIUM * 1.4);
     const pos = new Float32Array(N * 3); const seed = new Float32Array(N);
     for (let i = 0; i < N; i++) {
-      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 7.5;
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 7.5 * STADIUM;
       pos.set([Math.cos(a) * r, Math.random() * 5, Math.sin(a) * r], i * 3); seed[i] = Math.random();
     }
     const geo = new THREE.BufferGeometry();

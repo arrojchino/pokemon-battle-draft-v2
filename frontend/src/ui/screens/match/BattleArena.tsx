@@ -60,13 +60,14 @@ function fighterOfReq(p: RequestPokemon, mon?: MonView | null): Fighter {
   return { species, types: set?.types ?? ['Normal'], tera, ability: name(p.ability ?? p.baseAbility), item: p.item ? (set && set.item.toLowerCase().replace(/[^a-z0-9]/g, '') === p.item ? set.item : p.item) : null };
 }
 
-function MonPlate({ mon, side, label, mine, foe }: { mon: MonView | null; side: SideView; label: string; mine: boolean; foe: MonView | null }) {
+/** `known`: this side's sets are ours to see (a player's own side). A spectator knows neither side's. */
+function MonPlate({ mon, side, label, mine, foe, known = mine, foeKnown = !mine }: { mon: MonView | null; side: SideView; label: string; mine: boolean; foe: MonView | null; known?: boolean; foeKnown?: boolean }) {
   const tip = useTip(() => {
-    const f = fighterOfMon(mon, mine); if (!f || !mon) return null;
-    const vs = fighterOfMon(foe, !mine);
-    return <MonCard f={f} hp={mon} pct={!mine} status={mon.status} moves={mine ? mon.set?.moves ?? [] : mon.revealed.moves} vs={vs} foeAttacker={vs} note={mine ? undefined : hiddenNote(mon)} />;
+    const f = fighterOfMon(mon, known); if (!f || !mon) return null;
+    const vs = fighterOfMon(foe, foeKnown);
+    return <MonCard f={f} hp={mon} pct={!known} status={mon.status} moves={known ? mon.set?.moves ?? [] : mon.revealed.moves} vs={vs} foeAttacker={vs} note={known ? undefined : hiddenNote(mon)} />;
   });
-  const { pops, done } = useHpPops(mon, mine);
+  const { pops, done } = useHpPops(mon, known);
   if (!mon) return null;
   const types: TypeName[] = mon.tera ? [mon.tera] : mon.set?.types ?? [];
   const boosts = Object.entries(mon.boosts).filter(([, v]) => v);
@@ -78,7 +79,7 @@ function MonPlate({ mon, side, label, mine, foe }: { mon: MonView | null; side: 
         {mon.status && <span className={`stat-chip stat-chip--${mon.status}`}>{STATUS_LABEL[mon.status] ?? mon.status}</span>}
         {mon.tera && <TypeBadge type={mon.tera} tera size="sm" />}
       </header>
-      <HpBar mon={mon} exact={mine} />
+      <HpBar mon={mon} exact={known} />
       <div className="pops" aria-hidden="true">{pops.map(p => <b key={p.id} className={`pop ${p.heal ? 'pop--heal' : ''}`} onAnimationEnd={() => done(p.id)}>{p.text}</b>)}</div>
       <div className="plate2__row">
         <div className="plate2__types">{!mon.tera && mon.set?.types.map(t => <TypeBadge key={t} type={t} size="sm" />)}</div>
@@ -246,9 +247,11 @@ function useMomentCues(log: LogEntry[]) {
  * The in-app battle. The controller paces simulator events; this component only renders its snapshot
  * and turns clicks into simulator choices.
  */
-export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, finished, onContinue, iWon }: {
+export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, finished, onContinue, iWon, spectating = false }: {
   controller: BattleController; mineLabel: string; theirsLabel: string; onForfeit: () => void;
   finished: boolean; onContinue: () => void; iWon: boolean | null;
+  /** Watching someone else's battle: no choices, no forfeit, both sides seen from outside. */
+  spectating?: boolean;
 }) {
   const snap = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const [logOpen, setLogOpen] = useState(false);
@@ -265,8 +268,8 @@ export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, fin
   return (
     <TipLayer>
     <section className="arena" aria-label="Battle">
-      <MonPlate mon={snap.active[opp]} side={s.sides[opp]} label={theirsLabel} mine={false} foe={snap.active[me]} />
-      <MonPlate mon={snap.active[me]} side={s.sides[me]} label={mineLabel} mine foe={snap.active[opp]} />
+      <MonPlate mon={snap.active[opp]} side={s.sides[opp]} label={theirsLabel} mine={false} foe={snap.active[me]} foeKnown={!spectating} />
+      <MonPlate mon={snap.active[me]} side={s.sides[me]} label={mineLabel} mine known={!spectating} foe={snap.active[opp]} />
       <div className="arena__bar">
         <span className="arena__turn">{s.phase === 'preview' ? 'Team preview' : `Turn ${s.turn || 1}`}</span>
         <Timer deadline={snap.deadline} active={snap.canChoose} />
@@ -275,17 +278,22 @@ export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, fin
         {s.sides[opp].conditions.map(c => <span key={'o' + c} className="arena__chip">{c} (foe)</span>)}
         <span className="arena__spacer" />
         <button className="iconbtn iconbtn--text" onClick={() => setLogOpen(v => !v)} aria-expanded={logOpen}><Icon name="history" />Log</button>
-        {!ended && (confirmForfeit
+        {!ended && !spectating && (confirmForfeit
           ? <button className="btn btn--sm" onClick={() => { onForfeit(); setConfirmForfeit(false); }}>Confirm forfeit</button>
           : <button className="iconbtn iconbtn--text" onClick={() => setConfirmForfeit(true)}><Icon name="leave" />Forfeit</button>)}
       </div>
       <div className="arena__dock panel">
         {ended ? (
           <div className="arena__end">
-            <p className="eyebrow"><span className="jp">{iWon ? '勝利' : '敗北'}</span> Turn {s.turn}</p>
-            <h3 className="dock__title dock__title--big">{iWon === null ? 'Draw' : iWon ? 'You win!' : `${s.winner} wins`}</h3>
+            <p className="eyebrow"><span className="jp">{spectating ? '決着' : iWon ? '勝利' : '敗北'}</span> Turn {s.turn}</p>
+            <h3 className="dock__title dock__title--big">{spectating ? (s.winner ? `${s.winner} wins` : 'Draw') : iWon === null ? 'Draw' : iWon ? 'You win!' : `${s.winner} wins`}</h3>
             {finished && <button className="btn btn--primary btn--xl" onClick={onContinue}><Icon name="arrow" />Continue</button>}
           </div>
+        ) : spectating ? (
+          <p className={`actions__wait ${snap.busy ? `msg ${tone ? `msg--${tone}` : ''}` : ''}`} key={snap.busy ? caption?.id : s.phase} aria-live="polite">
+            {s.phase === 'idle' ? 'Preparing the arena…' : snap.busy ? caption?.text ?? '…'
+              : s.phase === 'preview' ? `${mineLabel} and ${theirsLabel} are choosing their leads…` : `${mineLabel} and ${theirsLabel} are choosing…`}
+          </p>
         ) : !req || s.phase === 'idle' ? (
           <p className="actions__wait">Preparing the arena…</p>
         ) : snap.busy ? (

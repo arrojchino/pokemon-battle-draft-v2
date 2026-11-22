@@ -1,5 +1,5 @@
 import { isCharacterId, type CharacterId } from './characters.js';
-import { normalizeBestOf, type BattleMode, type GameAction, type PublicRoom, type RivalPreview, type Seat, type Visibility } from './room.js';
+import { cleanChat, normalizeBestOf, type BattleMode, type ChatLine, type GameAction, type PublicRoom, type RivalPreview, type Seat, type Visibility } from './room.js';
 
 /**
  * Wire protocol.
@@ -13,10 +13,50 @@ import { normalizeBestOf, type BattleMode, type GameAction, type PublicRoom, typ
  *     Also v4: one caller per coin (`caller`; calling flips it, `flip` is retired) and per-seat room views
  *     (the dealt teams reach only the toss winner; during a game the rival's six arrive as `rival`, species
  *     and types only).
+ * v5: the plaza, a walkable waiting room. Room chat (`chat` action, `room.chat`) and presence relayed
+ *     between the two seats and never stored: `move` (where a partner stands) and `emote`. Clients send
+ *     these only to servers whose `hello.protocol` is at least PLAZA_SINCE.
+ * v6: the main plaza and spectators. `hub` enters or leaves the plaza every connected trainer shares; inside
+ *     it `hubMove`, `hubEmote` and `hubChat` reach everyone else there. `watch` follows a room without a seat
+ *     (its state and the public stream of its battle); `lobbies` also lists live battles. Clients send these
+ *     only to servers whose `hello.protocol` is at least HUB_SINCE.
  * Servers accept every older client message unchanged, and older clients can read newer state.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 6;
 export const LOBBIES_SINCE = 4;
+export const PLAZA_SINCE = 5;
+export const HUB_SINCE = 6;
+
+/** Reactions a partner can play in the plaza (a subset of the stage emotes). */
+export const PLAZA_EMOTES = ['greet', 'excited', 'twirl', 'bow', 'thumbs', 'punch'] as const;
+export type PlazaEmote = (typeof PLAZA_EMOTES)[number];
+export const isPlazaEmote = (v: unknown): v is PlazaEmote => typeof v === 'string' && (PLAZA_EMOTES as readonly string[]).includes(v);
+/** Partners walk the stage platform inside this radius (stage units); the authority pulls anything further back to it. */
+export const PLAZA_R = 9;
+/** A partner's spot in the plaza: floor position and facing (radians; 0 faces the camera side of the field). */
+export type Spot = { x: number; z: number; face: number };
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+/** Keep a spot on the platform, facing wrapped to -pi..pi, rounded to keep messages small. */
+export function cleanSpot(x: number, z: number, face: number): Spot {
+  const r = Math.hypot(x, z);
+  const k = r > PLAZA_R ? PLAZA_R / r : 1;
+  return { x: round3(x * k), z: round3(z * k), face: round3(Math.atan2(Math.sin(face), Math.cos(face))) };
+}
+const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** The main plaza holds at most this many trainers at once. */
+export const MAX_HUB = 20;
+/** Someone in the main plaza: a server-issued id, their name and partner, and where the partner stands. */
+export type HubMember = { id: string; name: string; avatar: CharacterId | null } & Spot;
+/** A line said in the main plaza. The speaker's name travels with it, so it still reads right after they leave. */
+export type HubLine = { id: number; from: string; name: string; text: string };
+/** An in-app battle in a public room, listed for spectators. */
+export type LiveBattle = {
+  code: string; names: [string, string]; avatars: [CharacterId | null, CharacterId | null];
+  bestOf: 3 | 5; wins: [number, number]; turn: number; watchers: number;
+};
+const HUB_ID = /^m\d{1,9}$/;
+export const isHubId = (v: unknown): v is string => typeof v === 'string' && HUB_ID.test(v);
 
 /** A public room waiting for a rival, as listed by the server. `createdAt` is on the server clock (compare with `now`). */
 export type LobbySummary = { code: string; host: string; avatar: CharacterId | null; bestOf: 3 | 5; mode: BattleMode; createdAt: number; players: number };
@@ -30,7 +70,18 @@ export type ClientMessage =
   | { type: 'quick'; name: string; avatar: CharacterId | null; bestOf: 3 | 5; mode: BattleMode }
   | GameAction
   | { type: 'choose'; choice: string }
-  | { type: 'forfeit' };
+  | { type: 'forfeit' }
+  /** v5 presence: relayed to the rival, never stored. */
+  | ({ type: 'move' } & Spot)
+  | { type: 'emote'; emote: PlazaEmote }
+  /** v6 main plaza: enter (or, once in, change name and partner) with `on`; leave with `on: false`. `at` is where to appear. */
+  | { type: 'hub'; on: boolean; name: string; avatar: CharacterId | null; at: Spot | null }
+  | ({ type: 'hubMove' } & Spot)
+  | { type: 'hubEmote'; emote: PlazaEmote }
+  | { type: 'hubChat'; text: string }
+  /** v6 spectators: follow a room without a seat, or stop. */
+  | { type: 'watch'; code: string }
+  | { type: 'unwatch' };
 
 export type ServerMessage =
   | { type: 'hello'; protocol: number }
@@ -39,7 +90,19 @@ export type ServerMessage =
   | { type: 'error'; message: string }
   /** Lines from the simulator stream for this player. `reset` means: discard what you have, this is the full log. */
   | { type: 'battle'; id: number; lines: string[]; reset: boolean; deadline: number | null }
-  | { type: 'lobbies'; lobbies: LobbySummary[]; now: number };
+  | { type: 'lobbies'; lobbies: LobbySummary[]; now: number; live: LiveBattle[] }
+  /** v5 presence from the other seat. */
+  | ({ type: 'move'; seat: Seat } & Spot)
+  | { type: 'emote'; seat: Seat; emote: PlazaEmote }
+  /** v6 main plaza: everyone there and the recent lines (on entering), then each change as it happens. */
+  | { type: 'hub'; you: string; members: HubMember[]; chat: HubLine[] }
+  | { type: 'hubJoin'; member: HubMember }
+  | { type: 'hubLeave'; id: string }
+  | ({ type: 'hubMove'; id: string } & Spot)
+  | { type: 'hubEmote'; id: string; emote: PlazaEmote }
+  | { type: 'hubChat'; line: HubLine }
+  /** v6 spectators: the room this socket now follows (null: none). Its state and battle stream follow. */
+  | { type: 'watching'; code: string | null };
 
 export const MAX_NAME = 24;
 
@@ -82,6 +145,18 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     case 'mode': return m.mode === 'app' || m.mode === 'showdown' ? { type: 'mode', mode: m.mode } : null;
     case 'choose': return typeof m.choice === 'string' && CHOICE.test(m.choice) ? { type: 'choose', choice: m.choice } : null;
     case 'forfeit': return { type: 'forfeit' };
+    case 'chat': { const text = cleanChat(m.text); return text ? { type: 'chat', text } : null; }
+    case 'move': return num(m.x) && num(m.z) && num(m.face) ? { type: 'move', ...cleanSpot(m.x, m.z, m.face) } : null;
+    case 'emote': return isPlazaEmote(m.emote) ? { type: 'emote', emote: m.emote } : null;
+    case 'hub': {
+      const at = isObj(m.at) && num(m.at.x) && num(m.at.z) && num(m.at.face) ? cleanSpot(m.at.x, m.at.z, m.at.face) : null;
+      return { type: 'hub', on: m.on !== false, name: cleanName(m.name, 'Trainer'), avatar: avatarOf(m.avatar), at };
+    }
+    case 'hubMove': return num(m.x) && num(m.z) && num(m.face) ? { type: 'hubMove', ...cleanSpot(m.x, m.z, m.face) } : null;
+    case 'hubEmote': return isPlazaEmote(m.emote) ? { type: 'hubEmote', emote: m.emote } : null;
+    case 'hubChat': { const text = cleanChat(m.text); return text ? { type: 'hubChat', text } : null; }
+    case 'watch': return isRoomCode(m.code) ? { type: 'watch', code: m.code } : null;
+    case 'unwatch': return { type: 'unwatch' };
     default: return null;
   }
 }
@@ -92,7 +167,33 @@ function parseLobby(v: unknown): LobbySummary | null {
   return { code: v.code, host: cleanName(v.host, 'Player 1'), avatar: avatarOf(v.avatar), bestOf: normalizeBestOf(v.bestOf), mode: modeOf(v.mode), createdAt: v.createdAt, players: typeof v.players === 'number' ? v.players : 1 };
 }
 
-const SERVER_TYPES = new Set(['hello', 'joined', 'state', 'error', 'battle', 'lobbies']);
+function parseMember(v: unknown): HubMember | null {
+  if (!isObj(v) || !isHubId(v.id) || !num(v.x) || !num(v.z) || !num(v.face)) return null;
+  return { id: v.id, name: cleanName(v.name, 'Trainer'), avatar: avatarOf(v.avatar), ...cleanSpot(v.x, v.z, v.face) };
+}
+function parseHubLine(v: unknown): HubLine | null {
+  if (!isObj(v) || !num(v.id) || !isHubId(v.from) || typeof v.text !== 'string') return null;
+  const text = cleanChat(v.text);
+  return text ? { id: v.id, from: v.from, name: cleanName(v.name, 'Trainer'), text } : null;
+}
+function parseLive(v: unknown): LiveBattle | null {
+  if (!isObj(v) || !isRoomCode(v.code) || !Array.isArray(v.names) || !Array.isArray(v.avatars) || !Array.isArray(v.wins)) return null;
+  const n = (x: unknown) => (num(x) && x >= 0 ? Math.floor(x) : 0);
+  return {
+    code: v.code, names: [cleanName(v.names[0], 'Player 1'), cleanName(v.names[1], 'Player 2')], avatars: [avatarOf(v.avatars[0]), avatarOf(v.avatars[1])],
+    bestOf: normalizeBestOf(v.bestOf), wins: [n(v.wins[0]), n(v.wins[1])], turn: n(v.turn), watchers: n(v.watchers),
+  };
+}
+const keep = <T,>(xs: unknown, f: (v: unknown) => T | null): T[] => (Array.isArray(xs) ? xs.map(f).filter((x): x is T => x !== null) : []);
+
+const SERVER_TYPES = new Set(['hello', 'joined', 'state', 'error', 'battle', 'lobbies', 'move', 'emote', 'hub', 'hubJoin', 'hubLeave', 'hubMove', 'hubEmote', 'hubChat', 'watching']);
+const isSeat = (v: unknown): v is Seat => v === 0 || v === 1;
+/** Chat lines from the authority: malformed lines are dropped, text is cleaned again. */
+function parseChat(v: unknown): ChatLine[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((l): l is ChatLine => isObj(l) && num(l.id) && isSeat(l.seat) && typeof l.text === 'string')
+    .map(l => ({ id: l.id, seat: l.seat, text: cleanChat(l.text) })).filter(l => l.text);
+}
 /** Light structural check for messages arriving at a client. */
 export function parseServerMessage(raw: unknown): ServerMessage | null {
   let m: unknown = raw;
@@ -101,8 +202,17 @@ export function parseServerMessage(raw: unknown): ServerMessage | null {
   if (m.type === 'hello') return { type: 'hello', protocol: typeof m.protocol === 'number' ? m.protocol : 1 };
   if (m.type === 'lobbies') {
     if (!Array.isArray(m.lobbies) || typeof m.now !== 'number') return null;
-    return { type: 'lobbies', lobbies: m.lobbies.map(parseLobby).filter((l): l is LobbySummary => l !== null), now: m.now };
+    return { type: 'lobbies', lobbies: m.lobbies.map(parseLobby).filter((l): l is LobbySummary => l !== null), now: m.now, live: keep(m.live, parseLive) };
   }
+  if (m.type === 'hub') return isHubId(m.you) ? { type: 'hub', you: m.you, members: keep(m.members, parseMember), chat: keep(m.chat, parseHubLine) } : null;
+  if (m.type === 'hubJoin') { const member = parseMember(m.member); return member ? { type: 'hubJoin', member } : null; }
+  if (m.type === 'hubLeave') return isHubId(m.id) ? { type: 'hubLeave', id: m.id } : null;
+  if (m.type === 'hubMove') return isHubId(m.id) && num(m.x) && num(m.z) && num(m.face) ? { type: 'hubMove', id: m.id, ...cleanSpot(m.x, m.z, m.face) } : null;
+  if (m.type === 'hubEmote') return isHubId(m.id) && isPlazaEmote(m.emote) ? { type: 'hubEmote', id: m.id, emote: m.emote } : null;
+  if (m.type === 'hubChat') { const line = parseHubLine(m.line); return line ? { type: 'hubChat', line } : null; }
+  if (m.type === 'watching') return { type: 'watching', code: isRoomCode(m.code) ? m.code : null };
+  if (m.type === 'move') return isSeat(m.seat) && num(m.x) && num(m.z) && num(m.face) ? { type: 'move', seat: m.seat, ...cleanSpot(m.x, m.z, m.face) } : null;
+  if (m.type === 'emote') return isSeat(m.seat) && isPlazaEmote(m.emote) ? { type: 'emote', seat: m.seat, emote: m.emote } : null;
   if (m.type === 'state' && !isObj(m.room)) return null;
   if (m.type === 'joined' && (typeof m.code !== 'string' || typeof m.token !== 'string' || (m.seat !== 0 && m.seat !== 1))) return null;
   if (m.type === 'error') return { type: 'error', message: String(m.message ?? 'Unknown error').slice(0, 200) };
@@ -118,6 +228,8 @@ export function parseServerMessage(raw: unknown): ServerMessage | null {
     room.battle = room.battle ?? null;
     room.visibility = room.visibility === 'public' ? 'public' : 'private';
     room.caller = room.caller === 0 || room.caller === 1 ? room.caller : null;
+    room.chat = parseChat(room.chat);
+    room.watchers = num(room.watchers) && room.watchers > 0 ? Math.floor(room.watchers) : 0;
     room.rival = Array.isArray(room.rival) ? (room.rival as unknown[]).filter((p): p is RivalPreview => isObj(p) && typeof p.name === 'string' && Array.isArray(p.types)) : null;
     room.players = room.players.map(p => (p ? { name: cleanName(p.name, 'Player'), avatar: avatarOf(p.avatar), connected: p.connected !== false } : null)) as PublicRoom['players'];
     return { type: 'state', room };

@@ -1,10 +1,16 @@
-import { LOBBIES_SINCE, type BattleMode, type CharacterId, type GameAction, type LobbySummary, type PublicRoom, type Seat, type Visibility } from '@shared';
+import { HUB_SINCE, LOBBIES_SINCE, type BattleMode, type CharacterId, type GameAction, type LiveBattle, type LobbySummary, type PlazaEmote, type PublicRoom, type Seat, type ServerMessage, type Spot, type Visibility } from '@shared';
 
 export type TransportKind = 'backend' | 'peer';
 export type BattleListener = (id: number, lines: string[], reset: boolean, deadline: number | null) => void;
 export type LinkStatus = 'connecting' | 'online' | 'offline';
-/** Open public lobbies plus the server clock they were read at (`createdAt` is on that clock). */
-export type LobbyList = { lobbies: LobbySummary[]; now: number };
+/** Open public lobbies plus the server clock they were read at (`createdAt` is on that clock), and live battles. */
+export type LobbyList = { lobbies: LobbySummary[]; now: number; live: LiveBattle[] };
+/** What the server says about the main plaza (protocol v6): who is there, then each change. */
+export type HubEvent = Extract<ServerMessage, { type: 'hub' | 'hubJoin' | 'hubLeave' | 'hubMove' | 'hubEmote' | 'hubChat' }>;
+export type HubListener = (m: HubEvent) => void;
+/** Plaza presence from the rival's seat (protocol v5). */
+export type PresenceMessage = Extract<ServerMessage, { type: 'move' | 'emote' }>;
+export type PresenceListener = (m: PresenceMessage) => void;
 
 export type SessionSnapshot = {
   kind: TransportKind;
@@ -13,6 +19,8 @@ export type SessionSnapshot = {
   seat: Seat | null;
   /** Protocol announced by the dedicated server's `hello`; null before it arrives and in peer mode. */
   serverProtocol: number | null;
+  /** The room followed as a spectator (its state is `room`, with `seat` null), or null. */
+  watching: string | null;
   /** Last error from the authority or the link. Cleared by `clearError`. */
   error: string;
   /** Monotonic counter so UI effects can react to each new error, even repeated ones. */
@@ -21,6 +29,8 @@ export type SessionSnapshot = {
 
 /** Public lobbies (listing, quick join, public rooms) need a dedicated server that speaks protocol v4+. */
 export const hasLobbies = (s: SessionSnapshot) => s.kind === 'backend' && (s.serverProtocol ?? 0) >= LOBBIES_SINCE;
+/** The main plaza and spectating need a dedicated server that speaks protocol v6+. */
+export const hasHub = (s: SessionSnapshot) => s.kind === 'backend' && (s.serverProtocol ?? 0) >= HUB_SINCE;
 
 /** One interface for both transports so the UI never branches on networking details. */
 export interface Transport {
@@ -40,6 +50,20 @@ export interface Transport {
   forfeit(): void;
   /** This player's simulator stream. Listeners added late get the full log replayed. */
   onBattle(listener: BattleListener): () => void;
+  /** Plaza presence: where this player's partner stands, and its emotes. Relayed to the rival; never stored or queued. */
+  move(x: number, z: number, face: number): void;
+  emote(emote: PlazaEmote): void;
+  onPresence(listener: PresenceListener): () => void;
+  /** The main plaza (needs `hasHub`): walk in at `at` with a name and partner (again to change them), or leave.
+   *  The transport walks back in by itself after a reconnect. */
+  hub(on: boolean, name?: string, avatar?: CharacterId | null, at?: Spot | null): void;
+  hubMove(x: number, z: number, face: number): void;
+  hubEmote(emote: PlazaEmote): void;
+  hubChat(text: string): void;
+  onHub(listener: HubListener): () => void;
+  /** Follow a room without a seat (needs `hasHub`): its state arrives as `room`, its battle through `onBattle`. */
+  watch(code: string): void;
+  unwatch(): void;
   leave(): void;
   clearError(): void;
   dispose(): void;

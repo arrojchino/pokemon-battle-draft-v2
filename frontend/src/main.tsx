@@ -6,6 +6,7 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/screens.css';
 import './styles/lobby.css';
+import './styles/hub.css';
 import './styles/match.css';
 import './styles/battle.css';
 import './styles/battle-fx.css';

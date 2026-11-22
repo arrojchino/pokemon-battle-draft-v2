@@ -1,5 +1,5 @@
-import { parseServerMessage, type BattleMode, type CharacterId, type ClientMessage, type GameAction, type Visibility } from '@shared';
-import { SnapshotStore, sessionStore, type BattleListener, type LobbyList, type Transport } from './types.js';
+import { HUB_SINCE, PLAZA_SINCE, cleanSpot, parseServerMessage, type BattleMode, type CharacterId, type ClientMessage, type GameAction, type PlazaEmote, type Spot, type Visibility } from '@shared';
+import { SnapshotStore, sessionStore, type BattleListener, type HubListener, type LobbyList, type PresenceListener, type Transport } from './types.js';
 
 /** A lobby listing that takes longer than this is reported as failed. */
 const LIST_TIMEOUT_MS = 6000;
@@ -13,9 +13,15 @@ export class WsTransport implements Transport {
   readonly kind = 'backend' as const;
   readonly supportsBattles = true;
   private battleListeners = new Set<BattleListener>();
+  private presence = new Set<PresenceListener>();
+  private hubListeners = new Set<HubListener>();
+  /** In the main plaza as this (re-sent after a reconnect), or not. */
+  private hubAs: { name: string; avatar: CharacterId | null; at: Spot | null } | null = null;
+  /** The room followed as a spectator (re-sent after a reconnect). */
+  private watchCode: string | null = null;
   /** Everything received for the current battle, so a screen mounted later can rebuild it. */
   private battleLog: { id: number; lines: string[]; deadline: number | null } | null = null;
-  private store = new SnapshotStore({ kind: 'backend', link: 'connecting', room: null, seat: null, serverProtocol: null, error: '', errorId: 0 });
+  private store = new SnapshotStore({ kind: 'backend', link: 'connecting', room: null, seat: null, serverProtocol: null, watching: null, error: '', errorId: 0 });
   private ws: WebSocket | null = null;
   private queue: ClientMessage[] = [];
   private retry = 0;
@@ -48,16 +54,29 @@ export class WsTransport implements Transport {
     ws.onmessage = e => {
       const msg = parseServerMessage(String(e.data));
       if (!msg) return;
-      if (msg.type === 'hello') this.store.set({ serverProtocol: msg.protocol });
+      if (msg.type === 'hello') {
+        this.store.set({ serverProtocol: msg.protocol });
+        // Back after a drop: follow the same room again, or walk back into the plaza.
+        if (msg.protocol >= HUB_SINCE && this.watchCode) this.raw({ type: 'watch', code: this.watchCode });
+        else if (msg.protocol >= HUB_SINCE && this.hubAs) this.raw({ type: 'hub', on: true, ...this.hubAs });
+      }
       else if (msg.type === 'state') this.store.set({ room: msg.room });
       else if (msg.type === 'joined') { this.resuming = false; sessionStore.save({ kind: 'backend', code: msg.code, token: msg.token }); this.store.set({ seat: msg.seat }); }
-      else if (msg.type === 'lobbies') { const w = this.lobbyWaiters; this.lobbyWaiters = []; w.forEach(x => x.resolve({ lobbies: msg.lobbies, now: msg.now })); }
+      else if (msg.type === 'move' || msg.type === 'emote') this.presence.forEach(l => l(msg));
+      else if (msg.type === 'hub' || msg.type === 'hubJoin' || msg.type === 'hubLeave' || msg.type === 'hubMove' || msg.type === 'hubEmote' || msg.type === 'hubChat') this.hubListeners.forEach(l => l(msg));
+      else if (msg.type === 'watching') {
+        if (msg.code !== this.store.get().watching) this.battleLog = null;
+        this.watchCode = msg.code;
+        this.store.set(msg.code ? { watching: msg.code } : { watching: null, room: this.store.get().seat === null ? null : this.store.get().room });
+      }
+      else if (msg.type === 'lobbies') { const w = this.lobbyWaiters; this.lobbyWaiters = []; w.forEach(x => x.resolve({ lobbies: msg.lobbies, now: msg.now, live: msg.live })); }
       else if (msg.type === 'battle') {
         if (msg.reset || this.battleLog?.id !== msg.id) this.battleLog = { id: msg.id, lines: [], deadline: null };
         this.battleLog.lines.push(...msg.lines); this.battleLog.deadline = msg.deadline;
         this.battleListeners.forEach(l => l(msg.id, msg.lines, msg.reset, msg.deadline));
       }
       else if (msg.type === 'error') {
+        if (msg.message === 'That room is gone') { this.watchCode = null; this.battleLog = null; if (this.store.get().watching) this.store.set({ watching: null, room: null }); }
         if (msg.message === 'Invalid session' || msg.message === 'Unknown room') {
           sessionStore.clear();
           const resumed = this.resuming; this.resuming = false;
@@ -104,6 +123,36 @@ export class WsTransport implements Transport {
     this.raw(action);
   }
   choose(choice: string) { this.raw({ type: 'choose', choice }); }
+  /** Presence is fire-and-forget: a spot from before a reconnect is stale, so it is never queued. */
+  private live(m: ClientMessage) { if (this.ws?.readyState === WebSocket.OPEN && (this.store.get().serverProtocol ?? 0) >= PLAZA_SINCE) this.ws.send(JSON.stringify(m)); }
+  move(x: number, z: number, face: number) { this.live({ type: 'move', ...cleanSpot(x, z, face) }); }
+  emote(emote: PlazaEmote) { this.live({ type: 'emote', emote }); }
+  onPresence(l: PresenceListener) { this.presence.add(l); return () => { this.presence.delete(l); }; }
+  /** The plaza and spectating are fire-and-forget too: after a reconnect `hello` sends the current wish again. */
+  private v6(m: ClientMessage) { if (this.ws?.readyState === WebSocket.OPEN && (this.store.get().serverProtocol ?? 0) >= HUB_SINCE) this.ws.send(JSON.stringify(m)); }
+  hub(on: boolean, name = '', avatar: CharacterId | null = null, at: Spot | null = null) {
+    if (!on && !this.hubAs) return;
+    this.hubAs = on ? { name, avatar, at } : null;
+    this.v6(on ? { type: 'hub', on: true, name, avatar, at } : { type: 'hub', on: false, name: '', avatar: null, at: null });
+  }
+  hubMove(x: number, z: number, face: number) {
+    const s = cleanSpot(x, z, face);
+    // Walking back in after a drop starts from here, not from the first spawn.
+    if (this.hubAs) this.hubAs.at = s;
+    if (this.hubAs) this.v6({ type: 'hubMove', ...s });
+  }
+  hubEmote(emote: PlazaEmote) { if (this.hubAs) this.v6({ type: 'hubEmote', emote }); }
+  hubChat(text: string) {
+    if (this.ws?.readyState !== WebSocket.OPEN) { this.store.fail('Connection lost, reconnecting…'); return; }
+    this.v6({ type: 'hubChat', text });
+  }
+  onHub(l: HubListener) { this.hubListeners.add(l); return () => { this.hubListeners.delete(l); }; }
+  watch(code: string) { this.watchCode = code.trim().toUpperCase(); this.v6({ type: 'watch', code: this.watchCode }); }
+  unwatch() {
+    this.watchCode = null; this.battleLog = null;
+    this.v6({ type: 'unwatch' });
+    if (this.store.get().watching) this.store.set({ watching: null, room: null });
+  }
   forfeit() { this.raw({ type: 'forfeit' }); }
   onBattle(listener: BattleListener) {
     this.battleListeners.add(listener);
@@ -111,9 +160,9 @@ export class WsTransport implements Transport {
     return () => { this.battleListeners.delete(listener); };
   }
   leave() {
-    this.battleLog = null;
+    this.battleLog = null; this.watchCode = null; this.hubAs = null;
     sessionStore.clear();
-    this.store.set({ room: null, seat: null });
+    this.store.set({ room: null, seat: null, watching: null });
     // A fresh socket drops the seat binding server-side without affecting the opponent's room.
     this.ws?.close(); this.ws = null; window.clearTimeout(this.retryTimer); this.retry = 0; this.rejectLobbies('Connection reset'); this.open();
   }

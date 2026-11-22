@@ -1,17 +1,21 @@
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
+import { FIELD, PLATFORM_R } from './dims.js';
 
 export const MAX_SLOTS = 4;
 
 /** Field axis: from your Pokémon's spot to the opponent's (see BattleCamera ARENA), so the lines frame the battle. */
-const MID = new THREE.Vector2(0.075, -0.1);
+const MID = new THREE.Vector2(0.075, -0.1).multiplyScalar(FIELD);
+/** GLSL literals: field scale and platform radius. */
+const SF = FIELD.toFixed(4), R = PLATFORM_R.toFixed(4);
 const AXIS = new THREE.Vector2(2.15, -2.5).normalize();
 
 /**
  * The stadium platform and its battle field: mown turf inside classic white field lines (boundary, centre
  * line, centre circle with a Poké Ball core, trainer boxes), a polished rim around it with an accent
  * light strip, optional planar reflection, a pulse wave for big moments and a soft glow under each
- * Pokémon standing on it.
+ * Pokémon standing on it. Around the field the platform is the plaza: faint paving rings and spokes with a
+ * dashed accent walkway.
  */
 export class StageFloor {
   readonly group = new THREE.Group();
@@ -33,7 +37,7 @@ export class StageFloor {
   private pulseT = 10;
 
   constructor(reflections: boolean, reflectionSize: number) {
-    const radius = 6;
+    const radius = PLATFORM_R;
     const geo = new THREE.CircleGeometry(radius, 128);
     const shader = {
       name: 'StageFloorShader',
@@ -60,15 +64,20 @@ export class StageFloor {
           vec2 p = vWorld.xz; float r = length(p);
           // Field space: x along the battle axis, y across it.
           vec2 d = p - uMid; vec2 q = vec2(dot(d, uAxis), dot(d, vec2(-uAxis.y, uAxis.x)));
-          vec2 hb = vec2(2.9, 2.0);
+          vec2 hb = vec2(2.9, 2.0) * ${SF};
           float inField = 1.0 - smoothstep(-0.02, 0.02, sdBox(q, hb));
           // Mown turf: alternating bands across the field, fine grain, darker toward the edges.
-          float band = step(0.5, fract(q.x * 0.6 + 0.25));
+          float band = step(0.5, fract(q.x * 0.6 / ${SF} + 0.25));
           float grain = vn(p * 38.0) * 0.6 + vn(p * 9.0) * 0.4;
           vec3 turf = mix(vec3(0.018, 0.050, 0.060), vec3(0.024, 0.064, 0.074), band) * (0.82 + 0.3 * grain);
           turf *= 1.0 - 0.25 * smoothstep(1.2, 3.2, length(q / hb * vec2(2.4, 1.6)));
           // Polished rim outside the field: near-black with soft concentric sheen.
           vec3 rim = vec3(0.016, 0.019, 0.030) * (0.9 + 0.2 * sin(r * 40.0) * 0.5);
+          // The plaza around the field: paving rings and spokes, fading out toward the platform edge.
+          float sec = 6.2831853 / 28.0;
+          float da = (fract(atan(p.y, p.x) / sec + 0.5) - 0.5) * sec;
+          float paving = max(line(fract(r / 1.35 + 0.5) - 0.5, 0.008), line(r * da, 0.01) * step(${SF} * 3.8, r));
+          rim += vec3(0.032, 0.038, 0.058) * paving * smoothstep(${R} - 0.5, ${R} - 1.4, r);
           vec3 col = mix(rim, turf, inField);
           #ifdef USE_REFLECTION
             vec2 ruv = vUvRefl.xy / vUvRefl.w;
@@ -80,20 +89,22 @@ export class StageFloor {
           float cr = length(q);
           float lines = line(sdBox(q, hb), lw);
           // The centre line is the Poké Ball's band: it stops at the button ring in the middle.
-          lines = max(lines, line(q.x, lw) * step(abs(q.y), hb.y) * step(0.24, cr));
-          lines = max(lines, line(cr - 0.9, lw));
-          lines = max(lines, line(cr - 0.24, lw * 0.9));
-          lines = max(lines, line(sdBox(q - vec2(2.35, 0.0), vec2(0.55, 0.8)), lw * 0.8));
-          lines = max(lines, line(sdBox(q + vec2(2.35, 0.0), vec2(0.55, 0.8)), lw * 0.8));
+          lines = max(lines, line(q.x, lw) * step(abs(q.y), hb.y) * step(0.24 * ${SF}, cr));
+          lines = max(lines, line(cr - 0.9 * ${SF}, lw));
+          lines = max(lines, line(cr - 0.24 * ${SF}, lw * 0.9));
+          lines = max(lines, line(sdBox(q - vec2(2.35, 0.0) * ${SF}, vec2(0.55, 0.8) * ${SF}), lw * 0.8));
+          lines = max(lines, line(sdBox(q + vec2(2.35, 0.0) * ${SF}, vec2(0.55, 0.8) * ${SF}), lw * 0.8));
           // The button itself, filled in softly.
-          float core = (1.0 - smoothstep(0.14, 0.155, cr)) * 0.3;
+          float core = (1.0 - smoothstep(0.14 * ${SF}, 0.155 * ${SF}, cr)) * 0.3;
           float wear = 0.85 + 0.15 * vn(p * 22.0);
           col = mix(col, vec3(0.86, 0.9, 0.97), clamp(lines * 0.78 * wear + core, 0.0, 1.0));
           // Accent light strip near the platform edge.
-          vec3 glow = uAccent * ring(r, 5.55, 0.025) * 0.75;
-          glow += vec3(0.75, 0.82, 1.0) * ring(r, 5.85, 0.012) * 0.25;
+          vec3 glow = uAccent * ring(r, ${R} - 0.45, 0.025) * 0.75;
+          glow += vec3(0.75, 0.82, 1.0) * ring(r, ${R} - 0.15, 0.012) * 0.25;
+          // A dashed walkway ring of accent light out in the plaza.
+          glow += uAccent * ring(r, ${R} - 2.1, 0.03) * step(0.45, fract(atan(p.y, p.x) * 9.549)) * 0.32;
           // Pulse wave from the centre on events (coin landing, confirm, big hits).
-          glow += uPulseColor * ring(r, uPulse * 7.0, 0.35) * (1.0 - uPulse) * 2.2;
+          glow += uPulseColor * ring(r, uPulse * (${R} + 1.0), 0.35) * (1.0 - uPulse) * 2.2;
           // Soft glow and ring under each Pokémon on the platform (xy = position, z = radius, w = intensity).
           for (int i = 0; i < ${MAX_SLOTS}; i++) {
             vec4 s = uSlots[i];
@@ -101,7 +112,7 @@ export class StageFloor {
             glow += uAccent * (ring(dd, s.z, 0.03) * 1.1 + smoothstep(s.z, 0.0, dd) * 0.1) * s.w;
           }
           col += glow;
-          col *= smoothstep(6.0, 5.9, r) * 0.9 + 0.1;
+          col *= smoothstep(${R}, ${R} - 0.1, r) * 0.9 + 0.1;
           gl_FragColor = vec4(col * color, 1.0);
         }`,
     };

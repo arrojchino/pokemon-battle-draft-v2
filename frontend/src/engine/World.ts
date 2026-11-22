@@ -4,11 +4,12 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import type { CharacterId, CoinSide } from '@shared';
+import type { CharacterId, CoinSide, PlazaEmote, Spot } from '@shared';
 import { DEFAULT_CHARACTER, characterById, type Emote } from '../characters/roster.js';
 import { CameraDirector, type Shot } from './CameraDirector.js';
-import { MonRig } from './character/MonRig.js';
+import { FLOOR_Y, MonRig } from './character/MonRig.js';
 import { MON_RIM, hasModel, loadMonModel } from './character/monModel.js';
+import { monSize } from './character/size.js';
 import { Emitter, type WorldEvents } from './events.js';
 import { AdaptiveQuality, EFFECTS, TIERS, initialTier, stepTier, type EffectsLevel, type QualityPref, type QualityTier, type RenderScale } from './quality.js';
 import { GradeShader } from './post/GradeShader.js';
@@ -17,13 +18,16 @@ import { StageFloor, MAX_SLOTS } from './world/Floor.js';
 import { Stadium } from './world/Stadium.js';
 import { Atmosphere } from './world/Atmosphere.js';
 import { Coin } from './world/Coin.js';
+import { Plaza, PLAZA_SPAWN, REACH, RIVAL, isMoveKey, type Walker } from './world/Plaza.js';
+import { FIELD, WALL_R } from './world/dims.js';
 import { BattleStage } from './battle/BattleStage.js';
 
 const FOG_COLOR = new THREE.Color('#060a18');
 const FOG_DENSITY = 0.0105;
 const BLOOM_STRENGTH = 0.55;
+/** The floodlight key: high in front of the field (in the plazas it follows this player's partner). */
+const KEY_POS = new THREE.Vector3(2.4, 7.5, 5.5);
 /** Partner Pokémon height on the platform (every model is normalised to it). */
-const PARTNER_HEIGHT = 1.1;
 
 export type DuoShot = 'room' | 'match' | 'draft' | 'battle';
 export type Layout =
@@ -32,7 +36,18 @@ export type Layout =
   | { mode: 'duo'; mine: CharacterId | null; theirs: CharacterId | null; shot: DuoShot; coin: boolean }
   | { mode: 'victory'; winner: CharacterId; loser: CharacterId | null }
   /** In-app battle: the partners leave the field to the battling Pokémon. */
-  | { mode: 'arena'; mine: CharacterId; theirs: CharacterId };
+  | { mode: 'arena'; mine: CharacterId; theirs: CharacterId }
+  /** The plaza: the waiting room as a place. This player walks their partner around; the rival's follows the network. */
+  | { mode: 'plaza'; mine: CharacterId; theirs: CharacterId | null; seat: 0 | 1 }
+  /** The main plaza: everyone in it walks their partner. This player's follows the keys from `spawn`; the others the network. */
+  | { mode: 'hub'; mine: CharacterId; spawn: Spot; others: HubPeer[] };
+/** Someone else in the main plaza: their member id, their partner, and where it stood when they came in. */
+export type HubPeer = { id: string; partner: CharacterId; at: Spot };
+type WalkLayout = Extract<Layout, { mode: 'plaza' | 'hub' }>;
+const walking = (l: Layout | null | undefined): l is WalkLayout => l?.mode === 'plaza' || l?.mode === 'hub';
+type Pair = { mine: CharacterId | null; theirs: CharacterId | null };
+/** A screen point for overlays (CSS pixels, viewport); `on` is false when the partner is off screen. */
+export type Anchor = { x: number; y: number; on: boolean; d?: number };
 
 type Slot = { key: string; x: number; z: number; facing: number; focus: boolean };
 
@@ -91,6 +106,18 @@ export class World {
   private gaze = new THREE.Vector3();
   private gazeValid = false;
   private gazePlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -1.9);
+  /** The walkable waiting room (layout 'plaza'). */
+  private plaza = new Plaza();
+  private plazaSeat: 0 | 1 = 0;
+  private floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -FLOOR_Y);
+  private floorHit = new THREE.Vector3();
+  private anchorV = new THREE.Vector3();
+  /** A press on the stage is held: the plaza partner follows the pointer. */
+  private steering = false;
+  /** Someone else's partner fades while it blocks the view of this player's (by rig key). */
+  private fades = new Map<string, number>();
+  /** Main plaza: the rig each member's partner uses (member id to rig key). */
+  private hubRigs = new Map<string, string>();
   private pendingLayout: Layout | null = null;
   private fade = 0;
   private fadeDir: -1 | 0 | 1 = 0;
@@ -152,13 +179,15 @@ export class World {
     this.hemi = new THREE.HemisphereLight('#a9bcff', '#0b0e1a', 0.75);
     this.scene.add(this.hemi);
     this.key = new THREE.DirectionalLight('#f1f5ff', 2.4);
-    this.key.position.set(2.4, 7.5, 5.5); this.key.target.position.set(0, 1, 0);
-    this.key.shadow.camera.left = -3.2; this.key.shadow.camera.right = 3.2; this.key.shadow.camera.top = 3.2; this.key.shadow.camera.bottom = -1.5;
+    this.key.position.copy(KEY_POS); this.key.target.position.set(0, 1, 0);
+    const sc = this.key.shadow.camera;
+    sc.left = -3.2 * FIELD; sc.right = 3.2 * FIELD; sc.top = 3.2 * FIELD; sc.bottom = -1.5 * FIELD;
     this.key.shadow.camera.near = 2; this.key.shadow.camera.far = 16; this.key.shadow.bias = -0.0004; this.key.shadow.normalBias = 0.025;
     this.scene.add(this.key, this.key.target);
     this.rimA = new THREE.DirectionalLight('#3ee6ff', 1.8); this.rimA.position.set(-4, 3, -4);
     this.rimB = new THREE.DirectionalLight('#6f8cff', 1.4); this.rimB.position.set(4, 2.5, -3.5);
     this.scene.add(this.rimA, this.rimB);
+    this.scene.add(this.plaza.marker);
 
     this.buildTierDependent();
     this.buildEnvironmentMap();
@@ -168,6 +197,12 @@ export class World {
     this.resize();
     this.listen(window, 'pointermove', e => this.onPointer(e as PointerEvent));
     this.listen(canvas, 'click', () => this.onClick());
+    this.listen(canvas, 'pointerdown', e => this.onDown(e as PointerEvent));
+    this.listen(window, 'pointerup', () => { this.steering = false; });
+    this.listen(window, 'pointercancel', () => { this.steering = false; });
+    this.listen(window, 'keydown', e => this.onKey(e as KeyboardEvent, true));
+    this.listen(window, 'keyup', e => this.onKey(e as KeyboardEvent, false));
+    this.listen(window, 'blur', () => { this.plaza.keys.clear(); this.plaza.running = false; this.steering = false; });
     this.listen(document, 'visibilitychange', () => (document.hidden ? this.stop() : this.start()));
     this.listen(canvas, 'webglcontextlost', e => { e.preventDefault(); this.stop(); this.events.emit('contextLost'); });
     this.listen(canvas, 'webglcontextrestored', () => { this.start(); this.events.emit('contextRestored'); });
@@ -313,7 +348,7 @@ export class World {
     const c = characterById(id);
     if (!c) return Promise.resolve(null);
     // The 3D model when the Pokémon 3D API has one; otherwise (or offline) the official artwork card.
-    const model = hasModel(c.dex) ? loadMonModel(c.dex, PARTNER_HEIGHT, (l, t) => this.reportProgress(key, l, t, c.name)).catch(() => null) : Promise.resolve(null);
+    const model = hasModel(c.dex) ? loadMonModel(c.dex, monSize(c.dex), (l, t) => this.reportProgress(key, l, t, c.name)).catch(() => null) : Promise.resolve(null);
     // Compile the model's shaders before it is shown, so its first frame on stage does not hitch.
     const compiled = model.then(m => (m ? this.renderer.compileAsync(m.root, this.camera, this.scene).then(() => m, () => m) : m));
     p = compiled.then(m => {
@@ -323,7 +358,8 @@ export class World {
       rig.setVisible(false, true); rig.root.visible = false;
       this.scene.add(rig.root);
       // Invisible capsule-ish hitbox for hover/click picking (cheaper and steadier than skinned meshes).
-      const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, rig.height * 0.95, 8), new THREE.MeshBasicMaterial({ visible: false }));
+      const hr = 0.45 * Math.max(0.5, rig.height / 1.1);
+      const hit = new THREE.Mesh(new THREE.CylinderGeometry(hr, hr, rig.height * 0.95, 8), new THREE.MeshBasicMaterial({ visible: false }));
       hit.position.y = rig.height * 0.48; hit.userData.key = key;
       rig.root.add(hit); this.hitboxes.set(key, hit);
       this.rigs.set(key, rig);
@@ -345,7 +381,7 @@ export class World {
     for (const dex of dexes) {
       if (this.prepared.has(dex) || !hasModel(dex)) continue;
       this.prepared.add(dex);
-      void loadMonModel(dex, 1.2).then(m => this.renderer.compileAsync(m.root, this.camera, this.scene).finally(() => { for (const mat of m.materials) mat.dispose(); })).catch(() => this.prepared.delete(dex));
+      void loadMonModel(dex, monSize(dex)).then(m => this.renderer.compileAsync(m.root, this.camera, this.scene).finally(() => { for (const mat of m.materials) mat.dispose(); })).catch(() => this.prepared.delete(dex));
     }
   }
 
@@ -377,21 +413,61 @@ export class World {
     this.grade.uniforms.uFade.value = this.fade * this.fade * (3 - 2 * this.fade);
   }
 
+  /**
+   * Framing for a partner: shots were composed around a 1.1-unit partner. Partners now stand at their
+   * relative size, so the lens moves with them, partway: a small one is still shown smaller than a big one.
+   */
+  private framing(key: string | null | undefined) {
+    if (!key) return 1;
+    const id = key.split('#')[0] as CharacterId;
+    const h = this.rigs.get(key)?.height ?? monSize(characterById(id)?.dex ?? 0);
+    return THREE.MathUtils.clamp(Math.sqrt(h / 1.1), 0.55, 1.15);
+  }
+  /** A shot around point (x, z): camera and target offsets scaled by f. */
+  private around(x: number, z: number, pos: [number, number, number], target: [number, number, number], f: number, fov: number, time: number): Shot {
+    return { pos: [x + pos[0] * f, pos[1] * f, z + pos[2] * f], target: [x + target[0] * f, target[1] * f, z + target[2] * f], fov, time };
+  }
+
   private shotFor(l: Layout): Shot {
     switch (l.mode) {
-      case 'title': return { pos: [-0.45, 1.3, 4.4], target: [0.6, 0.78, 0], fov: 30, time: 1.4 };
+      case 'title': return this.around(0.95, 0.15, [-1.4, 1.3, 4.25], [-0.35, 0.78, -0.15], this.framing(l.featured), 30, 1.4);
       case 'select': {
         if (!l.focus) return { pos: [0, 1.1, 5.0], target: [0, 0.8, 0], fov: 31, time: 1.2 };
         const s = this.selectSlots(l.focus).find(x => x.focus)!;
-        return { pos: [s.x - 0.8, 1.4, s.z + 4.3], target: [s.x - 0.6, 0.95, s.z], fov: 31, time: 1.0 };
+        // An upright phone has the panel over the lower half: pull back and aim low so the partner stands above it.
+        if (this.camera.aspect < 0.85) return this.around(s.x, s.z, [-0.6, 1.9, 6.4], [-0.45, 0.05, 0], this.framing(l.focus), 31, 1.0);
+        return this.around(s.x, s.z, [-0.8, 1.4, 4.3], [-0.6, 0.95, 0], this.framing(l.focus), 31, 1.0);
       }
-      case 'duo':
-        if (l.shot === 'draft') return { pos: [0, 1.95, 6.6], target: [0, 1.45, 0], fov: 33, time: 1.3 };
-        if (l.shot === 'battle') return { pos: [0, 1.5, 5.3], target: [0, 1.25, 0], fov: 33, time: 1.3 };
-        return { pos: [0, 1.25, 4.7], target: [0, 1.05, 0], fov: 34, time: 1.3 };
-      case 'victory': return { pos: [0.25, 1.0, 2.75], target: [0, 1.25, 0.25], fov: 33, time: 1.6 };
+      case 'duo': {
+        // Both partners stay in frame: the taller one sets the framing.
+        const f = Math.max(0.78, this.framing(l.mine), this.framing(l.theirs));
+        if (l.shot === 'draft') return this.around(0, 0, [0, 1.95, 6.6], [0, 1.45, 0], f, 33, 1.3);
+        if (l.shot === 'battle') return this.around(0, 0, [0, 1.5, 5.3], [0, 1.25, 0], f, 33, 1.3);
+        return this.around(0, 0, [0, 1.25, 4.7], [0, 1.05, 0], f, 34, 1.3);
+      }
+      case 'victory': return this.around(0, 0.35, [0.25, 1.0, 2.4], [0, 1.25, -0.1], this.framing(l.winner), 33, 1.6);
       case 'arena': return this.battle.cam.neutral();
+      case 'plaza': case 'hub': return this.plazaShot();
     }
+  }
+
+  private theirsKey(l: Pair) { return l.theirs ? (l.theirs === l.mine ? `${l.theirs}#2` : l.theirs) : null; }
+  /** Plaza follow camera: behind and above this player's partner, kept inside the stadium wall. It looks at
+   * the floor just in front of the partner, so the partner sits in the upper half, clear of the dock. */
+  private plazaShot(): Shot {
+    const w = this.plaza.me;
+    const l = this.layout;
+    const h = (walking(l) ? this.rigs.get(l.mine)?.height : undefined) ?? 0.7;
+    const f = THREE.MathUtils.clamp(Math.sqrt(h / 0.7), 0.85, 1.4);
+    // The main plaza pulls back and up and looks further ahead: the other trainers are the point of it.
+    const wide = l?.mode === 'hub' ? 1.55 : 1;
+    let cx = w.x * 0.8, cz = w.z + 3.6 * f * wide;
+    const r = Math.hypot(cx, cz), max = WALL_R - 1;
+    if (r > max) { cx *= max / r; cz *= max / r; }
+    // Framed so the partner's middle sits a little above the screen's middle, from the smallest to Lugia;
+    // higher on a phone held upright, where the dock covers the lower half.
+    const near = (this.camera.aspect < 0.85 ? 0.85 : 0.5) * f - (wide - 1) * 2.2;
+    return { pos: [cx, (2.0 * f + 0.3) * wide, cz], target: [w.x, FLOOR_Y + h * 0.35, w.z + near], fov: 40, time: 0.45 };
   }
 
   private selectSlots(focus: CharacterId | null): Slot[] {
@@ -404,6 +480,26 @@ export class World {
     let accent: CharacterId | null = null;
     if (l.mode === 'title') { slots = [{ key: l.featured, x: 0.95, z: 0.15, facing: -0.32, focus: true }]; accent = l.featured; }
     if (l.mode === 'select') { slots = this.selectSlots(l.focus); accent = l.focus; }
+    if (walking(l)) {
+      const p = this.plaza;
+      if (l.mode === 'plaza' && (modeChanged || this.plazaSeat !== l.seat)) { this.plazaSeat = l.seat; p.enter(PLAZA_SPAWN[l.seat]); p.peer(RIVAL, PLAZA_SPAWN[1 - l.seat]); }
+      if (l.mode === 'hub') {
+        if (modeChanged) { p.enter(l.spawn); this.hubRigs.clear(); }
+        // Whoever left is forgotten; newcomers appear where they stood when they came in.
+        const here = new Set(l.others.map(o => o.id));
+        for (const id of [...p.peers.keys()]) if (!here.has(id)) { p.drop(id); this.hubRigs.delete(id); }
+        for (const o of l.others) p.peer(o.id, o.at);
+      }
+      slots.push({ key: l.mine, x: p.me.x, z: p.me.z, facing: p.me.face, focus: false });
+      for (const [id, key] of this.peerKeys(l)) { const w = p.peer(id); slots.push({ key, x: w.x, z: w.z, facing: w.face, focus: false }); }
+      accent = l.mine;
+    } else {
+      for (const rig of this.rigs.values()) { rig.stride(0, 1, 2); rig.setFade(1); }
+      this.fades.clear();
+      this.plaza.keys.clear(); this.steering = false; this.plaza.marker.visible = false;
+      this.key.position.copy(KEY_POS); this.key.target.position.set(0, 1, 0);
+    }
+    this.canvas.style.touchAction = walking(l) ? 'none' : '';
     if (l.mode === 'duo') {
       if (l.mine) slots.push({ key: l.mine, x: -1.05, z: 0, facing: 0.42, focus: false });
       if (l.theirs) slots.push({ key: l.theirs === l.mine ? `${l.theirs}#2` : l.theirs, x: 1.05, z: 0, facing: -0.42, focus: false });
@@ -435,7 +531,7 @@ export class World {
     this.slots = slots.filter(s => wanted.has(s.key));
     for (let i = 0; i < MAX_SLOTS; i++) {
       const s = this.slots[i];
-      if (s) this.floor.setSlot(i, s.x, s.z, 0.55, s.focus ? 1 : 0.35); else this.floor.setSlot(i, 0, 0, 0, 0);
+      if (s) this.floor.setSlot(i, s.x, s.z, 0.55 * this.framing(s.key), s.focus ? 1 : 0.35); else this.floor.setSlot(i, 0, 0, 0, 0);
     }
     if (accent) this.accentTarget.set(characterById(accent)!.accent);
     const shot = this.shotFor(l);
@@ -447,9 +543,14 @@ export class World {
     const l = this.layout;
     let key: string | null = who;
     if (who === 'mine' || who === 'theirs') {
-      if (l?.mode !== 'duo' && l?.mode !== 'arena') return;
-      key = who === 'mine' ? l.mine : l.theirs === l.mine && l.theirs ? `${l.theirs}#2` : l.theirs;
+      if (l?.mode === 'hub') key = who === 'mine' ? l.mine : null;
+      else if (l?.mode === 'duo' || l?.mode === 'arena' || l?.mode === 'plaza') key = who === 'mine' ? l.mine : this.theirsKey(l);
+      else return;
     }
+    this.emoteKey(key, e);
+  }
+  /** Play an emote on a rig; big reactions come with the Pokémon's cry. */
+  private emoteKey(key: string | null, e: Emote) {
     const rig = key ? this.rigs.get(key) : undefined;
     if (!rig) return;
     rig.play(e);
@@ -460,6 +561,141 @@ export class World {
     this.lastCry.set(key!, now);
     const sad = e === 'sad' || e === 'faceplant';
     this.events.emit('cry', { dex: rig.character.dex, pan: Math.max(-1, Math.min(1, rig.root.position.x / 3)), gain: sad ? 0.45 : 0.65, rate: sad ? 0.88 : 1 });
+  }
+
+  // ---------------------------------------------------------------- plazas
+  /** Everyone else on the field in a walkable layout, as [peer id, rig key]. */
+  private peerKeys(l: WalkLayout): [string, string][] {
+    if (l.mode === 'plaza') { const tk = this.theirsKey(l); return tk ? [[RIVAL, tk]] : []; }
+    return l.others.map(o => [o.id, this.hubKey(o)]);
+  }
+  /** Every partner on the field, this player's first, as [rig key, walker]. */
+  private walkers(l: WalkLayout): [string, Walker][] {
+    return [[l.mine, this.plaza.me], ...this.peerKeys(l).map(([id, key]) => [key, this.plaza.peer(id)] as [string, Walker])];
+  }
+  /** The rig for a main-plaza member: an instance of their partner nobody else is using (reused as people come and go). */
+  private hubKey(o: HubPeer): string {
+    const cur = this.hubRigs.get(o.id);
+    if (cur && cur.split('#')[0] === o.partner) return cur;
+    const used = new Set(this.hubRigs.values());
+    let key = '';
+    for (let i = 0; ; i++) { key = `${o.partner}#p${i}`; if (!used.has(key)) break; }
+    this.hubRigs.set(o.id, key);
+    return key;
+  }
+  /** This player's partner plays an emote ('plazaEmote' tells the app to relay it). A spar makes whoever is within reach flinch. */
+  plazaEmote(e: PlazaEmote) {
+    const l = this.layout;
+    if (!walking(l)) return;
+    const p = this.plaza, near = e === 'punch' ? p.nearest(REACH) : null;
+    if (near) { const w = p.peer(near); p.me.faceTo(w.x, w.z); }
+    this.emoteKey(l.mine, e);
+    this.events.emit('plazaEmote', { emote: e });
+    if (near) this.flinch(this.peerKeys(l).find(([id]) => id === near)?.[1] ?? null);
+  }
+  /**
+   * Presence from someone else: where their partner stands now, or an emote it played. `id` is a main-plaza
+   * member id (a room's rival needs none). A spar makes whoever stands nearest within reach flinch, this
+   * player's partner included.
+   */
+  plazaPresence(m: ({ type: 'move' } & Spot) | { type: 'emote'; emote: PlazaEmote }, id = RIVAL) {
+    const l = this.layout;
+    if (!walking(l)) return;
+    if (m.type === 'move') { this.plaza.hear(id, m); return; }
+    const keys = this.peerKeys(l), key = keys.find(([pid]) => pid === id)?.[1];
+    if (!key) return;
+    this.emoteKey(key, m.emote);
+    if (m.emote !== 'punch') return;
+    const p = this.plaza, from = p.peer(id);
+    const gapTo = (w: Walker) => Math.hypot(from.x - w.x, from.z - w.z) - from.radius - w.radius;
+    const other = p.nearest(REACH, from);
+    const mine = gapTo(p.me);
+    if (mine < REACH && (!other || mine <= gapTo(p.peer(other)))) this.flinch(l.mine);
+    else if (other) this.flinch(keys.find(([pid]) => pid === other)?.[1] ?? null);
+  }
+  private flinch(key: string | null) { if (key) window.setTimeout(() => this.emoteKey(key, 'surprised'), 280); }
+  /** Send this player's spot again on the next frame (someone just arrived or reconnected). */
+  plazaResend() { this.plaza.resend(); }
+  /**
+   * Just above a partner's head on screen, in a plaza or a match: where name tags and chat bubbles go.
+   * `who` is 'mine', 'theirs' (a room's rival) or a main-plaza member id.
+   */
+  anchor(who: string, out: Anchor): Anchor {
+    out.on = false;
+    const l = this.layout;
+    if (!l || this.fade > 0.3) return out;
+    let key: string | null | undefined = null;
+    if (l.mode === 'hub') key = who === 'mine' ? l.mine : this.hubRigs.get(who);
+    else if (l.mode === 'plaza' || l.mode === 'duo') key = who === 'mine' ? l.mine : who === 'theirs' ? this.theirsKey(l) : null;
+    const rig = key ? this.rigs.get(key) : undefined;
+    if (!rig?.root.visible || !rig.isShown) return out;
+    out.d = this.camera.position.distanceTo(rig.root.position);
+    const v = this.anchorV.set(rig.root.position.x, FLOOR_Y + rig.height * 1.06 + 0.12, rig.root.position.z).project(this.camera);
+    // Heads just above the top edge still count (a big partner close to the camera): the UI clamps the tag into view.
+    if (v.z > 1 || Math.abs(v.x) > 1.3 || v.y < -1.1 || v.y > 2) return out;
+    const r = this.canvas.getBoundingClientRect();
+    out.x = r.left + (v.x * 0.5 + 0.5) * r.width; out.y = r.top + (0.5 - v.y * 0.5) * r.height; out.on = true;
+    return out;
+  }
+  private stepWalk(l: WalkLayout, dt: number) {
+    const p = this.plaza;
+    const mine = this.rigs.get(l.mine);
+    p.me.size(mine?.height ?? 0.7);
+    const peers = this.peerKeys(l);
+    for (const [id, key] of peers) { const rig = this.rigs.get(key); p.peer(id).size(rig?.height ?? 0.7); p.setHere(id, !!rig?.isShown); }
+    const out = p.update(dt);
+    if (out) this.events.emit('plazaMove', out);
+    if (p.arrived) {
+      const w = p.peers.get(p.arrived)?.w;
+      p.arrived = null;
+      if (w) { p.me.faceTo(w.x, w.z); this.plazaEmote('greet'); }
+    }
+    if (mine) { mine.place(p.me.x, p.me.z, p.me.face, true); mine.stride(p.me.speed, p.me.walk, p.me.run); }
+    // A glow under this player's partner and the three nearest others.
+    this.floor.setSlot(0, p.me.x, p.me.z, 0.55 * this.framing(l.mine), 1);
+    const dist = (w: Walker) => Math.hypot(w.x - p.me.x, w.z - p.me.z);
+    const near = peers.map(([id, key]) => ({ key, w: p.peer(id) })).sort((a, b) => dist(a.w) - dist(b.w));
+    for (let i = 1; i < MAX_SLOTS; i++) {
+      const n = near[i - 1];
+      if (n) this.floor.setSlot(i, n.w.x, n.w.z, 0.55 * this.framing(n.key), 0.35); else this.floor.setSlot(i, 0, 0, 0, 0);
+    }
+    // Everyone else's partner goes where the network put it, and turns see-through while it stands
+    // between the camera and this player's.
+    const c = this.camera.position;
+    const px = p.me.x - c.x, pz = p.me.z - c.z, pl = Math.max(1e-3, Math.hypot(px, pz));
+    for (const [id, key] of peers) {
+      const rig = this.rigs.get(key);
+      if (!rig) continue;
+      const w = p.peer(id);
+      rig.place(w.x, w.z, w.face, true); rig.stride(w.speed, w.walk, w.run);
+      const rx = w.x - c.x, rz = w.z - c.z;
+      const along = (rx * px + rz * pz) / pl, off = Math.abs(rx * pz - rz * px) / pl;
+      const blocks = !!mine && along > 0.3 && along < pl && off < w.radius + p.me.radius + rig.height * 0.35;
+      let f = this.fades.get(key) ?? 1;
+      f += ((blocks ? 0.28 : 1) - f) * (1 - Math.exp(-8 * dt));
+      this.fades.set(key, f);
+      rig.setFade(f > 0.995 ? 1 : f);
+    }
+    p.marker.material.color.copy(this.accent);
+    // The key light's shadows follow this player's partner around the plaza.
+    this.key.position.set(KEY_POS.x + p.me.x, KEY_POS.y, KEY_POS.z + p.me.z);
+    this.key.target.position.set(p.me.x, 1, p.me.z);
+    this.director.go(this.plazaShot());
+  }
+  /** Plaza gaze: ahead while walking, at the nearest partner when close, otherwise the default (camera or pointer). */
+  private walkGaze(all: [string, Walker][], key: string, rig: MonRig) {
+    const w = all.find(([k]) => k === key)?.[1];
+    if (!w) return;
+    if (w.speed > 0.2) { this.lookPoint.set(w.x + Math.sin(w.face) * 3, FLOOR_Y + rig.height * 0.8, w.z + Math.cos(w.face) * 3); return; }
+    let best: MonRig | null = null, at: Walker | null = null, bestGap = 1.6;
+    for (const [k, o] of all) {
+      if (o === w) continue;
+      const r = this.rigs.get(k);
+      if (!r?.root.visible) continue;
+      const g = Math.hypot(o.x - w.x, o.z - w.z) - o.radius - w.radius;
+      if (g < bestGap) { bestGap = g; best = r; at = o; }
+    }
+    if (best && at) this.lookPoint.set(at.x, FLOOR_Y + best.height * 0.75, at.z);
   }
 
   hover(id: CharacterId | null) {
@@ -481,6 +717,37 @@ export class World {
     this.director.pointer.copy(this.ndc);
     this.pointerIdle = 0;
     this.pickHover(e.target === this.canvas);
+    if (this.steering) this.steerTo(false);
+  }
+  private onDown(e: PointerEvent) {
+    if (!walking(this.layout) || e.button !== 0) return;
+    this.onPointer(e);
+    this.steering = true;
+    this.steerTo(true);
+  }
+  /** Plazas: walk to the floor point under the pointer, or up to someone's partner when it was pressed. */
+  private steerTo(press: boolean) {
+    const l = this.layout;
+    if (!walking(l)) return;
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    if (press) {
+      const peers = this.peerKeys(l).filter(([, k]) => this.rigs.get(k)?.root.visible && this.hitboxes.has(k));
+      const hit = this.raycaster.intersectObjects(peers.map(([, k]) => this.hitboxes.get(k)!), false)[0];
+      const id = hit ? peers.find(([, k]) => this.hitboxes.get(k) === hit.object)?.[0] : undefined;
+      if (id) { this.steering = false; this.plaza.approach(id); return; }
+    }
+    if (this.raycaster.ray.intersectPlane(this.floorPlane, this.floorHit)) this.plaza.walkTo(this.floorHit.x, this.floorHit.z);
+  }
+  /** Plaza: WASD or the arrow keys walk, Shift runs. Keys typed into a field never move the partner. */
+  private onKey(e: KeyboardEvent, down: boolean) {
+    if (!walking(this.layout)) return;
+    this.plaza.running = e.shiftKey;
+    if (!isMoveKey(e.code)) return;
+    if (!down) { this.plaza.keys.delete(e.code); return; }
+    const t = e.target as Element | null;
+    if (e.ctrlKey || e.metaKey || e.altKey || t?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+    this.plaza.keys.add(e.code);
+    if (e.code.startsWith('Arrow')) e.preventDefault();
   }
   private pickHover(overCanvas: boolean) {
     let key: string | null = null;
@@ -492,7 +759,8 @@ export class World {
     }
     if (key !== this.hoverKey) {
       this.hoverKey = key;
-      this.canvas.style.cursor = key && this.layout?.mode === 'select' ? 'pointer' : '';
+      const l = this.layout;
+      this.canvas.style.cursor = key && (l?.mode === 'select' || (walking(l) && key !== l.mine)) ? 'pointer' : '';
       this.events.emit('characterHover', { id: (key?.split('#')[0] as CharacterId) ?? null });
     }
   }
@@ -527,6 +795,10 @@ export class World {
     this.raycaster.setFromCamera(this.ndc, this.camera);
     this.gazeValid = this.raycaster.ray.intersectPlane(this.gazePlane, this.gaze) !== null;
     const toCamera = this.pointerIdle > 3.5;
+    const lay = this.layout;
+    const walk = walking(lay) && !this.pendingLayout ? lay : null;
+    if (walk) this.stepWalk(walk, dt);
+    const walkers = walk ? this.walkers(walk) : null;
     for (const [key, rig] of this.rigs) {
       if (!rig.root.visible) continue;
       if (toCamera || !this.gazeValid) this.lookPoint.copy(this.camera.position);
@@ -539,7 +811,7 @@ export class World {
         if (Math.sin(t * 0.21 + key.length) > 0.55) {
           for (const [k, r] of this.rigs) if (k !== key && r.root.visible) { this.lookPoint.set(r.root.position.x, 1.45, r.root.position.z); break; }
         }
-      }
+      } else if (walkers) this.walkGaze(walkers, key, rig);
       rig.lookAt(this.lookPoint);
       rig.update(dt);
     }

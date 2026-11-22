@@ -14,6 +14,8 @@ export type BattleSnapshot = {
 
 type Opts = {
   mySide: SideId;
+  /** Watching someone else's battle: no requests, and the log names both trainers. */
+  spectator?: boolean;
   send: (choice: string) => void;
   onFx?: (fx: BattleFx, instant: boolean) => void;
   /** Multiplier on line durations (reduced motion and `?fast` shorten it). */
@@ -38,7 +40,7 @@ export class BattleController {
   private version = 0;
 
   constructor(private opts: Opts) {
-    this.model = new BattleModel(opts.mySide);
+    this.model = new BattleModel(opts.mySide, opts.spectator);
     this.snap = this.build();
   }
 
@@ -61,7 +63,7 @@ export class BattleController {
     if (reset || id !== this.id) {
       // Fresh battle or reconnect: rebuild synchronously, then show the final situation on stage.
       window.clearTimeout(this.timer); this.playing = false; this.queue = [];
-      this.id = id; this.model = new BattleModel(this.opts.mySide); this.choiceSent = null;
+      this.id = id; this.model = new BattleModel(this.opts.mySide, this.opts.spectator); this.choiceSent = null;
       if (reset) {
         for (const l of lines) this.model.apply(l);
         this.afterRequestChange();

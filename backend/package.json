@@ -10,7 +10,7 @@
     "build": "tsc",
     "start": "node dist/backend/src/index.js",
     "dev": "tsc --watch",
-    "test": "node tests/flow.mjs && node tests/lobby.mjs && node tests/sleep.mjs && node tests/revive.mjs && node tests/battle.mjs",
+    "test": "node tests/flow.mjs && node tests/lobby.mjs && node tests/plaza.mjs && node tests/hub.mjs && node tests/sleep.mjs && node tests/revive.mjs && node tests/battle.mjs",
     "gen:moves": "node scripts/gen-moves.mjs"
   },
   "dependencies": {

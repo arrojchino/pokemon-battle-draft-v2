@@ -132,6 +132,17 @@ describe('room reducer', () => {
     expect(after.teams[0]).toHaveLength(6); expect(after.rival).toBeNull(); expect(after.history[0].teams[0]).toHaveLength(6);
   });
 
+  it('shows spectators neither the dealt teams nor either six, and counts them', () => {
+    let s = apply(seated(0, 'app'), 0, { type: 'call', side: 'heads' }, 'heads');
+    s = apply(s, 0, { type: 'spin' });
+    expect(publicView(s, [true, true], 6, null).candidates).toBeNull();
+    s = apply(s, 0, { type: 'pick', team: 1 });
+    const v = publicView(s, [true, true], 6, null, 3);
+    expect(v.teams).toEqual([[], []]); expect(v.rival).toBeNull(); expect(v.watchers).toBe(3);
+    expect(publicView(s, [true, true], 6, 0).teams[0]).toHaveLength(6);
+    expect(publicView(s, [true, true], 6, 1).watchers).toBe(0);
+  });
+
   it('runs in-app battles: server decides results, draws replay the game', () => {
     let r = playToBattle(seated(1, 'app'));
     expect(r.battle).toEqual({ id: 1, status: 'preview', turn: 0 });

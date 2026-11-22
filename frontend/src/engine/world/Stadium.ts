@@ -1,10 +1,12 @@
 import * as THREE from 'three';
+import { PLATFORM_R, STADIUM, WALL_R } from './dims.js';
 
 /** Floodlight towers stand behind the stands; angles are atan2(z, x), so negative ones sit across the field. */
 const TOWERS = [-38, -142, 38, 142].map(d => THREE.MathUtils.degToRad(d));
-const TOWER_R = 21.5;
-const TOWER_H = 15.5;
-const WALL_R = 8.4;
+const TOWER_R = 21.5 * STADIUM;
+const TOWER_H = 15.5 * STADIUM;
+/** Rows of seats: more of them, not bigger ones, so the crowd stays people-sized around the larger field. */
+const ROWS = Math.round(18 * STADIUM);
 
 export type StadiumOptions = { fogColor: THREE.Color; fogDensity: number };
 
@@ -30,7 +32,7 @@ export class Stadium {
   constructor(o: StadiumOptions) {
     const fogU = { uFog: { value: o.fogColor }, uFogD: { value: o.fogDensity } };
 
-    const ground = new THREE.Mesh(new THREE.RingGeometry(6.1, WALL_R + 0.05, 128, 1), new THREE.MeshStandardMaterial({ color: '#060912', roughness: 0.9, metalness: 0.05 }));
+    const ground = new THREE.Mesh(new THREE.RingGeometry(PLATFORM_R + 0.1, WALL_R + 0.05, 160, 1), new THREE.MeshStandardMaterial({ color: '#060912', roughness: 0.9, metalness: 0.05 }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = 0.002; ground.receiveShadow = true;
     this.group.add(ground);
 
@@ -60,7 +62,7 @@ export class Stadium {
     const pts: THREE.Vector2[] = [new THREE.Vector2(WALL_R, 0), new THREE.Vector2(WALL_R, 1.05)];
     let r = WALL_R + 0.5, y = 1.05;
     pts.push(new THREE.Vector2(r, y));
-    for (let i = 0; i < 18; i++) { y += 0.42; pts.push(new THREE.Vector2(r, y)); r += 0.62; pts.push(new THREE.Vector2(r, y)); }
+    for (let i = 0; i < ROWS; i++) { y += 0.42; pts.push(new THREE.Vector2(r, y)); r += 0.62; pts.push(new THREE.Vector2(r, y)); }
     const top = y;
     pts.push(new THREE.Vector2(r, top + 2.4), new THREE.Vector2(r + 0.8, top + 2.4));
     this.stands = new THREE.ShaderMaterial({
@@ -96,14 +98,14 @@ export class Stadium {
           col += vec3(2.4, 2.5, 2.8) * fl;
           col = mix(col, vec3(0.05, 0.055, 0.07), aisle * (1.0 - tread) * inRows * 0.6);
           // An accent light ribbon along the top of the bowl.
-          col += uAccent * 0.6 * smoothstep(0.05, 0.0, abs(vW.y - (uTop + 1.6))) * step(rr, 30.0);
+          col += uAccent * 0.6 * smoothstep(0.05, 0.0, abs(vW.y - (uTop + 1.6))) * step(rr, ${(r + 1.5).toFixed(1)});
           gl_FragColor = vec4(applyFog(col, vW), 1.0);
         }`,
     });
     this.group.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 192), this.stands));
 
     // Floodlight towers: masts and lamp heads aimed at the field (instanced: two draw calls for all four).
-    const mastGeo = new THREE.BoxGeometry(0.45, TOWER_H, 0.45); mastGeo.translate(0, TOWER_H / 2, 0);
+    const mastGeo = new THREE.BoxGeometry(0.45 * STADIUM, TOWER_H, 0.45 * STADIUM); mastGeo.translate(0, TOWER_H / 2, 0);
     const masts = new THREE.InstancedMesh(mastGeo, new THREE.MeshStandardMaterial({ color: '#0c1120', roughness: 0.6, metalness: 0.7 }), TOWERS.length);
     this.lampMat = new THREE.ShaderMaterial({
       side: THREE.DoubleSide,
@@ -117,7 +119,7 @@ export class Stadium {
           gl_FragColor = vec4(col, 1.0);
         }`,
     });
-    const lamps = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.4, 2.0), this.lampMat, TOWERS.length);
+    const lamps = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.4 * STADIUM, 2.0 * STADIUM), this.lampMat, TOWERS.length);
     const dummy = new THREE.Object3D();
     TOWERS.forEach((a, i) => {
       const x = Math.cos(a) * TOWER_R, z = Math.sin(a) * TOWER_R;

@@ -1,4 +1,4 @@
-import type { CharacterId } from '@shared';
+import type { CharacterId, PlazaEmote, Spot } from '@shared';
 import type { QualityTier } from './quality.js';
 import type { Cue } from '../audio/sound.js';
 
@@ -17,6 +17,9 @@ export type WorldEvents = {
   sound: { cue: Cue; pan: number; gain?: number };
   /** A Pokémon on stage cried (National Dex number); rate below 1 sounds lower, for sad moments. */
   cry: { dex: number; pan: number; gain?: number; rate?: number };
+  /** Plaza: this player's partner moved (at most ten times a second) or played an emote. The app relays both to the rival. */
+  plazaMove: Spot;
+  plazaEmote: { emote: PlazaEmote };
 };
 
 type Handler<T> = (payload: T) => void;

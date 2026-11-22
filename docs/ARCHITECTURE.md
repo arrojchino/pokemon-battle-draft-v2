@@ -54,6 +54,26 @@ The original v1 `backend/tests/flow.mjs` passes unchanged against the v2 server,
 | Per-seat views | `publicView(room, connected, protocol, viewer)`: during the pick only the toss winner receives `candidates`; during a game the rival's six arrive as `rival` (species and types, like Team Preview). Finished games are public in `history` |
 | Battle format | `gen9purehackmons`, so the rival's HP reaches each player in percent only (asserted in `backend/tests/sleep.mjs`) |
 
+### Protocol v5: the plaza
+
+| Addition | Shape |
+|---|---|
+| Action `chat` | `{text}`, cleaned by `cleanChat()` (control and bidi characters, at most 140 code points). The room keeps its last 40 lines as `chat: [{id, seat, text}]`, seen by both seats; the backend allows about one line a second (bursts of four) |
+| Client `move`, `emote` | `{x, z, face}` (pulled back onto the platform by `cleanSpot()`) and `{emote}` from `PLAZA_EMOTES`. The authority relays them to the other seat as `{seat, ...}` and stores neither; the backend passes about 1.5 emotes a second |
+
+`engine/world/Plaza.ts` is pure simulation: this player's walker (keys, click target, collision with the rival), the rival's walker easing toward reported spots, and at most ten spots a second while something changes. `World` turns walkers into rigs (`MonRig.stride` plays the model's walk and run clips at a rate matched to ground speed), a follow camera, gaze, floor rings and a see-through rival when it blocks the view. `ui/screens/match/Plaza.tsx` draws name tags and chat bubbles at `World.anchor()` and relays presence between the World and the transport. Partners are fitted in their relaxed idle (standing height); some battle stances crouch lower.
+
+### Protocol v6: the main plaza and spectators
+
+| Addition | Shape |
+|---|---|
+| Client `hub` | `{on, name, avatar, at}`: enter the main plaza (again to rename or change partner) or leave it; at most `MAX_HUB` (20) members, and seated trainers stay out. The server answers `hub {you, members, chat}` and tells everyone else `hubJoin {member}` or `hubLeave {id}` |
+| Client `hubMove`, `hubEmote`, `hubChat` | Relayed to every other member as `{id, ...}`: spots through `cleanSpot()`, lines through `cleanChat()` and numbered, the last 40 kept in memory (`backend/src/hub.ts`). Same rate limits as the room plaza |
+| Client `watch {code}`, `unwatch` | Follow a room without a seat (the code is the key, as for joining): `watching {code}`, the room state as a spectator sees it (no candidates, no sets, `rival` null) and `battle` with the public stream (HP in percent, never a request). Rooms carry `watchers` |
+| `lobbies` reply | Adds `live: [{code, names, avatars, bestOf, wins, turn, watchers}]`: public battles with at least one trainer still connected |
+
+`ui/screens/HubScreen.tsx` sets the World's `hub` layout (this player's walker plus one easing walker per member, a wider follow camera) and draws tags and bubbles for everyone. `ui/screens/WatchScreen.tsx` follows the watched room like a player would, from seat 0, and reuses `BattleArena` with `spectating` (no choices or forfeit, a log that names both trainers). The PeerJS host ignores hub and watch messages: both need the dedicated server. Stadium proportions live in `engine/world/dims.ts` (`STADIUM` for platform, wall and stands; `FIELD` for the field, spots and battle camera).
+
 ### Battle flow
 
 ```

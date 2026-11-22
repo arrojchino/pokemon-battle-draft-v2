@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isRoomCode } from '@shared';
 import { useSession } from '../net/session.js';
-import { useSettings } from './settings.js';
+import { firstVisit, useSettings } from './settings.js';
 import { WorldProvider } from './WorldProvider.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
 import { useAudio } from './useAudio.js';
@@ -12,16 +12,19 @@ import { MultiplayerScreen } from '../ui/screens/MultiplayerScreen.js';
 import { PokedexScreen } from '../ui/screens/PokedexScreen.js';
 import { SettingsPanel, SettingsScreen } from '../ui/screens/SettingsScreen.js';
 import { MatchScreen } from '../ui/screens/MatchScreen.js';
+import { HubScreen } from '../ui/screens/HubScreen.js';
+import { WatchScreen } from '../ui/screens/WatchScreen.js';
 import { CreditsDialog, FallbackBackdrop, LoadingVeil, PerfOverlay } from '../ui/Overlays.js';
 import { Modal, Toasts, toast, useSettingsOpener } from '../ui/primitives.js';
 
-type Screen = 'title' | 'partners' | 'multiplayer' | 'pokedex' | 'settings';
+type Screen = 'title' | 'partners' | 'multiplayer' | 'pokedex' | 'settings' | 'plaza';
 const inviteFromUrl = () => { const c = new URLSearchParams(location.search).get('room')?.trim() ?? ''; return isRoomCode(c) ? c : ''; };
 
 function Shell() {
   const session = useSession();
   const s = useSettings();
-  const [screen, setScreen] = useState<Screen>('title');
+  // A first visit opens on the partner choice; backing out keeps the random partner it was dealt.
+  const [screen, setScreen] = useState<Screen>(firstVisit ? 'partners' : 'title');
   const [mode, setMode] = useState<'create' | 'join'>(inviteFromUrl() ? 'join' : 'create');
   const [partnerReturn, setPartnerReturn] = useState<Screen>('title');
   const [dialog, setDialog] = useState<'settings' | 'credits' | null>(null);
@@ -35,22 +38,25 @@ function Shell() {
     const u = new URL(location.href);
     if (u.searchParams.has('room')) { u.searchParams.delete('room'); history.replaceState(null, '', u); }
   }, [session.room]);
-  // Leaving a room lands on the title screen.
-  const hadRoom = useRef(false);
-  useEffect(() => { if (hadRoom.current && !session.room) setScreen('title'); hadRoom.current = !!session.room; }, [session.room]);
-
+  // Leaving a room lands on the title screen (a spectator who stops watching goes back where they were).
   const inMatch = !!session.room && session.seat !== null;
+  const hadRoom = useRef(false);
+  useEffect(() => { if (hadRoom.current && !inMatch) setScreen('title'); hadRoom.current = inMatch; }, [inMatch]);
+  const watching = !inMatch && !!session.watching && !!session.room;
+  const plaza = session.kind === 'backend' ? () => setScreen('plaza') : undefined;
   const goPartners = (back: Screen) => { setPartnerReturn(back); setScreen('partners'); };
   const toMultiplayer = (m: 'create' | 'join') => { setMode(m); setScreen('multiplayer'); };
 
   let body;
   let key: string = screen;
   if (inMatch) { key = 'match'; body = <MatchScreen room={session.room!} seat={session.seat!} transport={session.transport} link={session.link} />; }
-  else if (screen === 'partners') body = <PartnerSelect onBack={() => setScreen(partnerReturn)} onConfirm={() => setScreen(partnerReturn)} confirmLabel={partnerReturn === 'multiplayer' ? '{name}, I choose you!' : 'Partner up with {name}'} />;
-  else if (screen === 'multiplayer') body = <MultiplayerScreen mode={mode} inviteCode={invite} onBack={() => setScreen('title')} onChangePartner={() => goPartners('multiplayer')} />;
+  else if (watching) { key = `watch-${session.watching}`; body = <WatchScreen room={session.room!} transport={session.transport} link={session.link} onLeave={() => session.transport.unwatch()} />; }
+  else if (screen === 'plaza') body = <HubScreen onBack={() => setScreen('title')} onPlay={() => toMultiplayer('create')} onPartner={() => goPartners('plaza')} />;
+  else if (screen === 'partners') body = <PartnerSelect onBack={() => setScreen(partnerReturn)} onConfirm={() => setScreen(partnerReturn)} confirmLabel={partnerReturn === 'title' ? 'Partner up with {name}' : '{name}, I choose you!'} />;
+  else if (screen === 'multiplayer') body = <MultiplayerScreen mode={mode} inviteCode={invite} onBack={() => setScreen('title')} onChangePartner={() => goPartners('multiplayer')} onPlaza={plaza} />;
   else if (screen === 'pokedex') body = <PokedexScreen onBack={() => setScreen('title')} />;
   else if (screen === 'settings') body = <SettingsScreen onBack={() => setScreen('title')} />;
-  else body = <TitleScreen inviteCode={invite} onPlay={() => toMultiplayer('create')} onJoin={() => toMultiplayer('join')} onPokedex={() => setScreen('pokedex')} onPartners={() => goPartners('title')} onSettings={() => setScreen('settings')} onCredits={() => setDialog('credits')} />;
+  else body = <TitleScreen inviteCode={invite} onPlay={() => toMultiplayer('create')} onJoin={() => toMultiplayer('join')} onPokedex={() => setScreen('pokedex')} onPartners={() => goPartners('title')} onSettings={() => setScreen('settings')} onCredits={() => setDialog('credits')} onPlaza={plaza} />;
 
   useAudio();
   useApplySettings();

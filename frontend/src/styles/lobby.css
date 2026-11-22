@@ -96,3 +96,79 @@
   .lobby { grid-template-columns: auto minmax(0, 1fr) auto; }
   .lobby__tags { grid-column: 2 / -1; justify-content: flex-start; }
 }
+
+/* ---------- plaza: the waiting room as a place to walk, with chat ---------- */
+.match.is-plaza .match__dock { width: min(600px, calc(100vw - 28px)); }
+.ptags { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.ptag { position: absolute; left: 0; top: 0; transition: opacity var(--dur-2); will-change: transform; }
+.ptag__in { position: absolute; left: 0; bottom: 0; transform: translateX(-50%); display: grid; justify-items: center; gap: 7px; width: max-content; max-width: 240px; }
+.ptag__name {
+  max-width: 180px; padding: 3px 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font: 700 var(--fs-2xs)/1.35 var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-1);
+  background: rgba(6, 9, 20, 0.74); border: 1px solid var(--border-2); border-radius: var(--r-pill);
+}
+.ptag--mine .ptag__name { border-color: color-mix(in srgb, var(--accent) 65%, transparent); box-shadow: 0 0 18px -6px var(--accent); }
+.ptag__bubble {
+  position: relative; margin: 0 0 4px; padding: 8px 12px; border-radius: var(--r-md); overflow-wrap: anywhere; text-align: center;
+  font: 600 var(--fs-sm)/1.35 var(--font-body); color: #10142a; background: #f5f7ff;
+  box-shadow: 0 10px 26px -10px rgba(0, 0, 0, 0.7), inset 0 -2px 0 rgba(16, 20, 42, 0.12);
+  animation: bubble-in var(--dur-3) var(--ease-spring) both;
+}
+.ptag__bubble::after { content: ''; position: absolute; left: 50%; bottom: -5px; width: 11px; height: 11px; background: inherit; border-radius: 2px; transform: translateX(-50%) rotate(45deg); }
+@keyframes bubble-in { from { opacity: 0; transform: translateY(8px) scale(0.9); } }
+
+.chat {
+  position: absolute; z-index: 5; top: 16px; left: 16px; width: min(310px, calc(100vw - 32px)); max-height: min(480px, calc(100vh - 150px));
+  display: grid; grid-template-rows: auto minmax(0, 1fr); grid-auto-rows: auto; gap: var(--s-3); padding: var(--s-4);
+  animation: rise var(--dur-4) var(--ease-out) both;
+}
+.chat__head { display: flex; align-items: center; gap: 2px; margin: -4px -6px -4px 0; }
+.chat__head .eyebrow { margin-right: auto; }
+.chat__head .iconbtn.is-on { color: var(--warn); }
+.chat__log { margin: 0; padding: 0 4px 0 0; list-style: none; display: grid; align-content: start; gap: 8px; min-height: 64px; }
+.chat__line { display: grid; gap: 2px; font-size: var(--fs-sm); line-height: 1.4; color: var(--text-1); overflow-wrap: anywhere; animation: rise var(--dur-3) var(--ease-out) both; }
+.chat__line strong { font: 700 var(--fs-2xs)/1.3 var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.chat__line.is-mine strong { color: var(--accent); }
+.chat__empty { color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; }
+.chat__emotes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.emote {
+  display: flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 8px; cursor: pointer;
+  font: 700 var(--fs-2xs)/1 var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2);
+  background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-pill);
+  transition: transform var(--dur-2) var(--ease-out), border-color var(--dur-2), color var(--dur-2), background-color var(--dur-2);
+}
+.emote .icon { color: var(--accent); }
+.emote:hover { color: var(--text-1); background: var(--surface-3); border-color: color-mix(in srgb, var(--accent) 55%, var(--border-2)); transform: translateY(-1px); }
+.emote:active { transform: translateY(1px) scale(0.97); transition-duration: var(--dur-1); }
+.emote:focus-visible { outline: none; box-shadow: var(--ring); }
+.chat__form { display: flex; gap: 8px; }
+.chat__input {
+  flex: 1; min-width: 0; height: 38px; padding: 0 12px; font: 500 var(--fs-sm) var(--font-body); color: var(--text-1);
+  background: var(--surface-well); border: 1px solid var(--border-2); border-radius: var(--r-md);
+}
+.chat__input::placeholder { color: var(--text-4); }
+.chat__input:focus { outline: none; border-color: transparent; box-shadow: var(--ring); }
+.chat__send { height: 38px; padding: 0 14px; }
+.chat__hint { margin: 0; font-size: var(--fs-xs); line-height: 1.55; color: var(--text-3); }
+.chat__hint kbd {
+  display: inline-block; min-width: 18px; margin-right: 2px; padding: 2px 4px; text-align: center;
+  font: 700 10px/1 var(--font-mono); color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border-2); border-bottom-width: 2px; border-radius: 4px;
+}
+.chat-toggle {
+  position: absolute; z-index: 5; top: 16px; left: 16px; gap: 6px;
+  background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-2); border-radius: var(--r-pill);
+}
+.chat-toggle__count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); font: 700 10px/18px var(--font-display); text-align: center; color: var(--accent-ink); background: var(--accent); }
+@media (max-width: 1100px) {
+  .chat { top: 64px; max-height: min(420px, calc(100vh - 120px)); }
+}
+/* Phones: the room bar fills the top edge, so the chat toggle waits under the scoreboard. */
+@media (max-width: 560px) {
+  .chat-toggle { top: 138px; }
+}
+/* In the plaza on wide screens the chat sits bottom-left, beside the dock, leaving the field above clear. */
+@media (min-width: 1280px) {
+  .match.is-plaza .chat, .match.is-plaza .chat-toggle { top: auto; bottom: clamp(14px, 3vh, 32px); }
+  .match.is-plaza .chat { max-height: min(440px, calc(100vh - 150px)); }
+}

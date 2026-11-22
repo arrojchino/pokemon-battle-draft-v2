@@ -7,14 +7,14 @@ import { sound } from '../../audio/sound.js';
 import { useStageReady } from '../Overlays.js';
 import { Icon, type IconName } from '../primitives.js';
 
-type Props = { inviteCode: string; onPlay: () => void; onJoin: () => void; onPokedex: () => void; onPartners: () => void; onSettings: () => void; onCredits: () => void };
+type Props = { inviteCode: string; onPlay: () => void; onJoin: () => void; onPokedex: () => void; onPartners: () => void; onSettings: () => void; onCredits: () => void; onPlaza?: () => void };
 type Item = { id: string; label: string; icon: IconName; on: () => void; jp?: string; desc?: string; primary?: boolean; util?: boolean };
 
 /**
  * The first frame people see: a classic start menu with a sliding ▶ cursor, your partner Pokémon on the field beside it.
  * Arrow keys move the cursor (Settings and Credits share the last row), Enter picks, Escape is ignored.
  */
-export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners, onSettings, onCredits }: Props) {
+export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners, onSettings, onCredits, onPlaza }: Props) {
   const s = useSettings();
   const c = characterById(s.partner)!;
   const { world } = useWorld();
@@ -39,6 +39,7 @@ export function TitleScreen({ inviteCode, onPlay, onJoin, onPokedex, onPartners,
   const items: Item[] = [
     ...(inviteCode ? [{ id: 'invite', label: 'Join invite', jp: '招待', desc: `Room ${inviteCode.slice(0, 12)}`, icon: 'link' as const, on: onJoin, primary: true }] : []),
     { id: 'play', label: 'Play online', jp: '対戦', desc: 'Create a room and invite a rival', icon: 'swords', on: onPlay, primary: !inviteCode },
+    ...(onPlaza ? [{ id: 'plaza', label: 'Plaza', jp: '広場', desc: 'Walk with your partner, meet trainers, watch battles', icon: 'users' as const, on: onPlaza }] : []),
     ...(!inviteCode ? [{ id: 'join', label: 'Join with code', jp: '参加', desc: "Enter a rival's room code", icon: 'hash' as const, on: onJoin }] : []),
     { id: 'pool', label: 'Draft pool', jp: '図鑑', desc: `All ${POOL.length} sets the coin can deal`, icon: 'grid', on: onPokedex },
     { id: 'partner', label: 'Partner', jp: '相棒', desc: `Choose who cheers you on · ${c.name}`, icon: 'user', on: onPartners },
