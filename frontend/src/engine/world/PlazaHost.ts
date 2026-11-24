@@ -5,12 +5,13 @@ import type { Obstacle } from './Plaza.js';
 
 /** The scene is built at about 1.7 m per unit (see character/size.ts); the presenter is 1.67 m tall. */
 const SCALE = 1 / 1.7;
-/** Where she stands: the far side of the field from where trainers walk in, facing its centre. */
-export const HOST_SPOT = { x: 0, z: -6.2 } as const;
+/** Where she stands and which way she faces (the town puts her at the Center's door). */
+export type HostSpot = { x: number; z: number; face: number };
+export const HOST_SPOT_DEFAULT: HostSpot = { x: 0, z: -6.2, face: 0 };
 /** Her footprint, for walking around her. */
-export const HOST_OBSTACLE: Obstacle = { x: HOST_SPOT.x, z: HOST_SPOT.z, r: 0.3 };
+export const hostObstacle = (s: HostSpot): Obstacle => ({ x: s.x, z: s.z, r: 0.3 });
 /** Where a trainer who clicks her walks to: just in front of her. */
-export const HOST_FRONT = { x: HOST_SPOT.x, z: HOST_SPOT.z + 1.05 } as const;
+export const hostFront = (s: HostSpot) => ({ x: s.x + Math.sin(s.face) * 1.05, z: s.z + Math.cos(s.face) * 1.05 });
 /** Close enough to talk (from her centre to the partner's), with a little more room to leave. */
 const NEAR = 2.3, FAR = 2.8;
 /** She waves at someone who walks up at most this often. */
@@ -52,9 +53,11 @@ export class PlazaHost {
   private clock = 0;
   private reduced = false;
   private look = new THREE.Vector3();
+  /** Where she stands (see `setSpot`). */
+  spot: HostSpot = { ...HOST_SPOT_DEFAULT };
 
   constructor() {
-    this.group.position.set(HOST_SPOT.x, FLOOR_Y, HOST_SPOT.z);
+    this.group.position.set(this.spot.x, FLOOR_Y, this.spot.z);
     this.group.visible = false;
     const h = 1.67 * SCALE;
     this.hitbox = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, h, 10), new THREE.MeshBasicMaterial({ visible: false }));
@@ -190,7 +193,7 @@ export class PlazaHost {
     // Each new shadow caster compiles a depth program on its first shadow pass: all at once while the entry veil
     // covers the plaza, a few per frame when she arrives on an uncovered plaza.
     for (let i = 0; (!this.exposed || i < SHADOWS_PER_FRAME) && this.casters.length; i++) this.casters.pop()!.castShadow = true;
-    const d = Math.hypot(me.x - HOST_SPOT.x, me.z - HOST_SPOT.z);
+    const d = Math.hypot(me.x - this.spot.x, me.z - this.spot.z);
     const near = this.near ? d < FAR : d < NEAR;
     let greeted = false;
     if (near !== this.near) {
@@ -200,7 +203,7 @@ export class PlazaHost {
     if (near) {
       p.turnToward(me.x, me.z);
       p.lookAt(this.look.set(me.x, FLOOR_Y + meHeight * 0.85, me.z));
-    } else p.turnToward(HOST_SPOT.x, HOST_SPOT.z + 3);
+    } else p.turnToward(this.spot.x + Math.sin(this.spot.face) * 3, this.spot.z + Math.cos(this.spot.face) * 3);
     p.update(dt);
     return { near, greeted };
   }
@@ -216,6 +219,8 @@ export class PlazaHost {
   /** Whether a ray hits her. */
   hit(ray: THREE.Raycaster) { return this.ready && ray.intersectObject(this.hitbox, false).length > 0; }
   /** The point just above her head, for the talk prompt. */
-  head(out: THREE.Vector3) { return out.set(HOST_SPOT.x, FLOOR_Y + this.height + 0.1, HOST_SPOT.z); }
+  head(out: THREE.Vector3) { return out.set(this.spot.x, FLOOR_Y + this.height + 0.1, this.spot.z); }
+  /** Stand somewhere else (the town's host spot), facing `face`. */
+  setSpot(s: HostSpot) { this.spot = { ...s }; this.group.position.set(s.x, FLOOR_Y, s.z); }
   get reducedMotion() { return this.reduced; }
 }

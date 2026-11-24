@@ -31,9 +31,12 @@ import { cleanChat, normalizeBestOf, type BattleMode, type ChatLine, type GameAc
  * v9: held poses. Sit and Nap last until the partner gets up, so the server remembers them: main-plaza members
  *     carry `pose` ('sit', 'nap' or null), and a trainer who takes or retakes a room seat hears the other seat's
  *     pose as an `emote`. Nothing new is sent by clients, so there is no gate.
+ * v10: the main plaza is a town square of its own, larger than the stadium platform: main-plaza spots (`hub`
+ *     `at`, `hubMove`, members) are kept within HUB_R instead of PLAZA_R, and the spot is where the trainer
+ *     stands (the partner follows it on every screen). Room plazas are unchanged.
  * Servers accept every older client message unchanged, and older clients can read newer state.
  */
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 export const LOBBIES_SINCE = 4;
 export const PLAZA_SINCE = 5;
 export const HUB_SINCE = 6;
@@ -61,11 +64,15 @@ export const PLAZA_R = 9;
 export type Spot = { x: number; z: number; face: number };
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
 /** Keep a spot on the platform, facing wrapped to -pi..pi, rounded to keep messages small. */
-export function cleanSpot(x: number, z: number, face: number): Spot {
+export function cleanSpot(x: number, z: number, face: number, radius = PLAZA_R): Spot {
   const r = Math.hypot(x, z);
-  const k = r > PLAZA_R ? PLAZA_R / r : 1;
+  const k = r > radius ? radius / r : 1;
   return { x: round3(x * k), z: round3(z * k), face: round3(Math.atan2(Math.sin(face), Math.cos(face))) };
 }
+/** Trainers walk the main plaza (the town square) inside this radius (v10). */
+export const HUB_R = 16;
+/** A main-plaza spot: like `cleanSpot`, within HUB_R. */
+export const cleanHubSpot = (x: number, z: number, face: number): Spot => cleanSpot(x, z, face, HUB_R);
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /** The main plaza holds at most this many trainers at once. */
@@ -183,10 +190,10 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     case 'move': return num(m.x) && num(m.z) && num(m.face) ? { type: 'move', ...cleanSpot(m.x, m.z, m.face) } : null;
     case 'emote': return isPlazaEmote(m.emote) ? { type: 'emote', emote: m.emote } : null;
     case 'hub': {
-      const at = isObj(m.at) && num(m.at.x) && num(m.at.z) && num(m.at.face) ? cleanSpot(m.at.x, m.at.z, m.at.face) : null;
+      const at = isObj(m.at) && num(m.at.x) && num(m.at.z) && num(m.at.face) ? cleanHubSpot(m.at.x, m.at.z, m.at.face) : null;
       return { type: 'hub', on: m.on !== false, name: cleanName(m.name, 'Trainer'), avatar: avatarOf(m.avatar), at };
     }
-    case 'hubMove': return num(m.x) && num(m.z) && num(m.face) ? { type: 'hubMove', ...cleanSpot(m.x, m.z, m.face) } : null;
+    case 'hubMove': return num(m.x) && num(m.z) && num(m.face) ? { type: 'hubMove', ...cleanHubSpot(m.x, m.z, m.face) } : null;
     case 'hubEmote': return isPlazaEmote(m.emote) ? { type: 'hubEmote', emote: m.emote } : null;
     case 'hubChat': { const text = cleanChat(m.text); return text ? { type: 'hubChat', text } : null; }
     case 'watch': return isRoomCode(m.code) ? { type: 'watch', code: m.code } : null;
@@ -204,7 +211,7 @@ function parseLobby(v: unknown): LobbySummary | null {
 
 function parseMember(v: unknown): HubMember | null {
   if (!isObj(v) || !isHubId(v.id) || !num(v.x) || !num(v.z) || !num(v.face)) return null;
-  return { id: v.id, name: cleanName(v.name, 'Trainer'), avatar: avatarOf(v.avatar), pose: isPlazaPose(v.pose) ? v.pose : null, ...cleanSpot(v.x, v.z, v.face) };
+  return { id: v.id, name: cleanName(v.name, 'Trainer'), avatar: avatarOf(v.avatar), pose: isPlazaPose(v.pose) ? v.pose : null, ...cleanHubSpot(v.x, v.z, v.face) };
 }
 function parseHubLine(v: unknown): HubLine | null {
   if (!isObj(v) || !num(v.id) || !isHubId(v.from) || typeof v.text !== 'string') return null;
@@ -247,7 +254,7 @@ export function parseServerMessage(raw: unknown): ServerMessage | null {
   if (m.type === 'hub') return isHubId(m.you) ? { type: 'hub', you: m.you, members: keep(m.members, parseMember), chat: keep(m.chat, parseHubLine) } : null;
   if (m.type === 'hubJoin') { const member = parseMember(m.member); return member ? { type: 'hubJoin', member } : null; }
   if (m.type === 'hubLeave') return isHubId(m.id) ? { type: 'hubLeave', id: m.id } : null;
-  if (m.type === 'hubMove') return isHubId(m.id) && num(m.x) && num(m.z) && num(m.face) ? { type: 'hubMove', id: m.id, ...cleanSpot(m.x, m.z, m.face) } : null;
+  if (m.type === 'hubMove') return isHubId(m.id) && num(m.x) && num(m.z) && num(m.face) ? { type: 'hubMove', id: m.id, ...cleanHubSpot(m.x, m.z, m.face) } : null;
   if (m.type === 'hubEmote') return isHubId(m.id) && isPlazaEmote(m.emote) ? { type: 'hubEmote', id: m.id, emote: m.emote } : null;
   if (m.type === 'hubChat') { const line = parseHubLine(m.line); return line ? { type: 'hubChat', line } : null; }
   if (m.type === 'hubFeature') return m.feature === null ? { type: 'hubFeature', feature: null } : (f => (f ? { type: 'hubFeature', feature: f } : null))(parseFeature(m.feature));

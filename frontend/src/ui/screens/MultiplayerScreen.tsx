@@ -50,7 +50,6 @@ export function MultiplayerScreen({ mode, inviteCode, onBack, onChangePartner, o
   const [picked, setPicked] = useState<Tab | null>(mode === 'join' || inviteCode ? 'join' : null);
   const tab: Tab = picked ?? (lobbies ? 'browse' : 'create');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { world?.setLayout({ mode: 'title', featured: s.partner }); }, [world, s.partner]);
   useEffect(() => { if (session.error) setBusy(false); }, [session.errorId, session.error]);
 
   const name = (fallback: string) => s.name.trim() || fallback;

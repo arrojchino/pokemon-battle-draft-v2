@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { MAX_HUB, cleanSpot, poseAfter, type CharacterId, type HubLine, type HubMember, type PlazaEmote, type ServerMessage, type Spot } from '../../shared/src/index.js';
+import { MAX_HUB, cleanHubSpot, poseAfter, type CharacterId, type HubLine, type HubMember, type PlazaEmote, type ServerMessage, type Spot } from '../../shared/src/index.js';
 
 /** Lines a trainer walking in can still read. */
 const KEEP_LINES = 40;
@@ -30,8 +30,9 @@ export class Hub {
     if (this.members.size >= MAX_HUB) return false;
     let spot = at;
     if (!spot) {
-      const a = Math.random() * Math.PI * 2, r = 1.8 + Math.random() * 2;
-      spot = cleanSpot(Math.sin(a) * r, Math.cos(a) * r, a + Math.PI);
+      // No spot given: near the town entrance (south of the fountain), facing into the square.
+      const a = (Math.random() - 0.5) * 1.6, r = 8 + Math.random() * 1.5;
+      spot = cleanHubSpot(Math.sin(a) * r, Math.cos(a) * r, Math.PI);
     }
     const member: HubMember = { id: `m${++this.nextMember}`, name, avatar, pose: null, ...spot };
     this.members.set(ws, member);

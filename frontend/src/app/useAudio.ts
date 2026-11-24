@@ -24,13 +24,14 @@ export function useAudio() {
     sound.play(cue, { pan, gain, pitch });
   }), [world]);
   useEffect(() => world?.events.on('cry', ({ dex, pan, gain, rate }) => sound.cry(dex, { pan, gain, rate })), [world]);
-  // The soundscape follows the stage: a plaza, a battle (quieter for a spectator), and the menus for the rest.
+  // The soundscape follows the place: the town square has its own bed; in the stadium a battle has the battle bed
+  // (quieter for a spectator) and the room, draft and results the stadium's theme; the intro uses that theme too.
   const watching = !!useSession().watching;
   useEffect(() => {
     if (!world) return;
     const follow = () => {
-      const m = world.stage;
-      sound.setProfile(m === 'hub' || m === 'plaza' ? 'plaza' : m === 'arena' ? (watching ? 'watch' : 'battle') : 'menu');
+      const m = world.stage, env = world.environment;
+      sound.setProfile(env === 'town' ? 'plaza' : m === 'arena' ? (watching ? 'watch' : 'battle') : 'menu');
     };
     follow();
     const t = window.setInterval(follow, 400);

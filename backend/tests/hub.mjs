@@ -40,7 +40,7 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 const a = client('a'), b = client('b'), c = client('c');
 await connect(a); await connect(b); await connect(c);
 await until(() => a.hello && b.hello && c.hello, 'hello');
-assert.equal(a.hello.protocol, 9);
+assert.equal(a.hello.protocol, 10);
 
 // ---- The main plaza
 a.send({ type: 'hub', on: true, name: 'Ana', avatar: 'greninja', at: { x: 1, z: 2, face: 0.5 } });
@@ -55,14 +55,22 @@ await until(() => b.hub && a.joins.some(m => m.id === b.hub.you), 'b enters, a h
 assert.equal(b.hub.members.length, base + 1, 'a newcomer sees everyone');
 const bj = a.joins.find(m => m.id === b.hub.you);
 assert.equal(bj.name, 'Beto', 'names are cleaned');
-assert.ok(Math.hypot(bj.x, bj.z) <= 9, 'the server spawn is on the platform');
+assert.ok(Math.hypot(bj.x, bj.z) <= 16, 'the server spawn is in the town square');
+assert.ok(bj.z > 5, 'the server spawn is by the town entrance, clear of the fountain');
+// Changing partner while in the plaza (My Partner): everyone else hears the new partner, the id and spot stay.
+b.send({ type: 'hub', on: true, name: 'Beto', avatar: 'mewtwo', at: null });
+await until(() => a.joins.some(m => m.id === b.hub.you && m.avatar === 'mewtwo'), 'partner change reaches a');
+assert.equal(a.joins.filter(m => m.id === b.hub.you).at(-1).x, bj.x, 'a partner change does not move the trainer');
+b.send({ type: 'hub', on: true, name: 'Beto', avatar: 'lugia', at: null });
+await until(() => a.joins.filter(m => m.id === b.hub.you).at(-1).avatar === 'lugia', 'and back');
 const beto = b.hub.you;
 const from = (list, id) => list.filter(m => m.id === id);
 
 // Moves and emotes reach everyone else, pulled back onto the platform; never the sender.
 b.send({ type: 'hubMove', x: 30, z: 0, face: 0 });
 await until(() => from(a.moves, beto).length === 1, 'move relayed');
-assert.deepEqual(from(a.moves, beto)[0], { type: 'hubMove', id: beto, x: 9, z: 0, face: 0 });
+// v10: the town square is larger than a room plaza; spots are kept within HUB_R (16).
+assert.deepEqual(from(a.moves, beto)[0], { type: 'hubMove', id: beto, x: 16, z: 0, face: 0 });
 a.send({ type: 'hubEmote', emote: 'twirl' });
 await until(() => from(b.emotes, a.hub.you).length === 1, 'emote relayed');
 assert.deepEqual(from(b.emotes, a.hub.you)[0], { type: 'hubEmote', id: a.hub.you, emote: 'twirl' });

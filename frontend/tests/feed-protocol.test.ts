@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { MAX_FEED_LINES, PROTOCOL_VERSION, parseClientMessage, parseServerMessage } from '../../shared/src/protocol.js';
 
 describe('plaza feed messages (v8)', () => {
-  it('is protocol 9 (held poses, after the v8 feed)', () => expect(PROTOCOL_VERSION).toBe(9));
+  it('is protocol 10 (town plaza radius, after v9 held poses)', () => expect(PROTOCOL_VERSION).toBe(10));
 
   it('accepts only the strict hubFeed shape from clients', () => {
     expect(parseClientMessage({ type: 'hubFeed', on: true })).toEqual({ type: 'hubFeed', on: true });

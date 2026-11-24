@@ -90,7 +90,20 @@ function load(): Settings {
 
 let state = load();
 const listeners = new Set<() => void>();
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* ignore */ } listeners.forEach(l => l()); };
+const write = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* ignore */ } };
+const save = () => { write(); listeners.forEach(l => l()); };
+// A first visit keeps the partner it was dealt: saved now, so a reload (or backing out of the partner choice)
+// brings back the same Pokemon instead of dealing a new one each time.
+if (firstVisit) write();
+// Another tab saved: take its values. Without this, a tab that changed anything later saved its whole stale
+// copy and put back the partner the other tab had just replaced.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', e => {
+    if (e.key !== KEY || e.newValue === null || e.newValue === JSON.stringify(state)) return;
+    state = load();
+    listeners.forEach(l => l());
+  });
+}
 export const settings = {
   get: () => state,
   set(patch: Partial<Settings>) { state = { ...state, ...patch }; save(); },

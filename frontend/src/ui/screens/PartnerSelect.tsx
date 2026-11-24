@@ -4,7 +4,7 @@ import { ROSTER, characterById, quipKey } from '../../characters/roster.js';
 import { settings, useSettings } from '../../app/settings.js';
 import { useWorld } from '../../app/WorldProvider.js';
 import { sound } from '../../audio/sound.js';
-import { Icon, ScreenHeader } from '../primitives.js';
+import { Icon, ScreenHeader, Spinner } from '../primitives.js';
 import { Sprite, TypeBadge } from '../pokemon.js';
 import { useT } from '../../i18n/index.js';
 
@@ -25,10 +25,17 @@ export function PartnerSelect({ onBack, onConfirm, confirmLabel }: { onBack: () 
   const index = ROSTER.indexOf(c);
 
   useEffect(() => { world?.setLayout({ mode: 'select', focus }); }, [world, focus]);
+  // The preview follows the pick at once: until the chosen model is on stage, its artwork and the download stand in.
+  const [loaded, setLoaded] = useState(() => !world || world.isLoaded(focus));
+  const [progress, setProgress] = useState(0);
   useEffect(() => {
+    setLoaded(!world || world.isLoaded(focus)); setProgress(0);
     if (!world) return;
-    const off = world.events.on('characterReady', ({ id }) => { if (id === focus) world.emote(id, characterById(id)!.personality.on.select); });
-    return off;
+    const offs = [
+      world.events.on('characterReady', ({ id }) => { if (id === focus) { setLoaded(true); world.emote(id, characterById(id)!.personality.on.select); } }),
+      world.events.on('progress', p => setProgress(p.total ? p.loaded / p.total : 0)),
+    ];
+    return () => offs.forEach(off => off());
   }, [world, focus]);
   // Roving radio group: when a tile has keyboard focus, focus follows the selected partner.
   useEffect(() => {
@@ -79,6 +86,12 @@ export function PartnerSelect({ onBack, onConfirm, confirmLabel }: { onBack: () 
   return (
     <main className="screen shop" style={{ '--partner': c.accent } as CSSProperties}>
       <ScreenHeader title={t('partner.title')} eyebrow={t('partner.eyebrow')} onBack={onBack} />
+      {!loaded && status.kind !== 'fallback' && (
+        <div className="shop__loading" key={c.id} role="status" aria-live="polite">
+          <Sprite artId={c.dex} name={c.name} eager className="shop__loadart" />
+          <span className="shop__loadline"><Spinner size={16} label="" />{t('partner.loadingModel', { name: c.name })}{progress > 0 && progress < 1 ? ` · ${Math.round(progress * 100)}%` : ''}</span>
+        </div>
+      )}
       <section className="panel shop__panel" aria-label={t('partner.eyebrow')}>
         <div className="shop__tag" key={c.id} aria-live="polite">
           <p className="eyebrow">{t('partner.no')} <span className="num">{String(c.dex).padStart(4, '0')}</span><span className="shop__count num">{index + 1} / {ROSTER.length}</span></p>

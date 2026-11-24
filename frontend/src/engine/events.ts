@@ -26,6 +26,14 @@ export type WorldEvents = {
   hubProgress: { progress: number; label: string };
   /** Main plaza: this player asked to talk to the host (E nearby, a click on her, or arriving after one). */
   hostTalk: void;
+  /** The intro reached a beat: it started playing, the partner was revealed, the title card is due, it ended. */
+  introBeat: { kind: 'start' | 'reveal' | 'title' | 'end' };
+  /** The intro finished (the app moves on to the plaza). */
+  introEnd: void;
+  /** The game is travelling to another environment (the screen goes dark, the new place is revealed). */
+  travel: { to: 'intro' | 'town' | 'stadium' };
+  /** An environment (intro, town, stadium) finished loading and building. */
+  envReady: { env: 'intro' | 'town' | 'stadium' };
 };
 
 type Handler<T> = (payload: T) => void;

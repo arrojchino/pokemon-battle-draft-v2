@@ -29,6 +29,8 @@ export class CameraDirector {
   kick(amount: number) { if (this.jolts) this.shakeAmt = Math.max(this.shakeAmt, amount); }
 
   constructor(private camera: THREE.PerspectiveCamera) {}
+  /** Drive another camera (each environment has its own); the next `cut` places it. */
+  attach(camera: THREE.PerspectiveCamera) { this.camera = camera; }
 
   cut(shot: Shot) { this.go(shot); this.pos.snap(); this.target.snap(); this.fov = shot.fov; this.fovV.v = 0; this.roll = this.rollTarget; this.rollV.v = 0; }
   go(shot: Shot) {

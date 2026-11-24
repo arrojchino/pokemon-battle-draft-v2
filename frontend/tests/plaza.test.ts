@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CHAT_KEEP, MAX_CHAT, cleanChat, createRoom, publicView, reduce, seatGuest, type RoomState, type Rng } from '../../shared/src/room.js';
-import { PLAZA_R, cleanSpot, parseClientMessage, parseServerMessage } from '../../shared/src/protocol.js';
+import { HUB_R, PLAZA_R, cleanSpot, parseClientMessage, parseServerMessage } from '../../shared/src/protocol.js';
 import { PLAZA_SPAWN, Plaza, REACH, RIVAL, platform, withObstacles } from '../src/engine/world/Plaza.js';
 
 const rng: Rng = { coin: () => 'heads', float: () => 0.25 };
@@ -211,7 +211,7 @@ describe('plaza walking', () => {
 describe('main plaza protocol', () => {
   it('parses plaza and spectator messages from clients', () => {
     expect(parseClientMessage({ type: 'hub', on: true, name: ' Ana\u202e ', avatar: 'greninja', at: { x: 20, z: 0, face: 0 } }))
-      .toEqual({ type: 'hub', on: true, name: 'Ana', avatar: 'greninja', at: { x: PLAZA_R, z: 0, face: 0 } });
+      .toEqual({ type: 'hub', on: true, name: 'Ana', avatar: 'greninja', at: { x: HUB_R, z: 0, face: 0 } });
     expect(parseClientMessage({ type: 'hub', on: false })).toEqual({ type: 'hub', on: false, name: 'Trainer', avatar: null, at: null });
     expect(parseClientMessage({ type: 'hubMove', x: 1, z: 2, face: 0 })).toEqual({ type: 'hubMove', x: 1, z: 2, face: 0 });
     expect(parseClientMessage({ type: 'hubChat', text: ' \u0000 ' })).toBeNull();
@@ -228,7 +228,7 @@ describe('main plaza protocol', () => {
     // v9: a held pose survives parsing, anything else reads as standing
     expect(parseServerMessage({ type: 'hub', you: 'm3', members: [{ ...member, pose: 'nap' }, { ...member, id: 'm4', pose: 'dance' }], chat: [] }))
       .toEqual({ type: 'hub', you: 'm3', members: [{ ...member, pose: 'nap' }, { ...member, id: 'm4', pose: null }], chat: [] });
-    expect(parseServerMessage({ type: 'hubMove', id: 'm3', x: 99, z: 0, face: 0 })).toEqual({ type: 'hubMove', id: 'm3', x: PLAZA_R, z: 0, face: 0 });
+    expect(parseServerMessage({ type: 'hubMove', id: 'm3', x: 99, z: 0, face: 0 })).toEqual({ type: 'hubMove', id: 'm3', x: HUB_R, z: 0, face: 0 });
     expect(parseServerMessage({ type: 'hubLeave', id: 'rival' })).toBeNull();
     expect(parseServerMessage({ type: 'watching', code: null })).toEqual({ type: 'watching', code: null });
     const live = { code: 'ABC123', names: ['A', 'B'], avatars: ['lugia', 'nope'], bestOf: 5, wins: [1, -2], turn: 7, watchers: 2 };

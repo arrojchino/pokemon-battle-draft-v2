@@ -28,7 +28,7 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 const a = client('a'); const b = client('b');
 await connect(a); await connect(b);
 await until(() => a.hello && b.hello, 'hello');
-assert.equal(a.hello.protocol, 9);
+assert.equal(a.hello.protocol, 10);
 
 // v2 create with avatar; v1-style join (no avatar field) must still work.
 a.send({ type: 'create', name: 'Ana\u0000‮', bestOf: 3, avatar: 'greninja' });
@@ -49,6 +49,9 @@ for (const c of [a, b]) for (const text of c.raw.filter(t => t.includes('"state"
 // Avatar selection is validated against the whitelist.
 b.send({ type: 'avatar', avatar: 'fuecoco' });
 await until(() => a.state.players[1].avatar === 'fuecoco', 'avatar');
+// Both seats see both partners: the joiner's change reaches its own view too, and the host's stays put.
+await until(() => b.state.players[1].avatar === 'fuecoco' && b.state.players[0].avatar === 'greninja', 'both views agree');
+assert.equal(a.state.players[0].avatar, 'greninja', "a join never overwrites the host's partner");
 b.send({ type: 'avatar', avatar: '../../etc/passwd' });
 await until(() => b.errors.includes('Malformed message'), 'bad avatar rejected');
 

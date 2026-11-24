@@ -62,7 +62,7 @@ async function battle(host, guest, names, avatars) {
 const [ana, beto, cami, dani, eli, flor, gus] = ['ana', 'beto', 'cami', 'dani', 'eli', 'flor', 'gus'].map(client);
 for (const c of [ana, beto, cami, dani, eli, flor, gus]) await connect(c);
 await until(() => [ana, beto, cami, dani, eli, flor, gus].every(c => c.hello), 'hello');
-assert.equal(cami.hello.protocol, 9);
+assert.equal(cami.hello.protocol, 10);
 
 // ---- Validation: strict shape, plaza members only.
 cami.send({ type: 'hubFeed', on: true });

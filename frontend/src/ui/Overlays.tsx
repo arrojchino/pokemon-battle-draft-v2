@@ -89,10 +89,11 @@ const TIPS = ['overlay.tip1', 'overlay.tip2', 'overlay.tip3', 'overlay.tip4', 'o
  * First-load veil: the capsule rolls inside a ring that fills with the real byte progress of the opening
  * partner's model. When the stage is ready the ring closes, the capsule pops and the veil dissolves over the menu.
  */
-export function LoadingVeil() {
+export function LoadingVeil({ hold = false }: { hold?: boolean }) {
   const t = useT();
   const { status } = useWorld();
-  const done = useStageReady();
+  // `hold` keeps it up until the opening cinematic actually starts (its scene and the partner are ready).
+  const done = useStageReady() && !hold;
   const [gone, setGone] = useState(false);
   const [tip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
   useEffect(() => { if (done) { const t = setTimeout(() => setGone(true), 1100); return () => clearTimeout(t); } }, [done]);

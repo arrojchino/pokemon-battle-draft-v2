@@ -1,4 +1,4 @@
-import { HUB_SINCE, PLAZA_SINCE, cleanSpot, parseServerMessage, type BattleMode, type CharacterId, type ClientMessage, type GameAction, type PlazaEmote, type Spot, type Visibility } from '@shared';
+import { HUB_SINCE, PLAZA_SINCE, cleanHubSpot, cleanSpot, parseServerMessage, type BattleMode, type CharacterId, type ClientMessage, type GameAction, type PlazaEmote, type Spot, type Visibility } from '@shared';
 import { PresenceRelay, SnapshotStore, sessionStore, type BattleListener, type HubListener, type LobbyList, type PresenceListener, type Transport } from './types.js';
 import { t as tr } from '../i18n/index.js';
 
@@ -137,7 +137,7 @@ export class WsTransport implements Transport {
     this.v6(on ? { type: 'hub', on: true, name, avatar, at } : { type: 'hub', on: false, name: '', avatar: null, at: null });
   }
   hubMove(x: number, z: number, face: number) {
-    const s = cleanSpot(x, z, face);
+    const s = cleanHubSpot(x, z, face);
     // Walking back in after a drop starts from here, not from the first spawn.
     if (this.hubAs) this.hubAs.at = s;
     if (this.hubAs) this.v6({ type: 'hubMove', ...s });

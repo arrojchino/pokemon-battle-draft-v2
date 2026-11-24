@@ -133,6 +133,11 @@ export class Plaza {
   bounds: Bounds = platform;
   /** Seconds this player's partner stays put (getting up from a nap first); movement waits, it is not dropped. */
   hold = 0;
+  /**
+   * The camera's yaw around the walker (radians; 0 looks up the field toward -z). Keys walk relative to it, so W
+   * always walks away from the camera, even after the player turns it with the mouse.
+   */
+  keyYaw = 0;
   readonly marker: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
   private goal: Goal | null = null;
   private sent: Spot | null = null;
@@ -246,8 +251,9 @@ export class Plaza {
     let dx = 0, dz = 0, speed = 0;
     for (const code of this.keys) { const v = MOVE_KEYS[code]; if (v) { dx += v[0]; dz += v[1]; } }
     if (dx || dz) {
-      // Keys steer relative to the camera, which always looks up the field (-z). They cancel a click.
+      // Keys steer relative to the camera (keyYaw). They cancel a click.
       const l = Math.hypot(dx, dz); dx /= l; dz /= l;
+      if (this.keyYaw) { const c = Math.cos(this.keyYaw), s = Math.sin(this.keyYaw); const rx = dx * c + dz * s, rz = -dx * s + dz * c; dx = rx; dz = rz; }
       speed = me.walk;
       this.goal = null;
     } else if (this.goal) {

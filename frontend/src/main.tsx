@@ -13,5 +13,6 @@ import './styles/battle-fx.css';
 import './styles/battle-hud.css';
 import './styles/pokedex.css';
 import './styles/settings.css';
+import './styles/world.css';
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
