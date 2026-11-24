@@ -6,7 +6,7 @@ import {
   createCardMaterial, createClothMaterial, createEmissiveMaterial, createFoliageMaterial, createGroundMaterial, createStaticMaterial,
   createTownUniforms,
 } from './materials.js';
-import { createCardAtlas, createClothAtlas, bakeLightMaps, LM_SCALE, mulberry } from './textures.js';
+import { createCardAtlas, createClothAtlas, createNoiseTexture, bakeLightMaps, LM_SCALE, mulberry } from './textures.js';
 import { SKY, createBeamMaterial, createFarMaterial, createTownSky } from './sky.js';
 import { createFx, createPortalMaterial, createWaterMaterial, createWindowMaterial } from './fx.js';
 import {
@@ -50,8 +50,9 @@ export function createTown(opts: { tier: QualityTier }): TownEnvironment {
   u.uLM.value = lm; u.uAO.value = ao;
   u.uLMRect.value.set(lmRect.minX, lmRect.minZ, lmRect.size, LM_SCALE);
 
-  const clothTex = createClothAtlas(); const cardTex = createCardAtlas();
-  textures.push(clothTex, cardTex);
+  const clothTex = createClothAtlas(); const cardTex = createCardAtlas(); const noiseTex = createNoiseTexture();
+  textures.push(clothTex, cardTex, noiseTex);
+  u.uNoise.value = noiseTex;
 
   const matStatic = createStaticMaterial(u);
   const matEmis = createEmissiveMaterial(u);
@@ -65,7 +66,7 @@ export function createTown(opts: { tier: QualityTier }): TownEnvironment {
   const add = <T extends THREE.Object3D>(o: T, cast = false, receive = false): T => { o.castShadow = cast; o.receiveShadow = receive; scene.add(o); return o; };
 
   // sky and far scenery
-  const sky = add(createTownSky());
+  const sky = add(createTownSky(noiseTex));
   const far = createFarGeometry();
   const matFar = createFarMaterial(scene.fog.color, u.uTime);
   add(new THREE.Mesh(far.hills, matFar));
@@ -74,7 +75,8 @@ export function createTown(opts: { tier: QualityTier }): TownEnvironment {
   beams.renderOrder = 2;
   const houses = createHouses(u, 110);
   add(houses.mesh, false, true);
-  const farTrees = createFarTrees(matFol, 120);
+  const farTrees = createFarTrees(matFol, 90);
+  const farTreesFull = farTrees.count;
   add(farTrees, false, true);
 
   // town floor
@@ -146,7 +148,7 @@ export function createTown(opts: { tier: QualityTier }): TownEnvironment {
   scene.add(key, key.target);
   const mkPoint = (col: string, i: number, d: number, p: THREE.Vector3) => { const l = new THREE.PointLight(col, i, d, 2); l.position.copy(p); scene.add(l); return l; };
   const points = [
-    mkPoint('#ffd8a8', 9, 7.5, ctx.lightSpots.center),
+    mkPoint('#ffd8a8', 4, 6.5, ctx.lightSpots.center),
     mkPoint('#7fe4ff', 6, 6.5, ctx.lightSpots.fountain),
     mkPoint('#ffb27a', 7, 6.5, ctx.lightSpots.shops),
     mkPoint('#ffc9b0', 6, 5.5, ctx.lightSpots.stage),
@@ -167,7 +169,7 @@ export function createTown(opts: { tier: QualityTier }): TownEnvironment {
     cards.mesh.count = t === 'low' ? Math.floor(cards.full / 2) : cards.full;
     points[2].visible = t !== 'low';
     points[3].visible = t !== 'low';
-    farTrees.count = Math.min(farTrees.count, farTrees.instanceMatrix.count);
+    farTrees.count = t === 'low' ? Math.min(30, farTreesFull) : farTreesFull;
   };
   setQuality(opts.tier);
 

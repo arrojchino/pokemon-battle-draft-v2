@@ -20,6 +20,13 @@ describe('town bounds', () => {
     }
   });
 
+  it('keeps the whole trainer arrival area free (x -1.2..1.2, z 7.2..8.4)', () => {
+    for (let x = -1.2; x <= 1.2001; x += 0.2) for (let z = 7.2; z <= 8.4001; z += 0.2) {
+      const p = bounds(x, z, R);
+      expect(Math.hypot(p.x - x, p.z - z), `${x},${z}`).toBeLessThan(1e-9);
+    }
+  });
+
   it('pushes a point inside the fountain out of it', () => {
     const p = bounds(FOUNTAIN.x + 0.3, FOUNTAIN.z + 0.2, R);
     expect(Math.hypot(p.x - FOUNTAIN.x, p.z - FOUNTAIN.z)).toBeGreaterThanOrEqual(FOUNTAIN.collider + R - 1e-6);

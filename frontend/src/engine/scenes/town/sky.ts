@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLSL_NOISE } from './materials.js';
+import { GLSL_NOISE, GLSL_NOISE_TEX } from './materials.js';
 
 /**
  * The night over the town: navy gradient, moon with a halo, two layers of twinkling stars, a faint galactic band,
@@ -14,11 +14,12 @@ export const SKY = {
   stadiumDir: new THREE.Vector3(1, 0, -1).normalize(),
 };
 
-export function createTownSky(): THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial> {
+export function createTownSky(noise: THREE.Texture): THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial> {
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: {
       uTime: { value: 0 },
+      uNoise: { value: noise },
       uMoonDir: { value: SKY.moonDir.clone() },
       uTop: { value: SKY.top }, uMid: { value: SKY.mid }, uHorizon: { value: SKY.horizon },
       uGlowDir: { value: SKY.stadiumDir.clone() },
@@ -35,7 +36,7 @@ export function createTownSky(): THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMa
     fragmentShader: /* glsl */`
       uniform float uTime; uniform vec3 uMoonDir, uTop, uMid, uHorizon, uGlowDir, uGlowCol, uTownCol;
       varying vec3 vDir;
-      ${GLSL_NOISE}
+      ${GLSL_NOISE_TEX}
       float star(vec3 d, float scale, float density, float size) {
         vec3 c = floor(d * scale);
         float s = tHash(c.xy + c.z * 17.13);

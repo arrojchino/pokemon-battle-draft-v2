@@ -16,6 +16,8 @@ export type TownUniforms = {
   /** minX, minZ, size, strength of the light map. */
   uLMRect: { value: THREE.Vector4 };
   uMoonCol: { value: THREE.Color };
+  /** Tileable noise atlas (see createNoiseTexture): fragment noise is sampled, not hashed. */
+  uNoise: { value: THREE.Texture | null };
 };
 
 export function createTownUniforms(): TownUniforms {
@@ -25,6 +27,7 @@ export function createTownUniforms(): TownUniforms {
     uAO: { value: null },
     uLMRect: { value: new THREE.Vector4(-20, -20, 40, 2.2) },
     uMoonCol: { value: new THREE.Color('#8fa8ff') },
+    uNoise: { value: null },
   };
 }
 
@@ -41,6 +44,21 @@ float tNoise3(vec3 p) {
   return mix(tNoise(p.xy + iz * vec2(37.0, 17.0)), tNoise(p.xy + (iz + 1.0) * vec2(37.0, 17.0)), fz);
 }
 float tFbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * tNoise(p); p = p * 2.07 + vec2(17.1, 9.3); a *= 0.5; } return s; }
+`;
+
+/** Same functions as GLSL_NOISE, but value noise comes from the noise atlas (one fetch instead of four hashes). */
+export const GLSL_NOISE_TEX = /* glsl */`
+uniform sampler2D uNoise;
+float tHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+vec2 tHash2(vec2 p) { float n = tHash(p); return vec2(n, tHash(p + n + 17.17)); }
+float tNoise(vec2 p) { return texture2D(uNoise, p * 0.125).r; }
+float tNoise3(vec3 p) {
+  float iz = floor(p.z), fz = fract(p.z); fz = fz * fz * (3.0 - 2.0 * fz);
+  return mix(tNoise(p.xy + iz * vec2(3.7, 1.7)), tNoise(p.xy + (iz + 1.0) * vec2(3.7, 1.7)), fz);
+}
+float tFbm(vec2 p) { vec4 n = texture2D(uNoise, p * 0.125); return n.r * 0.62 + n.g * 0.38; }
+// Voronoi from the atlas: x = distance to the cell edge (cell units), y = cell id, z = a second id
+vec3 tVoronoi(vec2 p) { vec4 n = texture2D(uNoise, p * 0.125); return vec3(n.b * 0.5, n.a, fract(n.a * 7.31)); }
 `;
 
 const GLSL_FRAG_UTIL = /* glsl */`
@@ -92,7 +110,7 @@ const F_HEAD = /* glsl */`
 uniform float uTime;
 varying vec3 vTW;
 varying vec3 vTN;
-${GLSL_NOISE}
+${GLSL_NOISE_TEX}
 ${GLSL_FRAG_UTIL}
 `;
 
@@ -203,19 +221,6 @@ export function createGroundMaterial(u: TownUniforms): THREE.MeshStandardMateria
     uniforms: u,
     fHead: /* glsl */`
       float gH; float gRough; vec3 gGlow;
-      vec3 tVoronoi(vec2 x) {
-        vec2 n = floor(x), f = fract(x); vec2 mg = vec2(0.0), mr = vec2(0.0); float md = 8.0;
-        for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
-          vec2 g = vec2(float(i), float(j)); vec2 o = 0.15 + 0.7 * tHash2(n + g); vec2 r = g + o - f; float d = dot(r, r);
-          if (d < md) { md = d; mr = r; mg = g; }
-        }
-        md = 8.0;
-        for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
-          vec2 g = mg + vec2(float(i), float(j)); vec2 o = 0.15 + 0.7 * tHash2(n + g); vec2 r = g + o - f;
-          if (dot(mr - r, mr - r) > 1e-5) md = min(md, dot(0.5 * (mr + r), normalize(r - mr)));
-        }
-        return vec3(md, tHash(n + mg), tHash(n + mg + 3.1));
-      }
       float caustic(vec2 p, float t) {
         vec2 q = p * 2.6;
         float c = 0.0;
@@ -360,7 +365,7 @@ export function createGroundMaterial(u: TownUniforms): THREE.MeshStandardMateria
         alb = mix(alb, pl, mPl); gH = mix(gH, plh, mPl); gRough = mix(gRough, plr, mPl);
         // caustic shimmer thrown by the fountain
         float cf = smoothstep(1.55, 1.75, gr) * (1.0 - smoothstep(1.8, 2.6, gr));
-        gGlow += vec3(0.25, 0.75, 1.0) * caustic(gp, uTime) * cf * 0.9;
+        if (cf > 0.0) gGlow += vec3(0.25, 0.75, 1.0) * caustic(gp, uTime) * cf * 0.9;
       }
       vec2 auv = tLMuv(vTW);
       float ao = (auv.x > 0.0 && auv.y > 0.0 && auv.x < 1.0 && auv.y < 1.0) ? texture2D(uAO, auv).r : 1.0;

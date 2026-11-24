@@ -35,6 +35,7 @@ let env = createIntro({ tier });
 const buildMs = Math.round(performance.now() - tBuild);
 let composer: EffectComposer;
 function buildComposer() {
+  composer?.passes.forEach((p) => p.dispose());
   composer?.dispose();
   const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: tier === 'high' ? 4 : 0 });
   composer = new EffectComposer(renderer, rt);

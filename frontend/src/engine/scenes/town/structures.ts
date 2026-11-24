@@ -70,7 +70,7 @@ const COL = {
 };
 const WARM = C('#ffb46a', 3.2);
 const WARM_SOFT = new THREE.Color('#ffc58a');
-const CYAN = C('#3ee6ff', 3.0);
+const CYAN = C('#3ee6ff', 2.3);
 
 /** A tiled roof with tiles on top, dark wood underneath and a fascia, placed with matrix m. */
 function tiledRoof(ctx: Ctx, m: THREE.Matrix4, halfW: number, halfD: number, rise: number, lift: number, tile: THREE.ColorRepresentation, segU = 16, segV = 8, sides?: number[], ridge = true): void {
@@ -100,14 +100,14 @@ export function buildCenter(ctx: Ctx): void {
   const f = new Frame(CENTER.x, G, CENTER.z, 0);
   const hd = CENTER.hd; // 2.2, glass front at local z = 2.1
   S(ctx, box(8.2, 0.22, 4.6), COL.stoneDark, KIND.stone, f.m(0, 0.11, 0));
-  S(ctx, rbox(7.8, 2.62, 4.2, 0.3, 3), COL.white, KIND.plaster, f.m(0, 0.22 + 1.31, 0));
+  S(ctx, rbox(7.8, 2.62, 4.2, 0.3, 2), COL.white, KIND.plaster, f.m(0, 0.22 + 1.31, 0));
   S(ctx, box(7.84, 0.14, 4.24), '#3a3f4a', KIND.paint, f.m(0, 0.3, 0));
-  S(ctx, rbox(8.02, 0.42, 4.42, 0.18, 3), COL.red, KIND.gloss, f.m(0, 3.03, 0));
-  S(ctx, rbox(8.3, 0.9, 4.7, 0.42, 4), COL.redDeep, KIND.gloss, f.m(0, 3.69, 0));
+  S(ctx, rbox(8.02, 0.42, 4.42, 0.18, 2), COL.red, KIND.gloss, f.m(0, 3.03, 0));
+  S(ctx, rbox(8.3, 0.9, 4.7, 0.42, 3), COL.redDeep, KIND.gloss, f.m(0, 3.69, 0));
   // upper drum and dome
   S(ctx, cyl(1.42, 1.52, 0.6, 40), COL.white, KIND.plaster, f.m(0, 4.44, -0.3));
-  S(ctx, new THREE.SphereGeometry(1.5, 40, 12, 0, Math.PI * 2, 0, Math.PI / 2), COL.red, KIND.gloss, f.m(0, 4.72, -0.3, 0, 0, 0, 1, 0.55, 1));
-  E(ctx, new THREE.TorusGeometry(1.5, 0.025, 6, 64), CYAN, f.m(0, 4.73, -0.3, Math.PI / 2));
+  S(ctx, new THREE.SphereGeometry(1.5, 32, 8, 0, Math.PI * 2, 0, Math.PI / 2), COL.red, KIND.gloss, f.m(0, 4.72, -0.3, 0, 0, 0, 1, 0.55, 1));
+  E(ctx, new THREE.TorusGeometry(1.5, 0.025, 4, 48), CYAN, f.m(0, 4.73, -0.3, Math.PI / 2));
   // light strip under the band (front and sides)
   E(ctx, box(7.7, 0.04, 0.04), CYAN, f.m(0, 2.79, 2.12));
   for (const sx of [-1, 1]) E(ctx, box(0.04, 0.04, 4.0), CYAN, f.m(sx * 3.92, 2.79, 0));
@@ -119,27 +119,27 @@ export function buildCenter(ctx: Ctx): void {
   S(ctx, cyl(0.23, 0.23, 0.07, 32), '#22232a', KIND.gloss, f.m(0, ey, ez + 0.06, Math.PI / 2));
   S(ctx, cyl(0.17, 0.17, 0.08, 32), COL.white, KIND.gloss, f.m(0, ey, ez + 0.07, Math.PI / 2));
   E(ctx, cyl(0.1, 0.1, 0.02, 24), C('#bff6ff', 4.0), f.m(0, ey, ez + 0.115, Math.PI / 2));
-  E(ctx, new THREE.TorusGeometry(0.82, 0.03, 8, 64), C('#dff8ff', 2.6), f.m(0, ey, ez));
-  halo(ctx, f.p(0, ey, ez + 0.2), C('#9fe8ff', 0.9), 2.6, 0, 0);
+  E(ctx, new THREE.TorusGeometry(0.82, 0.03, 5, 48), C('#dff8ff', 1.8), f.m(0, ey, ez));
+  halo(ctx, f.p(0, ey, ez + 0.2), C('#9fe8ff', 0.5), 2.4, 0, 0);
   // entrance: sliding glass doors, transom, frame, canopy with a light strip
   W(ctx, new THREE.PlaneGeometry(2.2, 1.55), '#fff2e0', f.m(0, 0.22 + 0.775, 2.115), 1, 1, 2, 0.3);
   W(ctx, new THREE.PlaneGeometry(2.2, 0.5), '#ffe8cc', f.m(0, 2.06, 2.115), 4, 1, 0, 0.7);
   for (const sx of [-1, 1]) S(ctx, box(0.1, 2.1, 0.1), '#c8ccd4', KIND.metal, f.m(sx * 1.15, 0.22 + 1.05, 2.13));
   S(ctx, box(2.4, 0.08, 0.1), '#c8ccd4', KIND.metal, f.m(0, 1.8, 2.13));
-  S(ctx, rbox(3.1, 0.14, 1.05, 0.06), COL.red, KIND.gloss, f.m(0, 2.42, 2.55));
-  E(ctx, box(2.7, 0.03, 0.05), C('#fff1dc', 3.6), f.m(0, 2.345, 2.98));
-  for (const sx of [-1, 1]) E(ctx, cyl(0.06, 0.06, 0.02, 16), C('#fff1dc', 3.6), f.m(sx * 0.8, 2.34, 2.5));
+  S(ctx, rbox(3.1, 0.14, 0.75, 0.06), COL.red, KIND.gloss, f.m(0, 2.55, 2.42));
+  E(ctx, box(2.7, 0.03, 0.05), C('#fff1dc', 2.4), f.m(0, 2.475, 2.72));
+  for (const sx of [-1, 1]) E(ctx, cyl(0.06, 0.06, 0.02, 12), C('#fff1dc', 3.6), f.m(sx * 0.8, 2.47, 2.4));
   // side windows on the front, framed
   for (const sx of [-1, 1]) for (const wx of [1.95, 3.1]) {
     W(ctx, new THREE.PlaneGeometry(0.9, 1.05), '#ffe1c0', f.m(sx * wx, 1.45, 2.115), 2, 1, 0, sx * wx);
     S(ctx, box(1.02, 0.08, 0.08), COL.white, KIND.gloss, f.m(sx * wx, 0.88, 2.15));
     S(ctx, box(1.02, 0.06, 0.06), COL.white, KIND.gloss, f.m(sx * wx, 2.0, 2.14));
-    pool(ctx, f.p(sx * wx, 0, 2.6), 1.3, '#ffcf99', 0.45);
+    pool(ctx, f.p(sx * wx, 0, 2.6), 1.2, '#ffcf99', 0.3);
   }
   for (const sx of [-1, 1]) for (const wz of [-1.0, 0.6]) W(ctx, new THREE.PlaneGeometry(1.1, 1.05), '#ffe1c0', f.m(sx * 3.905, 1.45, wz, 0, sx * Math.PI / 2), 2, 1, 0, wz + sx);
   // rooftop units
   for (const sx of [-2.6, 2.4]) S(ctx, box(0.6, 0.3, 0.5), '#9aa0aa', KIND.metal, f.m(sx, 4.25, -1.2));
-  pool(ctx, f.p(0, 0, 3.0), 3.0, '#ffd09a', 1.7);
+  pool(ctx, f.p(0, 0, 3.0), 2.8, '#ffd09a', 1.05);
   for (const sx of [-3, 0, 3]) pool(ctx, f.p(sx, 0, 2.5), 1.6, '#3ee6ff', 0.22);
   ctx.lightSpots.center.copy(f.p(0, 1.75, 3.3));
   ctx.ao.push({ x: CENTER.x, z: CENTER.z, hw: 4.15, hd: 2.35, rot: 0, a: 0.6, blur: 0.35 });
@@ -272,28 +272,47 @@ export function buildGate(ctx: Ctx): void {
 }
 
 // ---- south entrance ----------------------------------------------------------------------------------
+/**
+ * Two tall lantern pillars with hanging banners and low walls. Nothing spans the path overhead: the follow camera
+ * sits right here behind arriving trainers, so the gateway stays open to the sky.
+ */
 export function buildSouthGate(ctx: Ctx): void {
   const f = new Frame(0, G, SOUTH_GATE_Z, 0);
+  const cell = CLOTH_CELL.banner;
   for (const sx of [-1, 1]) {
     const x = sx * SOUTH_GATE_HALF;
-    S(ctx, rbox(0.55, 0.36, 0.55, 0.05), '#807c76', KIND.rock, f.m(x, 0.18, 0));
-    S(ctx, cyl(0.13, 0.15, 2.3, 12), '#5b3a26', KIND.wood, f.m(x, 0.36 + 1.15, 0));
+    S(ctx, rbox(0.62, 0.36, 0.62, 0.05), '#807c76', KIND.rock, f.m(x, 0.18, 0));
+    S(ctx, box(0.42, 2.3, 0.42), '#9a958c', KIND.stone, f.m(x, 0.36 + 1.15, 0));
+    S(ctx, box(0.56, 0.14, 0.56), '#7a766f', KIND.stone, f.m(x, 2.73, 0));
+    for (const [cx, cz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) S(ctx, box(0.04, 0.36, 0.04), COL.metal, KIND.metal, f.m(x + cx * 0.15, 2.98, cz * 0.15));
+    E(ctx, box(0.26, 0.3, 0.26), WARM, f.m(x, 2.98, 0), 0.6);
+    S(ctx, new THREE.ConeGeometry(0.3, 0.2, 4), COL.metal, KIND.metal, f.m(x, 3.26, 0, 0, Math.PI / 4));
+    halo(ctx, f.p(x, 2.98, 0), WARM_SOFT.clone().multiplyScalar(0.9), 1.6, 0.4, 0);
+    // a short banner on the inner face of each pillar
+    const bw = 0.34, bh = 1.15;
+    const bg = new THREE.PlaneGeometry(bw, bh, 2, 6);
+    const uv = bg.getAttribute('uv') as THREE.BufferAttribute;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (cell[0] + uv.getX(i)) * 0.5, (1 - cell[1]) * 0.5 + uv.getY(i) * 0.5);
+    const dir = f.d(-sx, 0, 0);
+    ctx.cloth.add(bg, '#ffffff', f.m(x - sx * 0.22, 2.4 - bh / 2, 0, 0, -sx * Math.PI / 2), { aSway: (pp: THREE.Vector3) => [dir.x, 0, dir.z, Math.max(0, (G + 2.4 - pp.y) / bh) * 0.5] });
     S(ctx, box(2.2, 0.5, 0.36), '#807c76', KIND.stone, f.m(sx * 3.1, 0.25, 0.1));
     S(ctx, box(2.24, 0.06, 0.4), '#6a6660', KIND.stone, f.m(sx * 3.1, 0.53, 0.1));
+    pool(ctx, f.p(x, 0, -0.3), 1.8, '#ffc47e', 0.9);
   }
-  S(ctx, bentBeam(4.3, 0.16, 0.22, 0.06), '#5b3a26', KIND.wood, f.m(0, 2.18, 0));
-  S(ctx, box(3.7, 0.11, 0.14), '#5b3a26', KIND.wood, f.m(0, 1.86, 0));
-  tiledRoof(ctx, f.m(0, 2.3, 0), 2.45, 0.72, 0.42, 0.12, COL.tile, 16, 5);
-  // a hanging emblem plaque (ball shape) and two lanterns
-  S(ctx, cyl(0.17, 0.17, 0.05, 24), COL.woodLight, KIND.wood, f.m(0, 2.02, -0.13, Math.PI / 2));
-  S(ctx, new THREE.CylinderGeometry(0.13, 0.13, 0.03, 24, 1, false, Math.PI / 2, Math.PI), COL.red, KIND.gloss, f.m(0, 2.02, -0.16, Math.PI / 2));
-  for (const sx of [-1, 1]) chochin(ctx, f, sx * 1.15, 1.52, 0, C('#ffb860', 2.8));
-  pool(ctx, f.p(0, 0, 0), 2.6, '#ffb46e', 1.1);
   // the road keeps going south: lamps receding into the fog
-  for (let i = 0; i < 6; i++) {
-    const z = SOUTH_GATE_Z + 3.5 + i * 5.5;
-    for (const sx of [-1, 1]) streetLamp(ctx, sx * 2.0, z, i > 2 ? 0 : 1);
+  for (let i = 0; i < 5; i++) {
+    const z = SOUTH_GATE_Z + 3.5 + i * 6;
+    for (const sx of [-1, 1]) farLamp(ctx, sx * 2.0, z);
   }
+}
+
+/** A cheap lamp for scenery outside the walkable area (no pool, fewer parts). */
+export function farLamp(ctx: Ctx, x: number, z: number): void {
+  const f = new Frame(x, G, z, Math.PI / 4);
+  S(ctx, cyl(0.035, 0.05, 2.05, 5), COL.metal, KIND.metal, f.m(0, 1.02, 0));
+  E(ctx, box(0.18, 0.25, 0.18), WARM, f.m(0, 2.2, 0), 0.3);
+  S(ctx, new THREE.ConeGeometry(0.2, 0.13, 4), COL.metal, KIND.metal, f.m(0, 2.4, 0, 0, Math.PI / 4));
+  halo(ctx, f.p(0, 2.2, 0), WARM_SOFT.clone().multiplyScalar(0.9), 1.4, 0.2, 0);
 }
 
 // ---- shrine garden ----------------------------------------------------------------------------------
@@ -324,7 +343,7 @@ export function buildGarden(ctx: Ctx): void {
   const b = GARDEN.backdrop;
   const bf = new Frame(b.x, G, b.z, Math.PI / 2);
   for (const sx of [-1, 1]) S(ctx, box(0.14, 2.35, 0.14), '#3a2418', KIND.wood, bf.m(sx * 1.3, 1.175, 0));
-  S(ctx, box(2.48, 1.85, 0.1), COL.plaster, KIND.plaster, bf.m(0, 0.38 + 0.925, 0));
+  S(ctx, box(2.48, 1.85, 0.1), '#c9bba2', KIND.plaster, bf.m(0, 0.38 + 0.925, 0));
   S(ctx, box(2.5, 0.38, 0.13), COL.woodDark, KIND.wood, bf.m(0, 0.19, 0));
   S(ctx, box(2.6, 0.1, 0.16), '#3a2418', KIND.wood, bf.m(0, 2.27, 0));
   E(ctx, cyl(0.6, 0.6, 0.02, 48), C('#ffe2b0', 1.7), bf.m(0, 1.3, 0.055, Math.PI / 2), 0.3);
@@ -335,7 +354,7 @@ export function buildGarden(ctx: Ctx): void {
   tiledRoof(ctx, bf.m(0, 2.32, 0), 1.6, 0.42, 0.24, 0.09, COL.tile, 12, 4);
   for (const sx of [-1, 1]) chochin(ctx, bf, sx * 1.0, 1.98, 0.32, C('#ffd7a0', 2.6), 0.1, 0.24);
   pool(ctx, { x: s.x, z: s.z }, 2.5, '#ffc4a0', 1.1);
-  pool(ctx, bf.p(0, 0, 0.4), 1.4, '#ffe0b0', 0.7);
+  pool(ctx, bf.p(0, 0, 0.4), 1.2, '#ffe0b0', 0.35);
   ctx.lightSpots.stage.set(s.x + 1.3, G + 1.9, s.z + 1.0);
   ctx.ao.push({ x: b.x, z: b.z, hw: 0.25, hd: 1.4, rot: 0, a: 0.5, blur: 0.25 });
   // pond: kidney-shaped water with a rock border
@@ -404,9 +423,9 @@ function stoneLantern(ctx: Ctx, x: number, z: number): void {
 export function buildFountain(ctx: Ctx): void {
   const f = new Frame(0, G, 0, 0);
   const v = (a: number, b: number) => new THREE.Vector2(a, b);
-  S(ctx, new THREE.LatheGeometry([v(1.5, -0.02), v(1.5, 0.2), v(1.53, 0.26), v(1.38, 0.27), v(1.38, 0.0)], 72), '#b9b2a6', KIND.rock, f.m(0, 0, 0));
-  S(ctx, new THREE.LatheGeometry([v(1.36, 0.25), v(1.62, 0.26), v(1.64, 0.33), v(1.6, 0.36), v(1.4, 0.36), v(1.36, 0.32)], 72), '#ebe6dc', KIND.gloss, f.m(0, 0, 0));
-  E(ctx, new THREE.TorusGeometry(1.56, 0.012, 4, 96), C('#7ff0ff', 2.2), f.m(0, 0.362, 0, Math.PI / 2));
+  S(ctx, new THREE.LatheGeometry([v(1.5, -0.02), v(1.5, 0.2), v(1.53, 0.26), v(1.38, 0.27), v(1.38, 0.0)], 48), '#b9b2a6', KIND.rock, f.m(0, 0, 0));
+  S(ctx, new THREE.LatheGeometry([v(1.36, 0.25), v(1.62, 0.26), v(1.64, 0.33), v(1.6, 0.36), v(1.4, 0.36), v(1.36, 0.32)], 48), '#ebe6dc', KIND.gloss, f.m(0, 0, 0));
+  E(ctx, new THREE.TorusGeometry(1.56, 0.012, 3, 64), C('#7ff0ff', 2.2), f.m(0, 0.362, 0, Math.PI / 2));
   ctx.water.add(new THREE.CircleGeometry(1.4, 64), '#ffffff', f.m(0, 0.27, 0, -Math.PI / 2), { aW: [0] });
   S(ctx, new THREE.LatheGeometry([v(0.36, 0), v(0.3, 0.12), v(0.22, 0.5), v(0.2, 0.9), v(0.3, 0.98)], 24), '#b9b2a6', KIND.rock, f.m(0, 0, 0));
   S(ctx, new THREE.LatheGeometry([v(0.18, 0.96), v(0.5, 0.98), v(0.76, 1.08), v(0.8, 1.16), v(0.76, 1.19), v(0.7, 1.15), v(0.4, 1.1), v(0.2, 1.1)], 40), '#ebe6dc', KIND.gloss, f.m(0, 0, 0));
@@ -443,7 +462,7 @@ export function buildBenches(ctx: Ctx): void {
   for (const d of BENCH_ANGLES) {
     const p = ringPos(d, BENCH_R);
     const f = new Frame(p.x, G, p.z, faceInRot(d));
-    for (const sx of [-1, 1]) S(ctx, rbox(0.12, 0.25, 0.38, 0.02), '#8c8880', KIND.rock, f.m(sx * 0.42, 0.125, 0));
+    for (const sx of [-1, 1]) S(ctx, box(0.12, 0.25, 0.38), '#8c8880', KIND.rock, f.m(sx * 0.42, 0.125, 0));
     for (let k = 0; k < 4; k++) S(ctx, box(1.12, 0.035, 0.08), '#9b6a42', KIND.wood, f.m(0, 0.268, -0.13 + k * 0.087));
     for (const sx of [-1, 1]) S(ctx, box(0.03, 0.32, 0.03), '#2a2e38', KIND.metal, f.m(sx * 0.42, 0.4, -0.18, -0.12));
     for (let k = 0; k < 2; k++) S(ctx, box(1.12, 0.055, 0.03), '#9b6a42', KIND.wood, f.m(0, 0.4 + k * 0.1, -0.2 - k * 0.012, -0.12));
@@ -460,7 +479,7 @@ export function streetLamp(ctx: Ctx, x: number, z: number, poolOn = 1): void {
   E(ctx, box(0.18, 0.25, 0.18), WARM, f.m(0, 2.2, 0), 0.3);
   S(ctx, new THREE.ConeGeometry(0.2, 0.13, 4), COL.metal, KIND.metal, f.m(0, 2.4, 0, 0, Math.PI / 4));
   S(ctx, new THREE.SphereGeometry(0.03, 8, 6), COL.gold, KIND.metal, f.m(0, 2.48, 0));
-  halo(ctx, f.p(0, 2.2, 0), WARM_SOFT.clone().multiplyScalar(0.9), 1.4, 0.2, 0);
+  halo(ctx, f.p(0, 2.2, 0), WARM_SOFT.clone().multiplyScalar(0.7), 1.3, 0.2, 0);
   if (poolOn) pool(ctx, { x, z }, 2.5, '#ffc47e', 1.15);
   ctx.ao.push({ x, z, r: 0.3, a: 0.4 });
 }
@@ -468,10 +487,10 @@ export function streetLamp(ctx: Ctx, x: number, z: number, poolOn = 1): void {
 export function buildLamps(ctx: Ctx): void {
   for (const l of LAMPS) streetLamp(ctx, l.x, l.z);
   // the avenue to the stadium continues beyond the gate
-  for (let i = 1; i <= 7; i++) {
-    const c = ringPos(GATE_DEG, GATE_R + 2.5 + i * 5.5);
+  for (let i = 1; i <= 6; i++) {
+    const c = ringPos(GATE_DEG, GATE_R + 2.5 + i * 6);
     const t = ringPos(GATE_DEG + 90, 2.1);
-    for (const s of [-1, 1]) streetLamp(ctx, c.x + t.x * s, c.z + t.z * s, 0);
+    for (const s of [-1, 1]) farLamp(ctx, c.x + t.x * s, c.z + t.z * s);
   }
 }
 
@@ -498,7 +517,7 @@ export function buildRim(ctx: Ctx): void {
       const p = ringPos(d, r);
       const len = step * DEG * r + 0.12;
       const f = new Frame(p.x, G, p.z, faceInRot(d));
-      S(ctx, rbox(len, 0.95, 0.72, 0.22, 2), COL.hedge, KIND.hedge, f.m(0, 0.47, 0));
+      S(ctx, rbox(len, 0.95, 0.72, 0.22, 1), COL.hedge, KIND.hedge, f.m(0, 0.47, 0));
       S(ctx, box(len, 0.12, 0.1), '#77736c', KIND.stone, f.m(0, 0.06, 0.42));
     }
   }
@@ -520,7 +539,7 @@ export function buildRim(ctx: Ctx): void {
 }
 
 // ---- string lights ------------------------------------------------------------------------------------
-const BULBS = [C('#ffd9a0', 3.2), C('#ffc94a', 3.0), C('#ff6a7a', 3.0), C('#7ff0ff', 3.0)];
+const BULBS = [C('#ffd9a0', 2.5), C('#ffc94a', 2.4), C('#ff6a7a', 2.4), C('#7ff0ff', 2.3)];
 
 export function stringLight(ctx: Ctx, a: THREE.Vector3, b: THREE.Vector3, sag: number, spacing = 0.42): void {
   const len = a.distanceTo(b);
@@ -540,10 +559,9 @@ export function buildStringLights(ctx: Ctx): void {
   const ring = LAMPS.slice(0, 8);
   const order = [0, 1, 2, 3, 4, 5, 6, 7]; // 22.5, 67.5, ... around the plaza
   for (let i = 0; i < order.length; i++) stringLight(ctx, top(ring[order[i]]), top(ring[order[(i + 1) % order.length]]), 0.32);
-  // forecourt of the Center, south avenue, toward the south gate
+  // forecourt of the Center and the south avenue
   stringLight(ctx, top(LAMPS[8]), top(LAMPS[9]), 0.35);
   stringLight(ctx, top(LAMPS[10]), top(LAMPS[11]), 0.3);
-  for (const sx of [-1, 1]) stringLight(ctx, top(LAMPS[sx < 0 ? 10 : 11]), new THREE.Vector3(sx * SOUTH_GATE_HALF, G + 2.15, SOUTH_GATE_Z - 0.15), 0.25);
   // promenade lamps to the shop eaves
   SHOPS.forEach((s, i) => {
     const p = ringPos(s.deg, SHOP_R);

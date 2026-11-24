@@ -74,7 +74,7 @@ const VIEWS: Record<string, View> = {
   4: { pos: sc.pos, target: sc.target, fov: sc.fov },
   5: { pos: [2.2, 1.7, -1.8], target: [9.2, 2.6, -9.2] },
   6: { pos: [0.4, 1.5, -3.2], target: [0, 2.4, -10] },
-  7: { pos: [-3.5, 2.6, 4.5], target: [-10, 1.0, -1.0] },
+  7: { pos: [-4.6, 2.2, 5.6], target: [-10, 1.0, -0.8] },
 };
 const setView = (k: string) => {
   const v = VIEWS[k]; if (!v) return;

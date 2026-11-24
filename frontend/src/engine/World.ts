@@ -30,7 +30,7 @@ import { t as tr } from '../i18n/index.js';
 export { disposeTree };
 const BLOOM_STRENGTH = 0.55;
 /** A trainer in the town square: walking pace (units per second), footprint radius and how tall it stands. */
-const TRAINER_WALK = 1.55, TRAINER_R = 0.24, TRAINER_H = 0.98;
+const TRAINER_WALK = 1.25, TRAINER_R = 0.24, TRAINER_H = 0.98;
 /** Partner Pokémon height on the platform (every model is normalised to it). */
 
 export type DuoShot = 'room' | 'match' | 'draft' | 'battle';
@@ -884,6 +884,8 @@ export class World {
         const look = trainerLook(id, c?.accent ?? '#3ee6ff');
         const tr = await mod.Trainer.load(look, { reducedMotion: this.reducedMotion });
         if (this.disposed || this.trainers.get(id) !== 'loading') { tr.dispose(); return; }
+        // The trainer never sets its own height: it stands on the town's ground.
+        tr.root.position.y = FLOOR_Y;
         this.trainers.set(id, tr);
         if (this.envId === 'town' && this.town) this.town.scene.add(tr.root);
       }).catch(e => { console.warn('[trainer]', e); });

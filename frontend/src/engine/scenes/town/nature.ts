@@ -11,7 +11,7 @@ import {
 const G = FLOOR_Y;
 
 const PALETTE: Record<TreeKind, string[]> = {
-  cherry: ['#ffb3cf', '#f59abd', '#ffcfe0', '#f7a6c6'],
+  cherry: ['#ff9cc2', '#ff86b3', '#ffb3cf', '#ff92bb'],
   maple: ['#d9452b', '#ee6a2a', '#c7342c', '#f08a34'],
   round: ['#3f7a3c', '#4b8a42', '#356c36', '#5a9446'],
   pine: ['#2c5a3a', '#336842', '#284f35'],
@@ -20,11 +20,14 @@ const PALETTE: Record<TreeKind, string[]> = {
 /** One stylised tree: bark trunk and branches in the static bag, wind-swayed leaf clumps in the foliage bag. */
 export function buildTree(ctx: Ctx, x: number, z: number, kind: TreeKind, s: number, seed: number, detail = 2): void {
   const rnd = mulberry(seed * 977 + 13);
-  const H = 3.6 * s;
+  // crowns start above head and camera height (about 2.4 units) whatever the tree's scale, so a follow camera
+  // orbiting a trainer under a tree never ends up inside the leaves
+  const crownBase = 2.3 + 0.55 * s;
+  const H = crownBase + 1.6 * s;
   const windOf = (p: THREE.Vector3) => [THREE.MathUtils.clamp((p.y - G) / H, 0, 1) * 1.2, seed];
   const bark = kind === 'cherry' ? '#4a3029' : kind === 'pine' ? '#4a3a30' : '#3d2c22';
   const lean = new THREE.Vector3((rnd() - 0.5) * 0.25, 1, (rnd() - 0.5) * 0.25).normalize();
-  const trunkH = (kind === 'pine' ? 1.9 : 1.45) * s;
+  const trunkH = kind === 'pine' ? 2.35 + 0.2 * s : crownBase - 0.3;
   const seg = (from: THREE.Vector3, to: THREE.Vector3, r0: number, r1: number) => {
     const d = new THREE.Vector3().subVectors(to, from);
     const len = d.length();
@@ -35,12 +38,12 @@ export function buildTree(ctx: Ctx, x: number, z: number, kind: TreeKind, s: num
   };
   const base = new THREE.Vector3(x, G - 0.05, z);
   const top = base.clone().addScaledVector(lean, trunkH);
-  seg(base, top, 0.16 * s, 0.1 * s);
+  seg(base, top, 0.1 + 0.07 * s, 0.06 + 0.04 * s);
   // root flare
   ctx.stat.add(new THREE.ConeGeometry(0.26 * s, 0.3 * s, 9, 1, true), bark, new THREE.Matrix4().makeTranslation(x, G + 0.1 * s, z), { aKind: [KIND.bark] });
   const cols = PALETTE[kind];
   const blobAt = (p: THREE.Vector3, r: number, sy: number, i: number) => {
-    const base = new THREE.Color(cols[i % cols.length]);
+    const base = new THREE.Color(cols[i % cols.length]).multiplyScalar(kind === 'cherry' ? 1.45 : 1);
     const g = blob(r, detail, seed * 3.1 + i, 0.2);
     const cy = p.y;
     ctx.fol.add(g, (pp: THREE.Vector3) => base.clone().multiplyScalar(0.62 + 0.5 * THREE.MathUtils.clamp((pp.y - cy) / (r * sy) * 0.5 + 0.5, 0, 1)),
@@ -52,11 +55,11 @@ export function buildTree(ctx: Ctx, x: number, z: number, kind: TreeKind, s: num
     let prev = top.clone();
     const pads: THREE.Vector3[] = [];
     for (let k = 0; k < 3; k++) {
-      const next = prev.clone().add(new THREE.Vector3(Math.sin(seed + k * 2.1) * 0.35 * s, 0.55 * s, Math.cos(seed + k * 1.7) * 0.3 * s));
+      const next = prev.clone().add(new THREE.Vector3(Math.sin(seed + k * 2.1) * 0.35 * s, 0.45 * s, Math.cos(seed + k * 1.7) * 0.3 * s));
       seg(prev, next, (0.1 - k * 0.02) * s, (0.08 - k * 0.02) * s);
       prev = next; pads.push(next.clone());
     }
-    pads.unshift(top.clone().add(new THREE.Vector3(0.5 * s, -0.15 * s, 0.1 * s)));
+    pads.unshift(top.clone().add(new THREE.Vector3(0.5 * s, 0.05 * s, 0.1 * s)));
     pads.forEach((p, i) => {
       if (i === 0) seg(top.clone().addScaledVector(lean, -0.2 * s), p, 0.06 * s, 0.04 * s);
       blobAt(p.clone().add(new THREE.Vector3(0, 0.12 * s, 0)), (0.62 - i * 0.07) * s, 0.42, i);
@@ -67,7 +70,7 @@ export function buildTree(ctx: Ctx, x: number, z: number, kind: TreeKind, s: num
     for (let k = 0; k < branches; k++) {
       const a = (k / branches) * Math.PI * 2 + rnd() * 0.8;
       const out = kind === 'round' ? 0.35 : 0.65;
-      const end = top.clone().add(new THREE.Vector3(Math.cos(a) * out * s, (0.55 + rnd() * 0.35) * s, Math.sin(a) * out * s));
+      const end = top.clone().add(new THREE.Vector3(Math.cos(a) * out * s, (0.35 + rnd() * 0.3) * s, Math.sin(a) * out * s));
       seg(top.clone().addScaledVector(lean, -0.15 * s), end, 0.07 * s, 0.04 * s);
       crowns.push(end);
     }
@@ -88,10 +91,10 @@ export function buildTree(ctx: Ctx, x: number, z: number, kind: TreeKind, s: num
 }
 
 export function buildTrees(ctx: Ctx): void {
-  TREES.forEach((t, i) => buildTree(ctx, t.x, t.z, t.kind, t.s, i + 1));
+  TREES.forEach((t, i) => buildTree(ctx, t.x, t.z, t.kind, t.s, i + 1, gardenDistance(t.x, t.z) < 1.5 ? 2 : 1));
   // bushes along the Center and the shrine path
   const bushes: Array<[number, number, number, string]> = [
-    [-4.45, -9.45, 0.42, '#3d7a3a'], [4.45, -9.45, 0.42, '#3d7a3a'], [-8.3, -2.9, 0.38, '#47803e'], [-8.4, 2.9, 0.36, '#2f6a34'],
+    [-4.45, -9.45, 0.42, '#3d7a3a'], [4.45, -9.45, 0.42, '#3d7a3a'], [-8.4, 2.95, 0.36, '#2f6a34'],
     [-11.9, -0.3, 0.32, '#3d7a3a'], [-11.7, 0.95, 0.28, '#d76a9a'], [-11.75, -1.1, 0.3, '#5a8f46'],
   ];
   bushes.forEach(([x, z, r, c], i) => {
@@ -122,7 +125,7 @@ export function createCards(mat: THREE.Material, tier: 'low' | 'medium' | 'high'
 
   const rnd = mulberry(4242);
   const colliders = buildColliders();
-  const items: Array<{ x: number; z: number; cell: readonly [number, number]; w: number; h: number; tint: number }> = [];
+  const items: Array<{ x: number; z: number; cell: readonly [number, number]; w: number; h: number; tint: number; y?: number }> = [];
   const blocked = (x: number, z: number, r: number) => colliders.some(c => pushOut(c, x, z, r) !== null);
   // planters: dense flowers
   for (const p of PLANTERS) {
@@ -131,7 +134,7 @@ export function createCards(mat: THREE.Material, tier: 'low' | 'medium' | 'high'
     for (let i = 0; i < n; i++) {
       const lx = (rnd() * 2 - 1) * (p.hw - 0.08), lz = (rnd() * 2 - 1) * (p.hd - 0.08);
       const c = Math.cos(p.rot), s = Math.sin(p.rot);
-      items.push({ x: p.x + c * lx + s * lz, z: p.z - s * lx + c * lz, cell: rnd() < 0.25 ? CELL.grass : cell, w: 0.3, h: 0.24 + rnd() * 0.08, tint: 0.85 + rnd() * 0.3 });
+      items.push({ x: p.x + c * lx + s * lz, z: p.z - s * lx + c * lz, y: G + 0.3, cell: rnd() < 0.25 ? CELL.grass : cell, w: 0.3, h: 0.24 + rnd() * 0.08, tint: 0.85 + rnd() * 0.3 });
     }
   }
   // flowers along the hedges and around tree bases on the lawns
@@ -177,7 +180,7 @@ export function createCards(mat: THREE.Material, tier: 'low' | 'medium' | 'high'
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
   items.forEach((it, i) => {
     q.setFromEuler(e.set(0, rnd() * Math.PI, 0));
-    m.compose(v.set(it.x, G - 0.01, it.z), q, sc.set(it.w, it.h, it.w));
+    m.compose(v.set(it.x, it.y ?? G - 0.01, it.z), q, sc.set(it.w, it.h, it.w));
     mesh.setMatrixAt(i, m);
     mesh.setColorAt(i, c.setScalar(it.tint));
     cells[i * 2] = it.cell[0]; cells[i * 2 + 1] = it.cell[1];
@@ -199,18 +202,18 @@ function farClear(x: number, z: number): boolean {
 
 export function createFarTrees(mat: THREE.Material, count: number): THREE.InstancedMesh {
   const bag = new GeoBag({ aWind: { size: 2, def: [0, 0] } });
-  const trunk = new THREE.CylinderGeometry(0.08, 0.12, 1.4, 6);
-  trunk.translate(0, 0.7, 0);
+  const trunk = new THREE.CylinderGeometry(0.08, 0.12, 1.6, 5, 1, true);
+  trunk.translate(0, 0.8, 0);
   bag.add(trunk, '#3a2a20', undefined, { aWind: [0, 0] });
-  for (let i = 0; i < 3; i++) {
-    const g = blob(0.85 - i * 0.12, 1, i * 2.3, 0.18);
-    g.translate(Math.sin(i * 2.1) * 0.35, 1.7 + i * 0.5, Math.cos(i * 2.1) * 0.35);
+  for (let i = 0; i < 2; i++) {
+    const g = blob(0.95 - i * 0.2, 1, i * 2.3, 0.18);
+    g.translate(Math.sin(i * 2.1) * 0.3, 2.0 + i * 0.75, Math.cos(i * 2.1) * 0.3);
     bag.add(g, (p: THREE.Vector3) => new THREE.Color('#ffffff').multiplyScalar(0.65 + 0.15 * p.y), undefined, { aWind: (p: THREE.Vector3) => [p.y / 3, i] });
   }
   const geo = bag.build();
   const mesh = new THREE.InstancedMesh(geo, mat, count);
   const rnd = mulberry(99);
-  const tones = ['#2f5f36', '#3a6e3b', '#26502f', '#f2a6c4', '#2b5a3c', '#c9472d'];
+  const tones = ['#2f5f36', '#3a6e3b', '#26502f', '#2b5a3c', '#ff9cc2', '#c9472d'];
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
   let i = 0, guard = 0;
   while (i < count && guard++ < count * 20) {

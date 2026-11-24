@@ -41,15 +41,15 @@ export function createWindowMaterial(u: TownUniforms): THREE.ShaderMaterial {
         float bar = 1.0 - smoothstep(bw, bw + gw.x * 1.5, min(g.x, 1.0 - g.x));
         bar = max(bar, 1.0 - smoothstep(bw, bw + gw.y * 1.5, min(g.y, 1.0 - g.y)));
         if (style < 0.5) {
-          vec3 wall = mix(vec3(1.1, 0.72, 0.42), vec3(1.7, 1.35, 1.0), uv.y) * vCol;
+          vec3 wall = mix(vec3(0.75, 0.5, 0.3), vec3(1.25, 1.0, 0.75), uv.y) * vCol;
           float sy = uv.y * 3.0;
           float shelf = fract(sy);
-          vec2 cell = vec2(floor(uv.x * 11.0 + seed * 7.0), floor(sy));
+          vec2 cell = vec2(floor(uv.x * 6.0 + seed * 7.0), floor(sy));
           float item = step(0.3, tHash(cell + seed)) * step(0.18, shelf) * step(shelf, 0.72) * step(uv.y, 0.7);
-          vec3 ic = (0.35 + 0.65 * hue(tHash(cell + seed + 1.0))) * 1.1;
+          vec3 ic = mix(vec3(0.8), hue(tHash(cell + seed + 1.0)), 0.55) * 0.9;
           col = mix(wall, ic, item * 0.9);
           col *= mix(0.35, 1.0, smoothstep(0.0, 0.1, shelf)) * mix(1.0, 0.75, step(uv.y, 0.7));
-          col += vec3(2.6, 2.4, 2.1) * smoothstep(0.86, 0.96, uv.y);
+          col += vec3(1.8, 1.7, 1.5) * smoothstep(0.86, 0.96, uv.y);
           col = mix(col, vec3(0.04, 0.05, 0.07), bar);
           col += vec3(0.25, 0.32, 0.5) * smoothstep(0.05, 0.0, abs(uv.x - uv.y * 0.6 - 0.25)) * 0.5;
         } else if (style < 1.5) {
@@ -59,10 +59,10 @@ export function createWindowMaterial(u: TownUniforms): THREE.ShaderMaterial {
           col = mix(col, vec3(0.06, 0.035, 0.02), bar);
         } else {
           // two sliding glass panels opening onto a bright hall with a red counter at the back
-          vec3 hall = mix(vec3(1.5, 1.25, 0.95), vec3(2.4, 2.2, 1.9), smoothstep(0.1, 0.9, uv.y)) * vCol;
+          vec3 hall = mix(vec3(0.9, 0.72, 0.52), vec3(1.5, 1.35, 1.15), smoothstep(0.1, 0.9, uv.y)) * vCol;
           float counter = step(0.22, uv.y) * step(uv.y, 0.38) * step(0.22, uv.x) * step(uv.x, 0.78);
           hall = mix(hall, vec3(1.2, 0.08, 0.1), counter);
-          hall = mix(hall, vec3(2.2, 2.0, 1.8), step(0.38, uv.y) * step(uv.y, 0.41) * step(0.22, uv.x) * step(uv.x, 0.78));
+          hall = mix(hall, vec3(1.6, 1.5, 1.35), step(0.38, uv.y) * step(uv.y, 0.41) * step(0.22, uv.x) * step(uv.x, 0.78));
           hall *= mix(0.55, 1.0, smoothstep(0.0, 0.22, uv.y));
           float split = 1.0 - smoothstep(0.012, 0.02, abs(uv.x - 0.5));
           float frame = max(split, max(1.0 - smoothstep(0.02, 0.03, min(uv.x, 1.0 - uv.x)), 1.0 - smoothstep(0.02, 0.03, 1.0 - uv.y)));
@@ -261,6 +261,7 @@ export function createFx(mode: FxMode, u: TownUniforms, fogDensity: { value: num
         #endif
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         float dist = -mv.z;
+        vA *= smoothstep(0.35, 1.6, dist); // a glow right at the lens would flood the frame
         float s = max(size, dist * 0.0022);
         vec2 q = position.xy;
         #if MODE == 2

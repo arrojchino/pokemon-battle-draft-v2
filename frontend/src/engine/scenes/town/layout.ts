@@ -37,7 +37,8 @@ export const SHOPS = [
   { deg: 32, kind: 'berry' as const },
 ];
 export const SHOP_HW = 1.75;
-export const SHOP_HD = 1.6;
+/** Half depth of the shop collider: covers the walls and the pent-roof eave so cameras never slip under it. */
+export const SHOP_HD = 2.25;
 /** Stadium gate arch on the north-east ring. */
 export const GATE_DEG = -45;
 export const GATE_R = 11.5;
@@ -49,10 +50,10 @@ export const SOUTH_GATE_HALF = 1.8;
 export const GARDEN = {
   torii: { x: -6.9, z: 0, half: 1.25 },
   stage: { x: -9.8, z: 0, r: 1.05 },
-  backdrop: { x: -11.25, z: 0, hw: 0.16, hd: 1.35 },
+  backdrop: { x: -11.25, z: 0, hw: 0.45, hd: 1.62 },
   pond: { x: -9.0, z: -3.9 },
   stoneLanterns: [
-    { x: -7.9, z: -1.75 }, { x: -7.9, z: 1.75 }, { x: -10.75, z: -1.95 }, { x: -10.75, z: 1.95 },
+    { x: -7.6, z: -2.2 }, { x: -7.6, z: 2.2 }, { x: -10.75, z: -1.95 }, { x: -10.75, z: 1.95 },
   ],
 };
 
@@ -136,7 +137,7 @@ export const SPOTS: { host: EnvSpot; showcase: EnvSpot; showcaseCam: EnvShot; ga
   host: { x: 0, z: -8.0, face: 0 },
   showcase: { x: GARDEN.stage.x, z: GARDEN.stage.z, face: Math.PI / 2 - 0.12 },
   // three-quarter view from the garden path: the moon window and blossoms frame a partner standing on the stage
-  showcaseCam: { pos: [GARDEN.stage.x + 2.0, 0.98, GARDEN.stage.z + 1.75], target: [GARDEN.stage.x - 0.12, 0.62, GARDEN.stage.z - 0.06], fov: 34 },
+  showcaseCam: { pos: [GARDEN.stage.x + 2.1, 1.05, GARDEN.stage.z + 1.45], target: [GARDEN.stage.x - 0.1, 0.66, GARDEN.stage.z - 0.08], fov: 34 },
   gathering: { x: 0, z: 2.85, face: 0 },
   gate: { x: gateSpot.x, z: gateSpot.z, face: Math.atan2(Math.cos(GATE_DEG * DEG), Math.sin(GATE_DEG * DEG)) },
 };
@@ -157,6 +158,10 @@ export function buildColliders(): Collider[] {
     for (const side of [-1, 1]) { const lx = side * GATE_HALF; out.push(circle(g.x + c * lx, g.z - s * lx, 0.6)); }
     const back = ringPos(GATE_DEG, GATE_R + 0.75);
     out.push(box(back.x, back.z, GATE_HALF, 0.8, rot));
+    for (const side of [-1, 1]) { // low flanking walls out to the rim
+      const lx = side * 3.3, lz = -0.2;
+      out.push(box(g.x + c * lx + s * lz, g.z - s * lx + c * lz, 0.78, 0.24, rot));
+    }
   }
   for (const sx of [-SOUTH_GATE_HALF, SOUTH_GATE_HALF]) out.push(circle(sx, SOUTH_GATE_Z, 0.3));
   // shrine garden

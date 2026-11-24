@@ -90,6 +90,8 @@ export function townLayout(tier: QualityTier) {
     if (y > -27) continue;
     lamps.push({ x, y: y + 1.3, z, c: k % 3 === 0 ? cyan : warm, s: 1.1 });
   }
+  // shuffle (deterministically) so any prefix of the instance list is an even spread over the valley
+  for (let i = houses.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [houses[i], houses[j]] = [houses[j], houses[i]]; }
   return { houses, lamps, roads };
 }
 
@@ -200,6 +202,7 @@ export type Town = { group: THREE.Group; lights: THREE.Points; setQuality(t: Qua
 
 export function buildTown(S: Shared, _tier: QualityTier, layout: ReturnType<typeof townLayout>): Town {
   const group = new THREE.Group(); group.name = 'intro-town';
+  let houses: THREE.InstancedMesh | null = null;
   // Houses: walls pale, roofs coloured (vertex colour chooses by aRoof via instance colour mixing in the shader).
   {
     const geo = houseGeometry();
@@ -223,6 +226,7 @@ export function buildTown(S: Shared, _tier: QualityTier, layout: ReturnType<type
       im.setColorAt(i, h.roof);
     });
     im.name = 'houses';
+    houses = im;
     group.add(im);
   }
 
@@ -373,6 +377,10 @@ export function buildTown(S: Shared, _tier: QualityTier, layout: ReturnType<type
 
   return {
     group, lights,
-    setQuality(t: QualityTier) { lights.geometry.setDrawRange(0, t === 'low' ? Math.ceil(full * 0.6) : full); },
+    setQuality(t: QualityTier) {
+      lights.geometry.setDrawRange(0, t === 'low' ? Math.ceil(full * 0.6) : full);
+      // thin the far houses on low (the glow map and street lights keep the carpet of lights intact)
+      if (houses) houses.count = t === 'low' ? Math.min(layout.houses.length, 520) : layout.houses.length;
+    },
   };
 }

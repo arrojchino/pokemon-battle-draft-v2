@@ -242,6 +242,8 @@ export function buildProps(S: Shared, tier: QualityTier): Props {
   const group = new THREE.Group(); group.name = 'intro-props';
   const lamps: THREE.Vector4[] = [];
   const glows: Glow[] = [];
+  /** Instanced meshes thinned on the low tier (instances are in random order, so a prefix is an even subset). */
+  const scalable: Array<[THREE.InstancedMesh, number]> = [];
   const stoneTex = canvasTex(128, 128, (g, w, h) => {
     const r = mulberry32(9); g.fillStyle = '#c8c8c8'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 900; i++) { const v = 130 + Math.floor(r() * 110); g.fillStyle = `rgba(${v},${v},${v},0.45)`; g.fillRect(r() * w, r() * h, 1 + r() * 3, 1 + r() * 3); }
@@ -397,6 +399,7 @@ export function buildProps(S: Shared, tier: QualityTier): Props {
       im.setColorAt(i, col.setHSL(0.4 + (rnd() - 0.5) * 0.08, 0.3, 0.45 + rnd() * 0.2).multiplyScalar(1.6));
     });
     im.castShadow = true; im.receiveShadow = true; im.name = 'cedars';
+    scalable.push([im, im.count]);
     group.add(im);
   }
 
@@ -478,11 +481,12 @@ export function buildProps(S: Shared, tier: QualityTier): Props {
     }
     canopyCentre.multiplyScalar(1 / n);
     im.castShadow = true; im.receiveShadow = true; im.name = 'tree-canopy';
+    scalable.push([im, im.count]);
     group.add(im);
   }
 
   return {
     group, lamps, glows, daisGlow: daisTop, canopy: canopyCentre,
-    setQuality() { /* counts fixed at build; shadows handled by the light */ },
+    setQuality(t: QualityTier) { for (const [m, n] of scalable) m.count = t === 'low' ? Math.ceil(n * 0.6) : n; },
   };
 }
