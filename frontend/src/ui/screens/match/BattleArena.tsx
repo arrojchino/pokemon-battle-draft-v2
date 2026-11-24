@@ -7,6 +7,8 @@ import { sound } from '../../../audio/sound.js';
 import { moveVerdict, type Fighter } from '../../../battle/matchup.js';
 import { CATEGORY_KEY, MonCard, MoveCard, STATUS_KEY, TipLayer, VerdictChip, useTip } from './Tips.js';
 import { Sprite, TYPE_COLORS, TypeBadge } from '../../pokemon.js';
+import { useWorld } from '../../../app/WorldProvider.js';
+import { useMonPlates } from './useMonPlates.js';
 import { t as tr, useT, type MessageKey } from '../../../i18n/index.js';
 
 const STAT_SHORT: Record<string, MessageKey> = { atk: 'battle.statAtk', def: 'battle.statDef', spa: 'battle.statSpa', spd: 'battle.statSpd', spe: 'battle.statSpe', accuracy: 'battle.statAcc', evasion: 'battle.statEva' };
@@ -63,7 +65,7 @@ function fighterOfReq(p: RequestPokemon, mon?: MonView | null): Fighter {
 }
 
 /** `known`: this side's sets are ours to see (a player's own side). A spectator knows neither side's. */
-function MonPlate({ mon, side, label, mine, foe, known = mine, foeKnown = !mine }: { mon: MonView | null; side: SideView; label: string; mine: boolean; foe: MonView | null; known?: boolean; foeKnown?: boolean }) {
+function MonPlate({ mon, side, label, mine, foe, known = mine, foeKnown = !mine, elRef }: { mon: MonView | null; side: SideView; label: string; mine: boolean; foe: MonView | null; known?: boolean; foeKnown?: boolean; elRef?: (el: HTMLElement | null) => void }) {
   const t = useT();
   const tip = useTip(() => {
     const f = fighterOfMon(mon, known); if (!f || !mon) return null;
@@ -75,9 +77,9 @@ function MonPlate({ mon, side, label, mine, foe, known = mine, foeKnown = !mine 
   const types: TypeName[] = mon.tera ? [mon.tera] : mon.set?.types ?? [];
   const boosts = Object.entries(mon.boosts).filter(([, v]) => v);
   return (
-    <section {...tip} tabIndex={0} className={`plate2 ${mine ? 'plate2--mine' : 'plate2--theirs'}`} aria-label={t('battle.activeMon', { label })} style={{ '--t1': TYPE_COLORS[types[0] ?? 'Normal'] } as CSSProperties}>
+    <section {...tip} ref={elRef} tabIndex={0} className={`plate2 ${mine ? 'plate2--mine' : 'plate2--theirs'}`} aria-label={t('battle.activeMon', { label })} style={{ '--t1': TYPE_COLORS[types[0] ?? 'Normal'] } as CSSProperties}>
       <header>
-        <strong>{mon.species}</strong>
+        <strong title={mon.transformed ? t('ditto.into', { mon: mon.transformed }) : undefined}>{mon.transformed ? t('ditto.transformed', { mon: mon.species }) : mon.species}</strong>
         {mon.status && <span className={`stat-chip stat-chip--${mon.status}`}>{STATUS_KEY[mon.status] ? t(STATUS_KEY[mon.status]) : mon.status}</span>}
         {mon.tera && <TypeBadge type={mon.tera} tera size="sm" />}
         <span className="plate2__lv"><small>{t('battle.lv')}</small>100</span>
@@ -297,12 +299,13 @@ export function BattleArena({ controller, mineLabel, theirsLabel, onForfeit, fin
   const ended = s.phase === 'ended' && !snap.busy;
   useMomentCues(s.log);
   const tone = caption ? toneOf(caption) : null;
+  const plates = useMonPlates(useWorld().world);
 
   return (
     <TipLayer>
-    <section className="arena" aria-label={t('arena.battle')}>
-      <MonPlate mon={snap.active[opp]} side={s.sides[opp]} label={theirsLabel} mine={false} foe={snap.active[me]} foeKnown={!spectating} />
-      <MonPlate mon={snap.active[me]} side={s.sides[me]} label={mineLabel} mine known={!spectating} foe={snap.active[opp]} />
+    <section className="arena" ref={plates.arena} aria-label={t('arena.battle')}>
+      <MonPlate mon={snap.active[opp]} side={s.sides[opp]} label={theirsLabel} mine={false} foe={snap.active[me]} foeKnown={!spectating} elRef={plates.theirs} />
+      <MonPlate mon={snap.active[me]} side={s.sides[me]} label={mineLabel} mine known={!spectating} foe={snap.active[opp]} elRef={plates.mine} />
       <div className="arena__bar">
         <span className="arena__turn">{s.phase === 'preview' ? t('arena.teamPreview') : <><small>{t('arena.turn')}</small><b>{s.turn || 1}</b></>}</span>
         <Timer deadline={snap.deadline} active={snap.canChoose} />

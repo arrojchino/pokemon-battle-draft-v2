@@ -59,6 +59,11 @@ export class Walker {
   /** Fastest turn, radians per second: big partners turn more slowly. */
   turn = 7;
   private pace = 0;
+  /**
+   * Optional brake from the body that walks this spot (0..1): a trainer whose hips are still turning (they step
+   * round, they cannot spin on planted feet) holds the walk until its body faces the way it is going.
+   */
+  gate: (() => number) | null = null;
   /** A facing to turn toward while standing (faceTo); cleared once reached or on walking off. */
   private aim: number | null = null;
   get speed() { return Math.hypot(this.vx, this.vz); }
@@ -79,7 +84,9 @@ export class Walker {
       const heading = Math.atan2(dx, dz);
       const step = clamp(wrap(heading - this.face) * ease(10, dt), -this.turn * dt, this.turn * dt);
       this.face = wrap(this.face + step);
-      want = speed * THREE.MathUtils.smoothstep(Math.cos(wrap(heading - this.face)), 0.15, 0.9);
+      // Turn first, then walk: no pace until the turn is down to about 57 degrees, full pace within about 18.
+      // (Setting off with a big turn left made the body slide sideways over feet still stepping the old way.)
+      want = speed * THREE.MathUtils.smoothstep(Math.cos(wrap(heading - this.face)), 0.55, 0.95) * (this.gate?.() ?? 1);
     } else if (this.aim !== null) {
       const d = wrap(this.aim - this.face);
       this.face = wrap(this.face + clamp(d * ease(8, dt), -this.turn * dt, this.turn * dt));

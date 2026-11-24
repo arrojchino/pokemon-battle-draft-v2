@@ -40,7 +40,7 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 const a = client('a'), b = client('b'), c = client('c');
 await connect(a); await connect(b); await connect(c);
 await until(() => a.hello && b.hello && c.hello, 'hello');
-assert.equal(a.hello.protocol, 10);
+assert.equal(a.hello.protocol, 11);
 
 // ---- The main plaza
 a.send({ type: 'hub', on: true, name: 'Ana', avatar: 'greninja', at: { x: 1, z: 2, face: 0.5 } });
@@ -185,6 +185,60 @@ d.send({ type: 'unwatch' });
 await until(() => d.watching === null && b.state.watchers === 1, 'unwatch');
 c.ws.close();
 await until(() => b.state.watchers === 0 && a.state.watchers === 0, 'closing stops watching');
+
+// ---- Leave, drop and rejoin (regression: other trainers must never go missing)
+// A spot beyond the old v9 radius (9) but inside the town (16) arrives unclamped.
+const o = client('o');
+await connect(o); await until(() => o.hello, 'o hello');
+o.send({ type: 'hub', on: true, name: 'Obs', avatar: 'eiscue', at: null });
+await until(() => o.hub, 'observer enters');
+const r1 = client('r1');
+await connect(r1); await until(() => r1.hello, 'r1 hello');
+r1.send({ type: 'hub', on: true, name: 'Rio', avatar: 'marill', at: { x: 11, z: 3, face: 0 } });
+await until(() => r1.hub && o.joins.some(m => m.id === r1.hub.you), 'r1 enters, a hears it');
+const rid = r1.hub.you;
+const rj = o.joins.find(m => m.id === rid);
+assert.deepEqual([rj.x, rj.z], [11, 3], 'a town-edge spot is not clamped to the stadium radius');
+// The socket dies without a goodbye (tab killed, tunnel hiccup): everyone hears the leave.
+r1.ws.terminate();
+await until(() => o.leaves.includes(rid), 'a dropped trainer leaves the plaza for everyone');
+// The same player comes back: a new member, visible to those already here and to late joiners, and no ghost.
+const r2 = client('r2');
+await connect(r2); await until(() => r2.hello, 'r2 hello');
+r2.send({ type: 'hub', on: true, name: 'Rio', avatar: 'marill', at: { x: 11, z: 3, face: 0 } });
+await until(() => r2.hub && o.joins.some(m => m.id === r2.hub.you), 'the rejoin is announced');
+assert.notEqual(r2.hub.you, rid, 'a rejoin is a new member');
+assert.ok(r2.hub.members.some(m => m.id === o.hub.you), 'the rejoiner sees who was already here');
+const late = client('late');
+await connect(late); await until(() => late.hello, 'late hello');
+late.send({ type: 'hub', on: true, name: 'Lu', avatar: 'toxel', at: null });
+await until(() => late.hub, 'late enters');
+assert.ok(late.hub.members.some(m => m.id === r2.hub.you), 'a late joiner sees the rejoined trainer');
+assert.ok(!late.hub.members.some(m => m.id === rid), 'no ghost of the dropped connection');
+// Leaving on purpose (hub off) and walking back in on the same socket works the same way.
+r2.send({ type: 'hub', on: false });
+await until(() => o.leaves.includes(r2.hub.you), 'hub off is a leave');
+const before = o.joins.length;
+r2.hub = null;
+r2.send({ type: 'hub', on: true, name: 'Rio', avatar: 'marill', at: null });
+await until(() => r2.hub && o.joins.length > before, 'walking back in is announced');
+// ---- Trainer models (v11): a valid id reaches everyone (late joiners too); an unknown one falls back to classic.
+const t1 = client('t1');
+await connect(t1); await until(() => t1.hello, 't1 hello');
+t1.send({ type: 'hub', on: true, name: 'Tia', avatar: 'marill', at: null, trainer: 'kyle' });
+await until(() => t1.hub && o.joins.some(m => m.id === t1.hub.you), 't1 enters');
+assert.equal(o.joins.find(m => m.id === t1.hub.you).trainer, 'kyle', 'others see the chosen trainer model');
+const t2 = client('t2');
+await connect(t2); await until(() => t2.hello, 't2 hello');
+t2.send({ type: 'hub', on: true, name: 'Tom', avatar: 'toxel', at: null, trainer: 'ash-ketchum-ripped' });
+await until(() => t2.hub, 't2 enters');
+assert.equal(t2.hub.members.find(m => m.id === t2.hub.you).trainer, 'classic', 'an unknown trainer id falls back to classic');
+assert.equal(t2.hub.members.find(m => m.id === t1.hub.you).trainer, 'kyle', 'a late joiner sees the trainer model');
+const t1n = o.joins.length;
+t1.send({ type: 'hub', on: true, name: 'Tia', avatar: 'marill', at: null, trainer: 'hana' });
+await until(() => o.joins.length > t1n && o.joins.at(-1).trainer === 'hana', 'changing trainer model is announced');
+for (const x of [t1, t2]) x.ws.close();
+for (const x of [r2, late, o]) x.ws.close();
 
 for (const x of [a, b, d]) x.ws.close();
 console.log('HUB_OK', { code, members: 3, switches: switches.length, live });

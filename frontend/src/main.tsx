@@ -15,4 +15,9 @@ import './styles/pokedex.css';
 import './styles/settings.css';
 import './styles/world.css';
 
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
+import { discoverBackend } from './net/session.js';
+
+// Learn the advertised battle server before the transport is created (at most 2.5 s; the app starts either way).
+void discoverBackend().finally(() => {
+  createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
+});

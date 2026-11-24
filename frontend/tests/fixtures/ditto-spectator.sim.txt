@@ -1,0 +1,70 @@
+|t:|1795548224
+|gametype|singles
+|player|p1|Ana||
+|player|p2|Beto||
+|gen|9
+|tier|[Gen 9] Custom Game
+|clearpoke
+|poke|p1|Ditto|
+|poke|p1|Mew|
+|poke|p1|Gholdengo|
+|poke|p2|Garchomp, M|
+|poke|p2|Kingambit, F|
+|teampreview
+|
+|t:|1795548224
+|teamsize|p1|3
+|teamsize|p2|2
+|start
+|switch|p1a: Ditto|Ditto|300/300
+|switch|p2a: Garchomp|Garchomp, M|357/357
+|-transform|p1a: Ditto|p2a: Garchomp|[from] ability: Imposter
+|turn|1
+|
+|t:|1795548224
+|move|p1a: Ditto|Earthquake|p2a: Garchomp
+|-damage|p2a: Garchomp|206/357
+|move|p2a: Garchomp|Swords Dance|p2a: Garchomp
+|-boost|p2a: Garchomp|atk|2
+|
+|-heal|p2a: Garchomp|228/357|[from] item: Leftovers
+|upkeep
+|turn|2
+|
+|t:|1795548225
+|switch|p1a: Mew|Mew|341/341
+|move|p2a: Garchomp|Swords Dance|p2a: Garchomp
+|-boost|p2a: Garchomp|atk|2
+|
+|-heal|p2a: Garchomp|250/357|[from] item: Leftovers
+|upkeep
+|turn|3
+|
+|t:|1795548225
+|move|p1a: Mew|Transform|p2a: Garchomp
+|-transform|p1a: Mew|p2a: Garchomp
+|move|p2a: Garchomp|Earthquake|p1a: Mew
+|-damage|p1a: Mew|0 fnt
+|faint|p1a: Mew
+|
+|-heal|p2a: Garchomp|272/357|[from] item: Leftovers
+|upkeep
+|
+|t:|1795548225
+|switch|p1a: Ditto|Ditto|300/300
+|-transform|p1a: Ditto|p2a: Garchomp|[from] ability: Imposter
+|turn|4
+|
+|t:|1795548225
+|move|p1a: Ditto|Swords Dance|p1a: Ditto
+|-boost|p1a: Ditto|atk|2
+|move|p2a: Garchomp|Earthquake|p1a: Ditto
+|-damage|p1a: Ditto|0 fnt
+|faint|p1a: Ditto
+|
+|-heal|p2a: Garchomp|294/357|[from] item: Leftovers
+|upkeep
+|
+|t:|1795548225
+|switch|p1a: Gholdengo|Gholdengo|315/315
+|turn|5

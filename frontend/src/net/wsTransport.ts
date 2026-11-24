@@ -1,4 +1,4 @@
-import { HUB_SINCE, PLAZA_SINCE, cleanHubSpot, cleanSpot, parseServerMessage, type BattleMode, type CharacterId, type ClientMessage, type GameAction, type PlazaEmote, type Spot, type Visibility } from '@shared';
+import { HUB_SINCE, PLAZA_SINCE, cleanHubSpot, cleanSpot, parseServerMessage, type BattleMode, type CharacterId, type ClientMessage, type GameAction, type PlazaEmote, type Spot, type TrainerId, type Visibility } from '@shared';
 import { PresenceRelay, SnapshotStore, sessionStore, type BattleListener, type HubListener, type LobbyList, type PresenceListener, type Transport } from './types.js';
 import { t as tr } from '../i18n/index.js';
 
@@ -17,7 +17,7 @@ export class WsTransport implements Transport {
   private presence: PresenceRelay;
   private hubListeners = new Set<HubListener>();
   /** In the main plaza as this (re-sent after a reconnect), or not. */
-  private hubAs: { name: string; avatar: CharacterId | null; at: Spot | null } | null = null;
+  private hubAs: { name: string; avatar: CharacterId | null; at: Spot | null; trainer?: TrainerId } | null = null;
   /** The room followed as a spectator (re-sent after a reconnect). */
   private watchCode: string | null = null;
   /** Everything received for the current battle, so a screen mounted later can rebuild it. */
@@ -131,10 +131,10 @@ export class WsTransport implements Transport {
   onPresence(l: PresenceListener) { return this.presence.subscribe(l); }
   /** The plaza and spectating are fire-and-forget too: after a reconnect `hello` sends the current wish again. */
   private v6(m: ClientMessage) { if (this.ws?.readyState === WebSocket.OPEN && (this.store.get().serverProtocol ?? 0) >= HUB_SINCE) this.ws.send(JSON.stringify(m)); }
-  hub(on: boolean, name = '', avatar: CharacterId | null = null, at: Spot | null = null) {
+  hub(on: boolean, name = '', avatar: CharacterId | null = null, at: Spot | null = null, trainer?: TrainerId) {
     if (!on && !this.hubAs) return;
-    this.hubAs = on ? { name, avatar, at } : null;
-    this.v6(on ? { type: 'hub', on: true, name, avatar, at } : { type: 'hub', on: false, name: '', avatar: null, at: null });
+    this.hubAs = on ? { name, avatar, at, trainer } : null;
+    this.v6(on ? { type: 'hub', on: true, name, avatar, at, trainer } : { type: 'hub', on: false, name: '', avatar: null, at: null });
   }
   hubMove(x: number, z: number, face: number) {
     const s = cleanHubSpot(x, z, face);

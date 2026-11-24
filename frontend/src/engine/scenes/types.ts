@@ -33,6 +33,11 @@ export interface Environment {
 export interface TownEnvironment extends Environment {
   /** Ground height: the town floor sits at FLOOR_Y (0.205) so partner rigs stand on it. */
   readonly groundY: number;
+  /**
+   * Walkable ground height (world y) at a point: `groundY` on the open floor, higher on the few raised walkable
+   * surfaces (the shrine stage's deck and rim). Cached heightfield, no allocation per call.
+   */
+  heightAt?(x: number, z: number): number;
   /** Every point a walker of radius `r` may stand on is within this radius of the origin. */
   readonly radius: number;
   readonly colliders: readonly Collider[];

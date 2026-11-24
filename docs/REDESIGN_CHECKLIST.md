@@ -87,3 +87,24 @@ Status is ticked only with evidence (file:line, test name, command output). `ope
 ## Deployment note
 
 Protocol v10 widens the main-plaza radius. The production backend on 8787 runs v9 and clamps hub spots to radius 9 until it is restarted with the new build; restarting it needs the user's permission.
+
+## Browser QA evidence (production build on 127.0.0.1:5185, v10 dev backend on 8799, independent browser sessions)
+
+Sessions pzA2/pzB2/pzC2 (3 players), pzE/pzF (2 players), pzD/pzLive (link states). Each session has its own storage.
+
+- 1.2 Every selectable Pokemon is selectable: all 14 roster tiles clicked one by one in pzE; for each, `__WORLD__.slots` was exactly the pick and the only shown rig in the scene was the pick (0.0 to 1.7 s with a cold cache). PASS.
+- 1.3 Selected always matches displayed: same run, plus 6 picks in 0.9 s under 400 ms latency, 200 KB/s and cache disabled: the final stage held only Marill, the last pick, and the confirm button read "Marill, I choose you!". PASS.
+- 1.4 Preview updates at once: the stage switched within the poll interval for every pick; while a model downloads the artwork stand-in shows (`shop__loading`). PASS.
+- 1.5 Confirm persists: pzE confirmed Eiscue, `pab-settings.partner` = eiscue. PASS.
+- 1.6 Reload restores: pzE reloaded, `layout.mine` = eiscue and saved partner eiscue. PASS.
+- 1.7 Joining a room does not overwrite: pzF (Toxel) opened an invite link `?room=F850DF` and joined Pia's private room: saved partner still toxel; the room bar shows Pia/Eiscue vs Fede/Toxel. PASS.
+- 1.8 Both see each other's partners: pzF saw Pia's partner change from Flutter Mane to Eiscue live in the plaza (`others` m43:eiscue, the old rig hidden); the room shows both partners. PASS.
+- 1.9 No stale state or races: covered by 1.3 (the stale-layout race that showed a previous partner is fixed by SceneTransitionManager; `tests/scene-transitions.test.ts`). PASS.
+- 1.10 Loading failures never leave select unusable: partner select stays operable with the artwork stand-in while downloading; trainer module failure now retries (blocked chunk test). Partner model hard failure (404) is part of the loading-placeholder work (TASK_CHECKLIST P7), OPEN there.
+- 1.12 Two independent sessions: done (pzE and pzF above; pzA2/pzB2/pzC2). PASS.
+- Found and fixed during QA: the select panel clipped its own content at every size (grid tracks `1fr` could not shrink, confirm button and the 7th column were cut) -> `minmax(0, 1fr)` and wrapping buttons in `styles/screens.css`; on narrow landscape windows the partner stood behind the panel -> the showcase shot shifts right of the panel (`World.shotFor` select); floating partners were cut at the top -> 12% headroom. Screenshots verified at 1280x720, 900x600, 1920x1080.
+- Found and fixed: the menu's "Create Battle" opened the Public lobbies tab -> `MultiplayerScreen` honours `mode` (create/join/browse).
+- 3.3/3.8/3.9/3.14 Other trainers, sync, names, several players: 3 sessions in the town see each other's trainer, partner and name tag; A saw B and C arrive live; B reload; C to the stadium and back; dev server restart with all three inside: everyone reappears. PASS.
+- 4.1/4.3 Menu: closed on entry, drops from top-left, items per group, opens Create Battle / My Partner / Join panels over the town. PASS (screenshots in session).
+- 5.1/5.5 Create travels to the stadium, a separate scene (`environment` = stadium, field and stands), leaving the room travels back to the town; both players of an invite end in the stadium. PASS.
+- 8.1 First load: intro, then partner select over the town for a first visit (earlier smoke test). 8.3 Enter plaza. 8.4 to 8.6 partner select and follow. 8.7 navigation. 8.9 two sessions. 8.10 create battle. 8.11 another player joins. 8.12 both in the stadium. 8.15 refresh keeps partner: PASS as above. 8.13 battle and 8.14 return after a battle: OPEN (next QA pass).

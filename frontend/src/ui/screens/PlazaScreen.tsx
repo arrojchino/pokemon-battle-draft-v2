@@ -3,7 +3,8 @@ import { MAX_CHAT, MAX_HUB, type HubLine, type HubMember, type LiveBattle, type 
 import { DEFAULT_CHARACTER, characterById } from '../../characters/roster.js';
 import { useReducedMotion, useSettings } from '../../app/settings.js';
 import { useWorld } from '../../app/WorldProvider.js';
-import { useSession } from '../../net/session.js';
+import { advertisedBackend, backendUrl, useSession } from '../../net/session.js';
+import { plazaLink } from '../../net/plazaLink.js';
 import { hasHub } from '../../net/types.js';
 import type { Anchor, HubPeer } from '../../engine/World.js';
 import { sound } from '../../audio/sound.js';
@@ -88,7 +89,7 @@ export function PlazaScreen({ panel, onPanel, onBattle, suspended }: Props) {
   }, [ok, t, world]);
   // Walk in (again when name or partner change, so everyone sees the new partner); walk out when leaving.
   useEffect(() => { if (ok) return () => t.hub(false); }, [ok, t]);
-  useEffect(() => { if (ok) t.hub(true, name, s.partner, spawn); }, [ok, t, name, s.partner, spawn]);
+  useEffect(() => { if (ok) t.hub(true, name, s.partner, spawn, s.trainer); }, [ok, t, name, s.partner, spawn, s.trainer]);
   // This player's spot and gestures go to everyone else in the plaza.
   useEffect(() => {
     if (!world || !ok) return;
@@ -96,7 +97,7 @@ export function PlazaScreen({ panel, onPanel, onBattle, suspended }: Props) {
     return () => offs.forEach(off => off());
   }, [world, ok, t]);
 
-  const others = useMemo<HubPeer[]>(() => members.filter(m => m.id !== you).map(m => ({ id: m.id, partner: m.avatar ?? DEFAULT_CHARACTER, at: { x: m.x, z: m.z, face: m.face } })), [members, you]);
+  const others = useMemo<HubPeer[]>(() => members.filter(m => m.id !== you).map(m => ({ id: m.id, partner: m.avatar ?? DEFAULT_CHARACTER, trainer: m.trainer, at: { x: m.x, z: m.z, face: m.face } })), [members, you]);
   // Get the host and whoever is already here ready while the travel into the town plays (no extra veil).
   const othersRef = useRef(others); othersRef.current = others;
   const prepared = useRef(false);
@@ -107,8 +108,8 @@ export function PlazaScreen({ panel, onPanel, onBattle, suspended }: Props) {
   }, [world, ok, you]);
   useEffect(() => {
     if (!world || suspended) return;
-    world.setLayout({ mode: 'hub', mine: s.partner, spawn, others });
-  }, [world, suspended, s.partner, spawn, others]);
+    world.setLayout({ mode: 'hub', mine: s.partner, spawn, others, trainer: s.trainer });
+  }, [world, suspended, s.partner, spawn, others, s.trainer]);
 
   useEffect(() => { if (session.error) setBusy(false); }, [session.errorId, session.error]);
 
@@ -184,6 +185,14 @@ export function PlazaScreen({ panel, onPanel, onBattle, suspended }: Props) {
     );
   };
   const count = ok ? Math.max(1, members.length) : 1;
+  // Why nobody else may be here: unreachable or outdated server, said out loud instead of a silent solo plaza.
+  const [waited, setWaited] = useState(0);
+  useEffect(() => { const t0 = Date.now(); const tm = window.setInterval(() => setWaited(Date.now() - t0), 1000); return () => window.clearInterval(tm); }, []);
+  const link = plazaLink(session, waited);
+  useEffect(() => { if (link.kind === 'unreachable' || link.kind === 'tooOld') console.warn('[plaza]', link, backendUrl()); }, [link.kind]);
+  const advertised = advertisedBackend();
+  const switchTo = advertised && advertised !== backendUrl() ? advertised : '';
+  const useAdvertised = () => { const u = new URL(location.href); u.searchParams.set('ws', switchTo); location.href = u.toString(); };
   if (suspended) return null;
 
   return (
@@ -193,11 +202,20 @@ export function PlazaScreen({ panel, onPanel, onBattle, suspended }: Props) {
         {members.filter(m => m.id !== you).map(m => tagFor(m.id, m.name, false))}
       </div>
       <aside className="plaza-status" aria-live="polite">
-        <span className={`dot ${ok && online ? 'dot--on' : ok ? 'dot--wait' : ''}`} />
+        <span className={`dot ${link.kind === 'shared' && online ? 'dot--on' : link.kind === 'shared' || link.kind === 'connecting' ? 'dot--wait' : link.kind === 'solo' ? '' : 'dot--bad'}`} />
         <span className="plaza-status__text">
-          <strong>{ok ? tr.rich(count === 1 ? 'hub.here.one' : 'hub.here.other', { count, cap: <small>{tr('hub.cap', { max: MAX_HUB })}</small> }) : tr('plaza.solo')}</strong>
-          <small>{ok ? tr('plaza.shared') : tr('plaza.soloHint')}</small>
+          {link.kind === 'shared' && <>
+            <strong>{tr.rich(count === 1 ? 'hub.here.one' : 'hub.here.other', { count, cap: <small>{tr('hub.cap', { max: MAX_HUB })}</small> })}</strong>
+            <small>{!online ? tr('plaza.reconnecting') : link.outdated !== null ? tr('plaza.outdated', { server: link.outdated }) : tr('plaza.shared')}</small>
+          </>}
+          {link.kind === 'connecting' && <><strong>{tr('plaza.connecting')}</strong><small>{tr('plaza.connectingHint')}</small></>}
+          {link.kind === 'unreachable' && <><strong>{tr('plaza.unreachable')}</strong><small>{tr('plaza.unreachableHint')}</small></>}
+          {link.kind === 'tooOld' && <><strong>{tr('plaza.tooOld')}</strong><small>{tr('plaza.tooOldHint', { server: link.server })}</small></>}
+          {link.kind === 'solo' && <><strong>{tr('plaza.solo')}</strong><small>{tr('plaza.soloHint')}</small></>}
         </span>
+        {switchTo && (link.kind === 'unreachable' || link.kind === 'tooOld' || link.kind === 'solo') && (
+          <button type="button" className="btn btn--sm btn--primary" onClick={useAdvertised}>{tr('plaza.useCurrent')}</button>
+        )}
         {ok && !chatOpen && (
           <button type="button" className="iconbtn iconbtn--text plaza-status__chat" onClick={() => onPanel('social')} aria-label={unread ? tr(unread === 1 ? 'hub.openChatNew.one' : 'hub.openChatNew.other', { n: unread }) : tr('hub.openChat')}>
             <Icon name="text" size={15} />{unread > 0 && <span className="chat-toggle__count">{unread}</span>}

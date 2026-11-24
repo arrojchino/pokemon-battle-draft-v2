@@ -24,7 +24,8 @@ export type MonView = {
   /** What the battle has shown so far: the rival's set stays hidden except for these. */
   revealed: { moves: string[]; item: boolean; ability: string | null };
 };
-export type SideView = { name: string; mons: MonView[]; active: string | null; conditions: string[] };
+/** `layers`: how many times each condition was set (Spikes 1-3, Toxic Spikes 1-2; 1 for the rest). */
+export type SideView = { name: string; mons: MonView[]; active: string | null; conditions: string[]; layers: Record<string, number> };
 
 export type RequestMove = { move: string; id: string; pp?: number; maxpp?: number; target?: string; disabled?: boolean | string };
 export type RequestPokemon = { ident: string; details: string; condition: string; active: boolean; item?: string; ability?: string; baseAbility?: string; teraType?: string; terastallized?: string; moves: string[];
@@ -57,10 +58,17 @@ export type BattleFx =
   | { kind: 'heal'; side: SideId; gained: number }
   | { kind: 'faint'; side: SideId }
   | { kind: 'tera'; side: SideId; type: TypeName }
+  /** Transform / Imposter: `side`'s Pokemon takes the shape of `species` (`set` for its artwork and model). */
+  | { kind: 'transform'; side: SideId; mon: MonView; species: string; set: Pokemon | null }
+  /** A transformed Pokemon is itself again: it left the field (`switch`) or fainted (`faint`). */
+  | { kind: 'untransform'; side: SideId; reason: 'switch' | 'faint' }
   | { kind: 'status'; side: SideId; status: string }
   | { kind: 'boost'; side: SideId; up: boolean }
   | { kind: 'miss'; side: SideId }
   | { kind: 'turn'; turn: number }
+  /** A side's lasting conditions changed (hazards, screens): the stage keeps them visible until they end. */
+  | { kind: 'sideField'; side: SideId; layers: Record<string, number> }
+  | { kind: 'weather'; weather: string | null }
   | { kind: 'end'; winner: SideId | null };
 
 export type BattleState = {
@@ -78,7 +86,7 @@ export type BattleState = {
 
 export const emptyState = (mySide: SideId): BattleState => ({
   mySide, phase: 'idle', turn: 0, weather: null, field: [], log: [], request: null, winner: null, winnerSide: null,
-  sides: [{ name: tr('model.player', { n: 1 }), mons: [], active: null, conditions: [] }, { name: tr('model.player', { n: 2 }), mons: [], active: null, conditions: [] }],
+  sides: [{ name: tr('model.player', { n: 1 }), mons: [], active: null, conditions: [], layers: {} }, { name: tr('model.player', { n: 2 }), mons: [], active: null, conditions: [], layers: {} }],
 });
 
 /** Line → command + args. Kwargs like `[from] item: Life Orb` are split out. */
@@ -230,8 +238,10 @@ export class BattleModel {
         const side = sideOf(args[0]);
         const m = this.mon(args[0], args[1]);
         const c = parseCondition(args[2] ?? '100/100');
-        Object.assign(m, { hp: c.hp, maxhp: c.maxhp, status: c.status, fainted: c.fainted, boosts: {}, transformed: null });
         const prev = s.sides[side].mons.find(x => x.key === s.sides[side].active);
+        // A transformed Pokemon leaving the field (or coming back in through a replace) is itself again.
+        if (m.transformed || prev?.transformed) fx.push({ kind: 'untransform', side, reason: 'switch' });
+        Object.assign(m, { hp: c.hp, maxhp: c.maxhp, status: c.status, fainted: c.fainted, boosts: {}, transformed: null });
         if (prev && prev !== m) { prev.boosts = {}; prev.transformed = null; }
         s.sides[side].active = m.key;
         if (side === s.mySide && !this.spectator) this.say('model.go', { mon: m.species }, 'switch');
@@ -284,7 +294,11 @@ export class BattleModel {
         if (!revived) fx.push({ kind: 'heal', side: sideOf(args[0]), gained: Math.max(0, m.hp / m.maxhp - before) });
         break;
       }
-      case 'faint': { const m = this.mon(args[0]); m.hp = 0; m.fainted = true; this.say('model.fainted', this.w(m), 'faint'); fx.push({ kind: 'faint', side: sideOf(args[0]) }); break; }
+      case 'faint': {
+        const m = this.mon(args[0]); m.hp = 0; m.fainted = true; this.say('model.fainted', this.w(m), 'faint'); fx.push({ kind: 'faint', side: sideOf(args[0]) });
+        if (m.transformed) { m.transformed = null; fx.push({ kind: 'untransform', side: sideOf(args[0]), reason: 'faint' }); }
+        break;
+      }
       case '-status': { const m = this.mon(args[0]); m.status = args[1]; this.say(STATUS[args[1]] ?? 'model.statusOther', { ...this.w(m), status: args[1] }); fx.push({ kind: 'status', side: sideOf(args[0]), status: args[1] }); break; }
       case '-curestatus': { const m = this.mon(args[0]); m.status = null; this.say('model.recovered', this.w(m)); break; }
       case '-boost': case '-unboost': {
@@ -305,12 +319,34 @@ export class BattleModel {
         if (t) fx.push({ kind: 'tera', side: sideOf(args[0]), type: t });
         break;
       }
-      case '-transform': { const m = this.mon(args[0]); const t = this.mon(args[1]); m.transformed = t.species; this.say('model.transformed', { ...this.w(m), mon: t.species }); break; }
-      case '-weather': { if (kw.upkeep === undefined) { s.weather = args[0] === 'none' ? null : args[0]; this.say(WEATHER[args[0]] ?? 'model.weatherStart', { weather: args[0] }); } break; }
+      case '-transform': {
+        // Transform (the move) and Imposter (`[from] ability: Imposter`, right after the switch-in) both land here.
+        // Copying a Pokemon that is itself transformed copies what it looks like now.
+        const m = this.mon(args[0]); const t = this.mon(args[1]); const into = t.transformed ?? t.species;
+        m.transformed = into; this.say('model.transformed', { ...this.w(m), mon: into });
+        fx.push({ kind: 'transform', side: sideOf(args[0]), mon: m, species: into, set: t.transformed ? setFor(into) : t.set ?? setFor(into) });
+        break;
+      }
+      case '-weather': { if (kw.upkeep === undefined) { s.weather = args[0] === 'none' ? null : args[0]; this.say(WEATHER[args[0]] ?? 'model.weatherStart', { weather: args[0] }); fx.push({ kind: 'weather', weather: s.weather }); } break; }
       case '-fieldstart': { const f = clean(args[0]); if (!s.field.includes(f)) s.field.push(f); this.say('model.fieldStart', { field: f }); break; }
       case '-fieldend': { const f = clean(args[0]); s.field = s.field.filter(x => x !== f); this.say('model.fieldEnd', { field: f }); break; }
-      case '-sidestart': { const side = sideOf(args[0]); const c = clean(args[1]); if (!s.sides[side].conditions.includes(c)) s.sides[side].conditions.push(c); this.say('model.sideStart', { condition: c, side: this.whose(side) }); break; }
-      case '-sideend': { const side = sideOf(args[0]); const c = clean(args[1]); s.sides[side].conditions = s.sides[side].conditions.filter(x => x !== c); this.say('model.sideEnd', { condition: c, side: this.whose(side) }); break; }
+      case '-sidestart': {
+        const side = sideOf(args[0]), c = clean(args[1]), v = s.sides[side];
+        if (!v.conditions.includes(c)) v.conditions.push(c);
+        // Spikes stack to 3 layers and Toxic Spikes to 2; each layer is its own -sidestart.
+        v.layers = { ...v.layers, [c]: Math.min(c === 'Spikes' ? 3 : c === 'Toxic Spikes' ? 2 : 1, (v.layers[c] ?? 0) + 1) };
+        this.say('model.sideStart', { condition: c, side: this.whose(side) });
+        fx.push({ kind: 'sideField', side, layers: { ...v.layers } });
+        break;
+      }
+      case '-sideend': {
+        const side = sideOf(args[0]), c = clean(args[1]), v = s.sides[side];
+        v.conditions = v.conditions.filter(x => x !== c);
+        const { [c]: _gone, ...rest } = v.layers; v.layers = rest;
+        this.say('model.sideEnd', { condition: c, side: this.whose(side) });
+        fx.push({ kind: 'sideField', side, layers: { ...v.layers } });
+        break;
+      }
       case '-enditem': { const m = this.mon(args[0]); m.item = null; m.revealed.item = true; this.say(kw.eat !== undefined ? 'model.ateItem' : from === 'Knock Off' || kw.from?.includes('Knock Off') ? 'model.itemKnocked' : 'model.itemUsed', { ...this.w(m), item: args[1] }); break; }
       case '-item': { const m = this.mon(args[0]); m.item = args[1] ?? m.item; m.revealed.item = true; this.say(from ? 'model.hasItemFrom' : 'model.hasItem', { ...this.w(m), item: args[1], from }); break; }
       case '-ability': { const m = this.mon(args[0]); m.revealed.ability = args[1] ?? m.revealed.ability; this.say('model.ability', { ...this.w(m), ability: args[1] }); break; }
@@ -358,7 +394,9 @@ export function lineDuration(line: string): number {
     case '-heal': case '-status': case '-boost': case '-unboost': case '-setboost': return 550;
     case 'turn': return 450;
     case 'win': case 'tie': return 1600;
-    case '-weather': case '-sidestart': case '-sideend': case '-fieldstart': case '-transform': case 'cant': case '-immune': case '-miss': case '-fail': case '-enditem': case '-item': case '-start': case '-end': case '-activate': case '-ability': case '-prepare': case '-hitcount': return 420;
+    // The morph on stage: melt, reshape, reveal (about 1.7 s).
+    case '-transform': return 1600;
+    case '-weather': case '-sidestart': case '-sideend': case '-fieldstart': case 'cant': case '-immune': case '-miss': case '-fail': case '-enditem': case '-item': case '-start': case '-end': case '-activate': case '-ability': case '-prepare': case '-hitcount': return 420;
     case 'start': return 600;
     default: return 0;
   }

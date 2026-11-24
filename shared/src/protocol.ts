@@ -1,4 +1,5 @@
 import { isCharacterId, type CharacterId } from './characters.js';
+import { DEFAULT_TRAINER, isTrainerId, type TrainerId } from './trainers.js';
 import { cleanChat, normalizeBestOf, type BattleMode, type ChatLine, type GameAction, type PublicRoom, type RivalPreview, type Seat, type Visibility } from './room.js';
 
 /**
@@ -34,9 +35,11 @@ import { cleanChat, normalizeBestOf, type BattleMode, type ChatLine, type GameAc
  * v10: the main plaza is a town square of its own, larger than the stadium platform: main-plaza spots (`hub`
  *     `at`, `hubMove`, members) are kept within HUB_R instead of PLAZA_R, and the spot is where the trainer
  *     stands (the partner follows it on every screen). Room plazas are unchanged.
+ * v11: trainer models. Main-plaza members carry `trainer` (a TRAINER_MODELS id) and the `hub` message may send one;
+ *     the server keeps only ids on its allowlist and uses DEFAULT_TRAINER otherwise (older clients included).
  * Servers accept every older client message unchanged, and older clients can read newer state.
  */
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 export const LOBBIES_SINCE = 4;
 export const PLAZA_SINCE = 5;
 export const HUB_SINCE = 6;
@@ -78,7 +81,7 @@ const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinit
 /** The main plaza holds at most this many trainers at once. */
 export const MAX_HUB = 20;
 /** Someone in the main plaza: a server-issued id, their name and partner, and where the partner stands. */
-export type HubMember = { id: string; name: string; avatar: CharacterId | null; pose: PlazaPose | null } & Spot;
+export type HubMember = { id: string; name: string; avatar: CharacterId | null; pose: PlazaPose | null; trainer: TrainerId } & Spot;
 /** A line said in the main plaza. The speaker's name travels with it, so it still reads right after they leave. */
 export type HubLine = { id: number; from: string; name: string; text: string };
 /** An in-app battle in a public room, listed for spectators. */
@@ -110,7 +113,7 @@ export type ClientMessage =
   | ({ type: 'move' } & Spot)
   | { type: 'emote'; emote: PlazaEmote }
   /** v6 main plaza: enter (or, once in, change name and partner) with `on`; leave with `on: false`. `at` is where to appear. */
-  | { type: 'hub'; on: boolean; name: string; avatar: CharacterId | null; at: Spot | null }
+  | { type: 'hub'; on: boolean; name: string; avatar: CharacterId | null; at: Spot | null; trainer?: TrainerId }
   | ({ type: 'hubMove' } & Spot)
   | { type: 'hubEmote'; emote: PlazaEmote }
   | { type: 'hubChat'; text: string }
@@ -191,7 +194,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     case 'emote': return isPlazaEmote(m.emote) ? { type: 'emote', emote: m.emote } : null;
     case 'hub': {
       const at = isObj(m.at) && num(m.at.x) && num(m.at.z) && num(m.at.face) ? cleanHubSpot(m.at.x, m.at.z, m.at.face) : null;
-      return { type: 'hub', on: m.on !== false, name: cleanName(m.name, 'Trainer'), avatar: avatarOf(m.avatar), at };
+      return { type: 'hub', on: m.on !== false, name: cleanName(m.name, 'Trainer'), avatar: avatarOf(m.avatar), at, trainer: isTrainerId(m.trainer) ? m.trainer : DEFAULT_TRAINER };
     }
     case 'hubMove': return num(m.x) && num(m.z) && num(m.face) ? { type: 'hubMove', ...cleanHubSpot(m.x, m.z, m.face) } : null;
     case 'hubEmote': return isPlazaEmote(m.emote) ? { type: 'hubEmote', emote: m.emote } : null;
@@ -211,7 +214,7 @@ function parseLobby(v: unknown): LobbySummary | null {
 
 function parseMember(v: unknown): HubMember | null {
   if (!isObj(v) || !isHubId(v.id) || !num(v.x) || !num(v.z) || !num(v.face)) return null;
-  return { id: v.id, name: cleanName(v.name, 'Trainer'), avatar: avatarOf(v.avatar), pose: isPlazaPose(v.pose) ? v.pose : null, ...cleanHubSpot(v.x, v.z, v.face) };
+  return { id: v.id, name: cleanName(v.name, 'Trainer'), avatar: avatarOf(v.avatar), pose: isPlazaPose(v.pose) ? v.pose : null, trainer: isTrainerId(v.trainer) ? v.trainer : DEFAULT_TRAINER, ...cleanHubSpot(v.x, v.z, v.face) };
 }
 function parseHubLine(v: unknown): HubLine | null {
   if (!isObj(v) || !num(v.id) || !isHubId(v.from) || typeof v.text !== 'string') return null;

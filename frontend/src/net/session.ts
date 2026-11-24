@@ -3,14 +3,39 @@ import { WsTransport } from './wsTransport.js';
 import { PeerTransport } from './peerTransport.js';
 import type { Transport } from './types.js';
 
-/** Backend URL precedence: build-time env, then `?ws=`, then the value remembered from a previous `?ws=`. */
+const isWs = (v: string | null | undefined): v is string => !!v && /^wss?:\/\//.test(v);
+let discovered = '';
+/**
+ * The battle server the site currently advertises (`backend.json`, written at deploy with the live tunnel).
+ * Read once before the app starts, so a plain link or a remembered dead host still reaches today's server.
+ * Gives up after `ms` and keeps whatever else is configured.
+ */
+export async function discoverBackend(ms = 2500): Promise<string> {
+  try {
+    const ctl = new AbortController();
+    const tm = window.setTimeout(() => ctl.abort(), ms);
+    const r = await fetch(`${import.meta.env.BASE_URL}backend.json`, { cache: 'no-store', signal: ctl.signal });
+    window.clearTimeout(tm);
+    const j = r.ok ? await r.json() as { ws?: unknown } : null;
+    discovered = typeof j?.ws === 'string' && isWs(j.ws) ? j.ws : '';
+  } catch { discovered = ''; }
+  return discovered;
+}
+/** The server the site advertises, or '' (none, or not read yet). */
+export const advertisedBackend = () => discovered;
+
+/**
+ * Backend URL precedence: build-time env, then `?ws=`, then the server the site advertises (`backend.json`), then
+ * the value remembered from a previous visit. The advertised one beats the remembered one because quick tunnels
+ * change hostname on every restart: a remembered host goes dead and used to leave the plaza silently empty.
+ */
 export function backendUrl(): string {
   const q = new URLSearchParams(location.search).get('ws');
-  if (q && /^wss?:\/\//.test(q)) { try { localStorage.setItem('pc-backend', q); } catch { /* ignore */ } }
   let stored = '';
   try { stored = localStorage.getItem('pc-backend') || ''; } catch { /* ignore */ }
-  const v = (import.meta.env.VITE_BACKEND_URL || '').trim() || q || stored;
-  return /^wss?:\/\//.test(v) ? v : '';
+  const v = (import.meta.env.VITE_BACKEND_URL || '').trim() || (isWs(q) ? q : '') || discovered || stored;
+  if (isWs(v) && v !== stored) { try { localStorage.setItem('pc-backend', v); } catch { /* ignore */ } }
+  return isWs(v) ? v : '';
 }
 
 /** Shareable link into a room. It carries `?ws=` unless the backend is baked into the build, so the rival reaches the same server. */

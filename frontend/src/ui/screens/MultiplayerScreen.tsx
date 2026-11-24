@@ -10,7 +10,8 @@ import { MODE_LABEL, PartnerAvatar, lobbyPrefs, partnerStyle } from './LobbyPart
 import { t as tr, useT, type MessageKey } from '../../i18n/index.js';
 
 type Tab = 'browse' | 'create' | 'join';
-type Props = { mode: 'create' | 'join'; inviteCode: string; onBack: () => void; onChangePartner: () => void; onPlaza?: () => void };
+/** Which tab opens first: the menu's Create Battle, Join with Code and Public Lobbies each land on their own. */
+type Props = { mode: 'create' | 'join' | 'browse'; inviteCode: string; onBack: () => void; onChangePartner: () => void; onPlaza?: () => void };
 
 const waited = (ms: number) => { const m = Math.floor(ms / 60000); return m < 1 ? tr('multi.justOpened') : tr('multi.waitingMin', { n: m }); };
 
@@ -47,7 +48,8 @@ export function MultiplayerScreen({ mode, inviteCode, onBack, onChangePartner, o
   const session = useSession();
   const lobbies = hasLobbies(session);
   const hub = hasHub(session);
-  const [picked, setPicked] = useState<Tab | null>(mode === 'join' || inviteCode ? 'join' : null);
+  // An invite always opens Join; otherwise the tab the menu asked for (it used to land on Public lobbies for Create).
+  const [picked, setPicked] = useState<Tab | null>(inviteCode ? 'join' : mode === 'browse' ? null : mode);
   const tab: Tab = picked ?? (lobbies ? 'browse' : 'create');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (session.error) setBusy(false); }, [session.errorId, session.error]);

@@ -1,7 +1,8 @@
-// Shared data for every plaza trainer, built once from the presenter VRM (VRoid AvatarSample_4, CC0).
+// Shared data for plaza trainers, built once per trainer model (any VRM 0.x / 1.0 humanoid; the models and their
+// licenses are listed in `shared/src/trainers.ts` and docs/ASSETS.md).
 //
-// The VRM is downloaded and parsed once (through `Presenter.fetchVrm`), then baked into a compact form that
-// every Trainer instance shares:
+// A model is downloaded and parsed (through `Presenter.fetchVrm`) the first time a trainer uses it, then baked
+// into a compact form that every Trainer instance of that model shares:
 //  * one texture atlas (all colour maps, cropped to their used UV area, packed into 2048 px) and one RGBA tint
 //    mask (outfit, accent, hair, legwear weights) at half resolution;
 //  * three geometries: the body (skin, dress, shoes, both hair meshes) with and without the code-built cap,
@@ -10,6 +11,9 @@
 //  * a pooled float texture for bone matrices: every instance writes its matrices into its own slice of one
 //    shared DataTexture, so a new trainer adds no texture (the skinning shader reads at `boneOffset`).
 // After baking, the parsed VRM is dropped; it is never rendered.
+// VRoid exports are recognised by their material names (skin, clothes, hair, face parts: tinted, outlined, capped);
+// any other humanoid bakes as one untinted body without face expressions, hair sway or cap. Missing pieces (no
+// toes, no hair chains, no skirt, no expressions) are simply skipped by the Trainer.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { VRMExpressionMorphTargetBind, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm';
@@ -17,11 +21,14 @@ import { Presenter } from '../npc/Presenter.js';
 import { hairHeightField } from '../npc/accessories.js';
 import { flipV } from '../npc/rig.js';
 import { buildTrainerCap, type CapSwatch } from './trainerCap.js';
+import { DEFAULT_TRAINER, trainerModel } from '../../../../shared/src/trainers.js';
 
 export type ExprName = 'blink' | 'happy' | 'relaxed' | 'aa' | 'surprised';
 export interface ExprBind { index: number; weight: number }
 
 export interface TrainerAsset {
+  /** Model id (one bone pool per model). */
+  id?: string;
   /** Bone hierarchy in traversal order (parents first). Positions are rest local offsets (raw VRM 0.x frame). */
   bones: { name: string; parent: number; pos: THREE.Vector3 }[];
   boneInverses: THREE.Matrix4[];
@@ -33,8 +40,13 @@ export interface TrainerAsset {
   /** Outline shells: skin, dress and shoes only (VRoid hair has no outline), without and with the cap. */
   outlineGeo: THREE.BufferGeometry;
   outlineCapGeo: THREE.BufferGeometry;
-  faceGeo: THREE.BufferGeometry;
+  /** Face (opaque + blended groups, expression morphs); null for models without VRoid face parts. */
+  faceGeo: THREE.BufferGeometry | null;
   morphCount: number;
+  /** World height trainers of this model are scaled to (units). */
+  height: number;
+  /** Whether the code-built cap fits this model (VRoid hair to fit it to). */
+  hasCap: boolean;
   expr: Record<ExprName, ExprBind[]>;
   atlas: THREE.DataTexture;
   mask: THREE.DataTexture;
@@ -43,6 +55,21 @@ export interface TrainerAsset {
   /** Model height (soles to hair top) and sole height, model metres. */
   rawHeight: number;
   floor: number;
+  /** Sole extent around the point under the ankle (model metres, body space), measured from the shoe soles:
+   * heel behind, toe tip ahead, half width. */
+  heel?: number;
+  toeTip?: number;
+  footHalfW?: number;
+  /**
+   * Toes-up roll table: for pitch p = i * HEEL_LUT_STEP (i = 0..n-1), the ankle offset (forward, up) from the
+   * sole point under the resting ankle when the foot rests on its lowest sole vertex (the rounded heel rolls).
+   */
+  heelLut?: Float32Array;
+  /** Heel-up table: for pitch -i * HEEL_LUT_STEP, the ankle height the foot-bone part of the shoe needs (the toes
+   * lie flat; the ball of a stiff shoe would otherwise dig in ahead of the toe joint). */
+  toeLut?: Float32Array;
+  /** Ankle height above the lowest sole vertex (model metres). */
+  ankleUp?: number;
   sphere: THREE.Sphere;
   /** Secondary chains (bone indices from root to tip). */
   hairChains: number[][];
@@ -52,15 +79,24 @@ export interface TrainerAsset {
 
 // ------------------------------------------------------------------ bone pool
 const POOL_W = 256;            // texels per row (64 bones)
-const POOL_CAP = 32;           // instances per pool texture
+export const POOL_CAP = 32;    // instances per pool texture
 
+/**
+ * Bone matrices of up to POOL_CAP trainers of one model in one float texture: instance `slot` owns rows
+ * [slot * rows, (slot + 1) * rows). A slot is handed out once and must come back once: `give` ignores a slot
+ * that is already free (a double dispose would otherwise hand the same slot to two trainers, which then draw
+ * with each other's bones, one of them on top of the other).
+ */
 export class BonePool {
   readonly tex: THREE.DataTexture;
   readonly data: Float32Array;
   readonly stride: number;     // bones per slot
+  readonly bones: number;      // bones per instance this pool was sized for
   private free: number[] = [];
+  private used = new Set<number>();
   constructor(bonesPerInstance: number) {
     const rows = Math.ceil((bonesPerInstance * 4) / POOL_W);
+    this.bones = bonesPerInstance;
     this.stride = (rows * POOL_W) / 4;
     this.data = new Float32Array(POOL_W * rows * POOL_CAP * 4);
     this.tex = new THREE.DataTexture(this.data, POOL_W, rows * POOL_CAP, THREE.RGBAFormat, THREE.FloatType);
@@ -69,22 +105,55 @@ export class BonePool {
     for (let i = POOL_CAP - 1; i >= 0; i--) this.free.push(i);
   }
   get full() { return this.free.length === 0; }
-  take(): number { return this.free.pop()!; }
-  give(slot: number) { this.free.push(slot); }
+  get inUse() { return this.used.size; }
+  take(): number {
+    const slot = this.free.pop();
+    if (slot === undefined) throw new Error('BonePool: full');
+    this.used.add(slot);
+    return slot;
+  }
+  /** Return a slot; false (and no change) when it was not handed out. */
+  give(slot: number): boolean {
+    if (!this.used.delete(slot)) return false;
+    this.free.push(slot);
+    return true;
+  }
 }
-const pools: BonePool[] = [];
-export function takeBoneSlot(bones: number): { pool: BonePool; slot: number } {
-  let pool = pools.find(p => !p.full);
-  if (!pool) { pool = new BonePool(bones); pools.push(pool); }
+/** Pools per model (a pool's slot size fits one skeleton): a model's trainers never share slots with another's. */
+const pools = new Map<string, BonePool[]>();
+export function takeBoneSlot(bones: number, model = 'default'): { pool: BonePool; slot: number } {
+  let list = pools.get(model);
+  if (!list) pools.set(model, list = []);
+  let pool = list.find(p => !p.full && p.bones >= bones);
+  if (!pool) { pool = new BonePool(bones); list.push(pool); }
   return { pool, slot: pool.take() };
+}
+/** Pool counts and slots in use, per model (QA, tests). */
+export function bonePoolStats(): Record<string, { pools: number; inUse: number }> {
+  const out: Record<string, { pools: number; inUse: number }> = {};
+  for (const [k, list] of pools) out[k] = { pools: list.length, inUse: list.reduce((n, p) => n + p.inUse, 0) };
+  return out;
 }
 
 // ------------------------------------------------------------------ loading
-let pending: Promise<TrainerAsset> | null = null;
-export function loadTrainerAsset(): Promise<TrainerAsset> {
-  pending ??= Presenter.fetchVrm().then(({ vrm, bytes }) => bake(vrm, bytes)).catch(err => { pending = null; throw err; });
-  return pending;
+const pending = new Map<string, Promise<TrainerAsset>>();
+/**
+ * The baked asset of a trainer model, loaded on first use and shared afterwards (an unknown id loads the
+ * default). A failed load is forgotten, so the next request retries.
+ */
+export function loadTrainerAsset(model?: string): Promise<TrainerAsset> {
+  const m = trainerModel(model ?? DEFAULT_TRAINER);
+  let p = pending.get(m.id);
+  if (!p) {
+    const url = `${import.meta.env.BASE_URL}${m.file}`;
+    p = Presenter.fetchVrm({ url }).then(({ vrm, bytes }) => bake(vrm, bytes, m.id, m.height ?? 0.98))
+      .catch(err => { pending.delete(m.id); throw err; });
+    pending.set(m.id, p);
+  }
+  return p;
 }
+/** Models already baked or loading (QA). */
+export function loadedTrainerModels(): string[] { return [...pending.keys()]; }
 
 const yieldFrame = () => new Promise<void>(r => setTimeout(r, 0));
 
@@ -92,15 +161,20 @@ type Kind = 'skin' | 'dress' | 'shoes' | 'hair' | 'ribbon' | 'face' | 'brow' | '
 type Part = 'body' | 'faceOpaque' | 'faceAlpha';
 interface MatInfo { key: string; part: Part; kind: Kind; order: number; prio: number }
 
-function classify(name: string): MatInfo | null {
+function classify(name: string, vroid: boolean): MatInfo | null {
   const n = name.replace(/ \(Outline\)$/, '');
+  // anything that is not a VRoid export: one untinted body
+  if (!vroid) return { key: n, part: 'body', kind: 'plain', order: 9, prio: 1 };
   const T: [RegExp, Part, Kind, number, number][] = [
     [/Body_00_SKIN/, 'body', 'skin', 0, 0.8],
-    [/Tops_01_CLOTH/, 'body', 'dress', 1, 0.9],
-    [/Shoes_01_CLOTH/, 'body', 'shoes', 2, 0.55],
+    [/(Tops|Onepice)_\d+_CLOTH/, 'body', 'dress', 1, 0.9],
+    [/Bottoms_\d+_CLOTH/, 'body', 'dress', 1, 0.75],
+    [/Accessory_\d+_CLOTH/, 'body', 'ribbon', 1, 0.5],
+    [/Shoes_\d+_CLOTH/, 'body', 'shoes', 2, 0.55],
     [/HairBack_00_HAIR/, 'body', 'hair', 3, 0.55],
     [/HAIR_03/, 'body', 'ribbon', 6, 0.5],
     [/HAIR_0[12]/, 'body', 'hair', 4, 0.75],
+    [/Hair_\d+_HAIR$/, 'body', 'hair', 4, 0.75],
     [/Face_00_SKIN/, 'faceOpaque', 'face', 0, 1],
     [/FaceMouth/, 'faceOpaque', 'plain', 1, 0.55],
     [/EyeWhite/, 'faceOpaque', 'plain', 2, 0.5],
@@ -149,7 +223,7 @@ const srgbToLin = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055
 const linToSrgb8 = (c: number) => Math.round(255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055));
 const smoothstep = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-async function bake(vrm: VRM, bytes: number): Promise<TrainerAsset> {
+async function bake(vrm: VRM, bytes: number, id: string, height: number): Promise<TrainerAsset> {
   const scene = vrm.scene;
   scene.updateMatrixWorld(true);
   // ---------------------------------------------------------------- bones
@@ -183,13 +257,16 @@ async function bake(vrm: VRM, bytes: number): Promise<TrainerAsset> {
   // ---------------------------------------------------------------- primitives
   type Prim = { mesh: THREE.SkinnedMesh; info: MatInfo; mat: THREE.Material & { map?: THREE.Texture | null } };
   const prims: Prim[] = [];
-  scene.traverse(o => {
-    const m = o as THREE.SkinnedMesh;
-    if (!m.isSkinnedMesh) return;
-    const mat = (Array.isArray(m.material) ? m.material[0] : m.material) as Prim['mat'];
-    const info = classify(mat.name);
+  const skinned: THREE.SkinnedMesh[] = [];
+  scene.traverse(o => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) skinned.push(o as THREE.SkinnedMesh); });
+  const matOf = (m: THREE.SkinnedMesh) => (Array.isArray(m.material) ? m.material[0] : m.material) as Prim['mat'];
+  const vroid = skinned.some(m => /_SKIN$|_CLOTH$|_HAIR(_\d+)?$/.test(matOf(m).name.replace(/ \(Outline\)$/, '')));
+  for (const m of skinned) {
+    const mat = matOf(m);
+    const info = classify(mat.name, vroid);
     if (info && mat.map) prims.push({ mesh: m, info, mat });
-  });
+  }
+  if (!prims.length) throw new Error(`Trainer: ${id} has no textured skinned meshes`);
 
   // used UV area per material
   const regions = new Map<string, Region>();
@@ -396,35 +473,43 @@ async function bake(vrm: VRM, bytes: number): Promise<TrainerAsset> {
   const outlineGeo = mergeGeometries(shellParts, false)!;
   const faceMorphs = Math.max(0, ...prims.filter(p => p.info.part !== 'body').map(p => p.mesh.geometry.morphAttributes.position?.length ?? 0));
   const fo = byPart('faceOpaque').map(p => remapGeo(p, faceMorphs)), fa = byPart('faceAlpha').map(p => remapGeo(p, faceMorphs));
-  const faceGeo = mergeGeometries([...fo, ...fa], true)!;
-  const opaqueCount = fo.reduce((s, x) => s + x.getIndex()!.count, 0);
-  faceGeo.clearGroups();
-  faceGeo.addGroup(0, opaqueCount, 0);
-  faceGeo.addGroup(opaqueCount, faceGeo.getIndex()!.count - opaqueCount, 1);
+  let faceGeo: THREE.BufferGeometry | null = null;
+  if (fo.length) {
+    faceGeo = mergeGeometries([...fo, ...fa], true)!;
+    const opaqueCount = fo.reduce((s, x) => s + x.getIndex()!.count, 0);
+    faceGeo.clearGroups();
+    faceGeo.addGroup(0, opaqueCount, 0);
+    faceGeo.addGroup(opaqueCount, faceGeo.getIndex()!.count - opaqueCount, 1);
+  }
   [...fo, ...fa].forEach(x => x.dispose());
-  const morphCount = faceGeo.morphAttributes.position?.length ?? 0;
+  const morphCount = faceGeo?.morphAttributes.position?.length ?? 0;
 
   bodyGeo.computeBoundingBox();
   const bb = bodyGeo.boundingBox!;
   const floor = bb.min.y;
   const rawHeight = bb.max.y - floor;
+  const sole = measureSole(bodyGeo, human, restWorld, floor);
 
-  // cap, fitted to the hair (head-local body space), skinned to the head bone
-  const headIdx = human.head!;
-  const headModel = new THREE.Vector3().setFromMatrixPosition(restWorld[headIdx]);   // raw frame
+  // cap, fitted to the hair (head-local body space), skinned to the head bone (VRoid hair only)
+  const headIdx = human.head;
   const hairMeshes = prims.filter(p => p.info.kind === 'hair').map(p => p.mesh as THREE.Mesh);
-  const field = hairHeightField(hairMeshes, flipV(headModel.clone()), true);
-  const capGeo = buildTrainerCap(field, sw, headModel, headIdx);
-  const bodyCapGeo = mergeGeometries([...shellParts, ...backParts, capGeo, ...strandParts], false)!;
-  bodyCapGeo.userData.shadowCount = idxCount([...shellParts, ...backParts, capGeo]);
-  bodyCapGeo.userData.farCount = bodyCapGeo.userData.shadowCount + farStrandCount;
-  const outlineCapGeo = mergeGeometries([outlineGeo, capGeo], false)!;
-  capGeo.dispose();
+  const hasCap = vroid && headIdx !== undefined && hairMeshes.length > 0;
+  let bodyCapGeo = bodyGeo, outlineCapGeo = outlineGeo;
+  if (hasCap) {
+    const headModel = new THREE.Vector3().setFromMatrixPosition(restWorld[headIdx]);   // raw frame
+    const field = hairHeightField(hairMeshes, flipV(headModel.clone()), true);
+    const capGeo = buildTrainerCap(field, sw, headModel, headIdx);
+    bodyCapGeo = mergeGeometries([...shellParts, ...backParts, capGeo, ...strandParts], false)!;
+    bodyCapGeo.userData.shadowCount = idxCount([...shellParts, ...backParts, capGeo]);
+    bodyCapGeo.userData.farCount = bodyCapGeo.userData.shadowCount + farStrandCount;
+    outlineCapGeo = mergeGeometries([outlineGeo, capGeo], false)!;
+    capGeo.dispose();
+  }
   bodyParts.forEach(x => x.dispose());
 
-  // expressions
+  // expressions (morph targets of the face; models without a VRoid face have none)
   const expr = { blink: [], happy: [], relaxed: [], aa: [], surprised: [] } as Record<ExprName, ExprBind[]>;
-  const em = vrm.expressionManager;
+  const em = faceGeo ? vrm.expressionManager : null;
   for (const name of Object.keys(expr) as ExprName[]) {
     const e = em?.getExpression(name);
     if (!e) continue;
@@ -435,7 +520,7 @@ async function bake(vrm: VRM, bytes: number): Promise<TrainerAsset> {
   // secondary chains
   const children = (i: number) => bones.map((b, k) => (b.parent === i ? k : -1)).filter(k => k >= 0);
   const chainFrom = (i: number) => { const c = [i]; let k = i; for (;;) { const ch = children(k); if (ch.length !== 1) break; k = ch[0]; c.push(k); } return c; };
-  const hairChains = children(headIdx).filter(k => /HairJoint/.test(bones[k].name)).map(chainFrom);
+  const hairChains = headIdx === undefined ? [] : children(headIdx).filter(k => /HairJoint/.test(bones[k].name)).map(chainFrom);
   const skirtSides = bones.map((b, k) => (/SkirtSide1$/.test(b.name) ? k : -1)).filter(k => k >= 0);
 
   // drop the parsed model (it was never rendered, so nothing reached the GPU)
@@ -448,7 +533,71 @@ async function bake(vrm: VRM, bytes: number): Promise<TrainerAsset> {
 
   const center = new THREE.Vector3(0, floor + rawHeight * 0.5, 0);
   return {
-    bones, boneInverses, human, rest, bodyGeo, bodyCapGeo, outlineGeo, outlineCapGeo, faceGeo, morphCount, expr, atlas, mask: maskTex, ref,
-    rawHeight, floor, sphere: new THREE.Sphere(center, rawHeight * 0.75), hairChains, skirtSides, bytes,
+    id, height, hasCap, bones, boneInverses, human, rest, bodyGeo, bodyCapGeo, outlineGeo, outlineCapGeo, faceGeo, morphCount, expr, atlas, mask: maskTex, ref,
+    rawHeight, floor, sphere: new THREE.Sphere(center, rawHeight * 0.75), hairChains, skirtSides, bytes, ...sole,
   };
+}
+
+/**
+ * The left sole's extent around the point under the ankle, from the vertices skinned mostly to the left foot or
+ * toes that lie near the floor (body space: raw VRM 0.x x and z negated). Null fields when the model has no
+ * such vertices.
+ */
+export const HEEL_LUT_STEP = 0.025, HEEL_LUT_N = 21, TOE_LUT_N = 29;
+export function measureSole(geo: THREE.BufferGeometry, human: TrainerAsset['human'], restWorld: THREE.Matrix4[], floor: number): { heel?: number; toeTip?: number; footHalfW?: number; heelLut?: Float32Array; toeLut?: Float32Array; ankleUp?: number } {
+  const foot = human.leftFoot, toes = human.leftToes;
+  if (foot === undefined) return {};
+  const ankle = new THREE.Vector3().setFromMatrixPosition(restWorld[foot]);
+  const pos = geo.getAttribute('position'), si = geo.getAttribute('skinIndex'), sw = geo.getAttribute('skinWeight');
+  let zMin = Infinity, zMax = -Infinity, xMax = 0, n = 0;
+  const prof: number[] = [];                      // (forward, up) of low sole vertices relative to the ankle
+  const profBlend: number[] = [];                 // (forward, up, foot share) of sole vertices on the foot and toes
+  let soleMin = Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    if (y > floor + 0.06) continue;
+    let best = -1, bw = 0;
+    for (let c = 0; c < 4; c++) { const w = sw.getComponent(i, c); if (w > bw) { bw = w; best = si.getComponent(i, c); } }
+    if (best !== foot && best !== toes) continue;
+    const z = -(pos.getZ(i) - ankle.z), x = Math.abs(pos.getX(i) - ankle.x);
+    prof.push(z, y - ankle.y);
+    let wf = 0, wt = 0;
+    for (let c = 0; c < 4; c++) { const b = si.getComponent(i, c), w = sw.getComponent(i, c); if (b === foot) wf += w; else if (b === toes) wt += w; }
+    if (wf + wt > 0.5) profBlend.push(z, y - ankle.y, wf / (wf + wt));
+    soleMin = Math.min(soleMin, y);
+    if (y > floor + 0.035) continue;                // the footprint includes the rounded heel and toe cap
+    zMin = Math.min(zMin, z); zMax = Math.max(zMax, z); xMax = Math.max(xMax, x); n++;
+  }
+  if (n < 4) return {};
+  const ankleUp = ankle.y - soleMin;
+  // toes up by p (body space: +z forward, +y up): a vertex (vz, vy) goes to (vz cos p - vy sin p, vz sin p + vy cos p);
+  // the foot rests on the lowest one, whose ground point stays where it was
+  const heelLut = new Float32Array(HEEL_LUT_N * 2);
+  for (let k = 0; k < HEEL_LUT_N; k++) {
+    const p = k * HEEL_LUT_STEP, c = Math.cos(p), sn = Math.sin(p);
+    let up = -Infinity, fwd = 0;
+    for (let j = 0; j < prof.length; j += 2) {
+      const vz = prof[j], vy = prof[j + 1];
+      const u = -(vz * sn + vy * c);
+      if (u > up) { up = u; fwd = vz - (vz * c - vy * sn); }
+    }
+    heelLut[k * 2] = fwd; heelLut[k * 2 + 1] = k === 0 ? ankleUp : up;
+  }
+  // heel up by |p| (p < 0): the foot turns nose down while the toes stay flat (their bone undoes the pitch), so a
+  // sole vertex moves with the foot by its foot weight and with the toe joint by the rest
+  const toeLut = new Float32Array(TOE_LUT_N);
+  const J = toes !== undefined ? new THREE.Vector3().setFromMatrixPosition(restWorld[toes]) : null;
+  const jz = J ? -(J.z - ankle.z) : 0, jy = J ? J.y - ankle.y : 0;
+  for (let k = 0; k < TOE_LUT_N; k++) {
+    const p = -k * HEEL_LUT_STEP, c = Math.cos(p), sn = Math.sin(p);
+    const jRy = jz * sn + jy * c;                 // toe joint height after the foot turns
+    let up = -Infinity;
+    for (let j = 0; j < profBlend.length; j += 3) {
+      const vz = profBlend[j], vy = profBlend[j + 1], wf = J ? profBlend[j + 2] : 1;
+      const yFoot = vz * sn + vy * c, yToes = jRy + vy - jy;
+      up = Math.max(up, -(wf * yFoot + (1 - wf) * yToes));
+    }
+    toeLut[k] = up;
+  }
+  return { heel: Math.max(0.02, -zMin), toeTip: Math.max(0.04, zMax), footHalfW: Math.max(0.02, xMax), heelLut, toeLut, ankleUp };
 }

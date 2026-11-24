@@ -6,6 +6,8 @@ import { useSession } from '../net/session.js';
 import { Icon } from './primitives.js';
 import { PartnerAvatar, partnerStyle } from './screens/LobbyParts.js';
 import { useT } from '../i18n/index.js';
+import { TrainerPicker } from './TrainerPicker.js';
+import { trainerOutfit } from '../engine/trainerLook.js';
 
 /**
  * A sheet that slides in from the top-left under the main menu, over the plaza: battle setup, settings, the
@@ -68,6 +70,7 @@ export function ProfilePanel({ onPartner }: { onPartner: () => void }) {
           <button type="button" className="btn btn--ghost btn--sm" onClick={onPartner}><Icon name="ball" size={14} />{t('profile.change')}</button>
         </div>
       </div>
+      <TrainerPicker value={s.trainer} tint={trainerOutfit('me')} onChange={id => settings.set({ trainer: id })} />
       <label className="field">
         <span>{t('multi.yourName')}</span>
         <input value={s.name} maxLength={24} autoComplete="nickname" placeholder={t('multi.trainer')} onChange={e => settings.set({ name: e.target.value })} />

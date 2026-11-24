@@ -1,5 +1,6 @@
 import type { World } from '../engine/World.js';
 import { TYPE_HEX } from '../engine/battle/BattleStage.js';
+import { DITTO_PURPLE } from '../engine/battle/transform.js';
 import type { Character, Emote } from '../characters/roster.js';
 import type { BattleFx, MonView, SideId } from './model.js';
 
@@ -26,9 +27,28 @@ export function createStageBridge(world: World, mySide: SideId, mine: Character,
     world.battle.status(s, mon.status);
   };
 
+  const artOf = (set: MonView['set']) => set?.artId ?? set?.id ?? 0;
+  /** Who is on the field per stage side (live views: the model keeps them current). */
+  const onField: [MonView | null, MonView | null] = [null, null];
+  /** Imposter copies whoever stands opposite as it enters: get that model ready (download and shaders) first. */
+  const prepareMirror = () => {
+    for (const s of [0, 1] as const) { const m = onField[s], foe = onField[1 - s]; if (m?.species === 'Ditto' && !m.transformed && foe) world.prepareMons([artOf(foe.set)]); }
+  };
   let lastMoveColor = '#ffffff';
   return (fx: BattleFx, instant: boolean) => {
-    if (fx.kind === 'switch') { showMon(stageSide(fx.side), fx.mon, instant); if (!instant && fx.side === mySide) react(0, 'nod'); return; }
+    if (fx.kind === 'switch') { onField[stageSide(fx.side)] = fx.mon; showMon(stageSide(fx.side), fx.mon, instant); prepareMirror(); if (!instant && fx.side === mySide) react(0, 'nod'); return; }
+    // Transform and Imposter: morph into the copied species (at once on a reconnect or a replayed log).
+    if (fx.kind === 'transform') {
+      const s = stageSide(fx.side), art = artOf(fx.set);
+      world.prepareMons([art]);
+      world.battle.transform(s, art, fx.species, DITTO_PURPLE, instant, { status: fx.mon.status, tera: fx.mon.tera });
+      return;
+    }
+    // Leaving the field reverts here; a faint reverts on stage when the collapse plays (BattleStage.faint).
+    if (fx.kind === 'untransform') { if (fx.reason === 'switch') world.battle.untransform(stageSide(fx.side)); return; }
+    // Lasting conditions are state, not animation: applied at once on a reconnect or a replayed log.
+    if (fx.kind === 'sideField') { world.battle.setSideField(stageSide(fx.side), fx.layers, instant); return; }
+    if (fx.kind === 'weather') { world.battle.setWeather(fx.weather); return; }
     if (instant) return;
     switch (fx.kind) {
       case 'move': {

@@ -66,3 +66,37 @@ describe('partner follows its trainer', () => {
     expect(Math.hypot(f.w.x - x, f.w.z - z)).toBeLessThan(1e-6);
   });
 });
+
+describe('partner follow feels natural', () => {
+  it('stays put while the trainer turns on the spot (no lap around them)', () => {
+    const f = new Follower(); f.w.size(0.7, 1.1);
+    const l: Leader = { x: 0, z: 0, face: 0, speed: 0, radius: 0.3 };
+    walk(f, l, 1);
+    const x = f.w.x, z = f.w.z;
+    walk(f, l, 2, open, ll => { ll.face += Math.PI / 60; }); // a full turn in place
+    expect(Math.hypot(f.w.x - x, f.w.z - z)).toBeLessThan(0.05);
+  });
+
+  it('walks in the trainer\'s footsteps round a corner instead of cutting across', () => {
+    const f = new Follower(); f.w.size(0.7, 1.1);
+    const l: Leader = { x: 0, z: 0, face: 0, speed: 1.4, radius: 0.3 };
+    // North 3 units, then east 3 units: the partner should pass near the corner (0, 3), not cut the diagonal.
+    let nearCorner = Infinity;
+    walk(f, l, 3 / 1.4, open, ll => { ll.z += 1.4 / 60; });
+    l.face = Math.PI / 2;
+    walk(f, l, 3 / 1.4 + 1.5, open, ll => { if (ll.x < 3) ll.x += 1.4 / 60; else ll.speed = 0; nearCorner = Math.min(nearCorner, Math.hypot(f.w.x, f.w.z - 3)); });
+    expect(nearCorner).toBeLessThan(0.55);
+  });
+
+  it('settles on the side it is already on when the trainer stops', () => {
+    const f = new Follower(); f.w.size(0.7, 1.1); f.side = 1;
+    const l: Leader = { x: 0, z: 0, face: 0, speed: 1.4, radius: 0.3 };
+    walk(f, l, 2, open, ll => { ll.z += 1.4 / 60; });
+    // Nudge the partner to the trainer's left (+x when facing +z) just before the stop.
+    f.w.x = l.x + 0.5;
+    l.speed = 0;
+    walk(f, l, 3);
+    expect(f.side).toBe(-1);
+    expect(f.w.x).toBeGreaterThan(l.x); // it did not cross behind to the right
+  });
+});

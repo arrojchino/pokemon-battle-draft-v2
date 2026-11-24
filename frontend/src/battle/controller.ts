@@ -1,4 +1,4 @@
-import { BattleModel, lineDuration, type BattleFx, type BattleState, type LogEntry, type MonView, type SideId } from './model.js';
+import { BattleModel, lineDuration, setFor, type BattleFx, type BattleState, type LogEntry, type MonView, type SideId } from './model.js';
 
 export type BattleSnapshot = {
   id: number;
@@ -159,7 +159,17 @@ export class BattleController {
 
   /** Put the current active Pokémon on stage instantly (after a reconnect or when the stage arrives late). */
   resync() {
-    for (const side of [0, 1] as const) { const m = this.model.activeMon(side); if (m && !m.fainted) this.opts.onFx?.({ kind: 'switch', side, mon: m }, true); }
+    for (const side of [0, 1] as const) {
+      const m = this.model.activeMon(side);
+      if (!m || m.fainted) continue;
+      this.opts.onFx?.({ kind: 'switch', side, mon: m }, true);
+      // A transformed Pokemon comes back in the shape it copied (the switch already cleared any old one).
+      if (m.transformed) this.opts.onFx?.({ kind: 'transform', side, mon: m, species: m.transformed, set: setFor(m.transformed) }, true);
+    }
+    // Hazards, screens and weather that are still up come back too.
+    const st = this.model.state;
+    for (const side of [0, 1] as const) this.opts.onFx?.({ kind: 'sideField', side, layers: { ...st.sides[side].layers } }, true);
+    this.opts.onFx?.({ kind: 'weather', weather: st.weather }, true);
   }
 
   choose(choice: string) {

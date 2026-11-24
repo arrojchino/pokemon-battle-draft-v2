@@ -1,4 +1,4 @@
-import { HUB_SINCE, LOBBIES_SINCE, poseAfter, type PlazaPose, type BattleMode, type CharacterId, type GameAction, type LiveBattle, type LobbySummary, type PlazaEmote, type PublicRoom, type Seat, type ServerMessage, type Spot, type Visibility } from '@shared';
+import { HUB_SINCE, LOBBIES_SINCE, poseAfter, type PlazaPose, type BattleMode, type CharacterId, type GameAction, type LiveBattle, type LobbySummary, type PlazaEmote, type PublicRoom, type Seat, type ServerMessage, type Spot, type TrainerId, type Visibility } from '@shared';
 
 export type TransportKind = 'backend' | 'peer';
 export type BattleListener = (id: number, lines: string[], reset: boolean, deadline: number | null) => void;
@@ -56,7 +56,7 @@ export interface Transport {
   onPresence(listener: PresenceListener): () => void;
   /** The main plaza (needs `hasHub`): walk in at `at` with a name and partner (again to change them), or leave.
    *  The transport walks back in by itself after a reconnect. */
-  hub(on: boolean, name?: string, avatar?: CharacterId | null, at?: Spot | null): void;
+  hub(on: boolean, name?: string, avatar?: CharacterId | null, at?: Spot | null, trainer?: TrainerId): void;
   hubMove(x: number, z: number, face: number): void;
   hubEmote(emote: PlazaEmote): void;
   hubChat(text: string): void;

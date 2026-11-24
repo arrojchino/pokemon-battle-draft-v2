@@ -107,13 +107,14 @@
 .title:not(.is-live) :is(.title__ball, .title__brand, .menu, .menu__item, .menu__cursor, .nameplate) { animation-play-state: paused; }
 
 /* ---------- partner select ---------- */
-.shop { display: grid; grid-template-rows: auto 1fr; align-items: center; }
+/* The panel row may shrink (minmax(0, 1fr)): on short windows or with browser zoom the panel scrolls instead of leaving the screen. */
+.shop { display: grid; grid-template-rows: auto minmax(0, 1fr); align-items: center; }
 .shop::before {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(90deg, color-mix(in srgb, var(--bg-0) 80%, transparent), color-mix(in srgb, var(--bg-0) 40%, transparent) 30%, transparent 50%);
 }
 .shop .screen-head { position: relative; animation: rise var(--dur-4) var(--ease-out) backwards; }
-.shop__panel { display: grid; gap: var(--s-4); width: min(440px, 100%); overflow: hidden; animation: slide-l var(--dur-4) var(--ease-out) 80ms backwards; }
+.shop__panel { display: grid; gap: var(--s-4); width: min(440px, 100%); max-height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; pointer-events: auto; animation: slide-l var(--dur-4) var(--ease-out) 80ms backwards; }
 .shop__panel::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--partner); transition: background-color var(--dur-3); }
 .shop__tag { display: grid; gap: var(--s-2); animation: rise var(--dur-3) var(--ease-out) backwards; }
 .shop__name { margin: 0; font: 800 clamp(34px, 4vw, 52px)/1 var(--font-display); color: var(--text-1); }
@@ -122,9 +123,9 @@
 .shop__count { margin-left: auto; color: var(--text-3); }
 .shop__tag .eyebrow { display: flex; gap: var(--s-2); }
 /* Partner grid: seven artwork tiles per row in a well, the chosen one ringed in its colour. */
-.shop__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--s-1); padding: var(--s-2); background: var(--surface-well); border: 1px solid var(--border-1); border-radius: var(--r-md); }
+.shop__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--s-1); padding: var(--s-2); background: var(--surface-well); border: 1px solid var(--border-1); border-radius: var(--r-md); }
 .ptile {
-  position: relative; display: grid; place-items: center; aspect-ratio: 1; padding: 2px; cursor: pointer;
+  position: relative; display: grid; place-items: center; aspect-ratio: 1; padding: 2px; cursor: pointer; min-width: 0;
   background: var(--surface-2); border: 1px solid var(--border-1); border-radius: var(--r-sm);
   transition: transform var(--dur-3) var(--ease-spring), background-color var(--dur-2), border-color var(--dur-2);
   animation: pop var(--dur-3) var(--ease-out) backwards; animation-delay: calc(160ms + var(--i) * 25ms);
@@ -136,7 +137,10 @@
 .ptile.is-on .ptile__art { filter: none; transform: scale(1.1); }
 .ptile:focus-visible { outline: none; box-shadow: var(--ring); }
 .ptile .sprite--missing { font: 700 var(--fs-xs)/1 var(--font-display); color: var(--text-2); }
-.shop__actions { display: grid; grid-template-columns: auto 1fr; gap: var(--s-2); }
+.shop__actions { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s-2); }
+/* Long partner names ("Flutter Mane, I choose you!") wrap inside the button instead of widening the panel. */
+.shop__actions .btn { min-width: 0; white-space: normal; text-align: center; line-height: 1.15; padding-block: 6px; }
+.shop__panel { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 420px) { .shop__actions { grid-template-columns: 1fr; } }
 .shop__keys { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); }
 .shop__keys kbd {
@@ -214,7 +218,7 @@
   .nameplate__name { font-size: var(--fs-md); }
   .nameplate__quip, .nameplate .eyebrow { display: none; }
 
-  .shop { grid-template-rows: auto 1fr; align-items: end; }
+  .shop { grid-template-rows: auto minmax(0, 1fr); align-items: end; }
   .shop::before { background: linear-gradient(0deg, color-mix(in srgb, var(--bg-0) 85%, transparent), transparent 45%); }
   .shop__panel { width: 100%; gap: var(--s-3); padding: var(--s-4); }
   .shop__name { font-size: 30px; }

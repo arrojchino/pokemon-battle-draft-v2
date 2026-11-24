@@ -127,3 +127,21 @@
   .plate2__team i { width: 8px; height: 8px; }
   .msgbox { min-height: 44px; } .msgbox .msg { font-size: 14.5px; } .msgbox .msg.is-past { font-size: 12px; }
 }
+
+/* ---------- health bars next to their Pokemon (positioned every frame by useMonPlates) ---------- */
+.plate2.plate2--float {
+  position: fixed; left: 0; top: 0; right: auto; bottom: auto; margin: 0; z-index: var(--z-hud);
+  width: min(300px, 40vw); grid-column: auto; grid-row: auto; align-self: auto;
+  transition: opacity 0.22s var(--ease-out), filter 0.22s var(--ease-out);
+  pointer-events: auto; will-change: translate, opacity;
+}
+/* A move is playing: the bar dissolves out of the way and comes back as the hit lands. */
+.plate2.plate2--float.is-away { opacity: 0; filter: blur(3px); pointer-events: none; transition-duration: 0.18s; }
+.arena.arena--float { grid-template-columns: minmax(0, 1fr); }
+.arena.arena--float .arena__bar, .arena.arena--float .arena__dock { grid-column: 1; width: min(100%, 980px); justify-self: center; }
+@media (max-width: 760px) { .plate2.plate2--float { width: min(230px, 46vw); } }
+@media (prefers-reduced-motion: reduce) { .plate2.plate2--float.is-away { filter: none; } }
+/* Compact plates for short windows: name, level and HP only, half the screen width each. */
+.plate2.plate2--float.plate2--tight { width: min(300px, calc(50vw - 12px)); padding: 6px 10px; gap: 3px; z-index: calc(var(--z-hud) + 1); }
+.plate2.plate2--tight .plate2__row, .plate2.plate2--tight .plate2__team { display: none; }
+.plate2.plate2--tight header strong { font-size: 14px; }

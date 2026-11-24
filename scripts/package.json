@@ -1,0 +1,10 @@
+{
+  "name": "pbd-scripts",
+  "private": true,
+  "description": "Offline asset tools (not part of the app build).",
+  "type": "module",
+  "devDependencies": {
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0"
+  }
+}

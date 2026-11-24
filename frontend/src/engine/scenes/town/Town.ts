@@ -14,6 +14,7 @@ import {
   buildStringLights, newCtx,
 } from './structures.js';
 import { buildTrees, createCards, createFarGeometry, createFarTrees, createHouses } from './nature.js';
+import { bakeGroundField } from './ground.js';
 
 const G = FLOOR_Y;
 const FOG_DENSITY = 0.021;
@@ -87,7 +88,10 @@ export function createTown(opts: { tier: QualityTier }): TownEnvironment {
   ground.name = 'town-ground';
 
   // merged families
-  add(new THREE.Mesh(ctx.stat.build(), matStatic), true, true).name = 'town-static';
+  const statMesh = add(new THREE.Mesh(ctx.stat.build(), matStatic), true, true);
+  statMesh.name = 'town-static';
+  // walkable ground height (the shrine stage's deck and rim stand above the floor), baked once
+  const groundField = bakeGroundField([statMesh.geometry], { floor: G, radius: RADIUS });
   add(new THREE.Mesh(ctx.fol.build(), matFol), true, true).name = 'town-foliage';
   add(new THREE.Mesh(ctx.cloth.build(), matCloth), false, true).name = 'town-cloth';
   add(new THREE.Mesh(ctx.emis.build(), matEmis)).name = 'town-glow';
@@ -221,6 +225,7 @@ export function createTown(opts: { tier: QualityTier }): TownEnvironment {
 
   return {
     scene, camera, groundY: G, radius: RADIUS, colliders, bounds, spawn, spots, key, envPanels,
+    heightAt: (x: number, z: number) => groundField.heightAt(x, z),
     update: (t: number) => update(t),
     setQuality,
     dispose,

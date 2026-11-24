@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { CHARACTER_IDS, isCharacterId, type CharacterId } from '@shared';
+import { CHARACTER_IDS, TRAINER_IDS, isCharacterId, isTrainerId, type CharacterId, type TrainerId } from '@shared';
 import type { EffectsLevel, QualityPref, RenderScale } from '../engine/quality.js';
 import { AUDIO_DEFAULTS, mixFromSettings } from '../audio/mix.js';
 import { detectLang, isLang, type Lang } from '../i18n/core.js';
@@ -34,6 +34,8 @@ export type Settings = {
   lang: Lang;
   /* Identity and room preferences */
   partner: CharacterId;
+  /** The plaza trainer model (TRAINER_MODELS id); a random one on a first visit. */
+  trainer: TrainerId;
   name: string;
   showdownName: string;
   format: string;
@@ -81,6 +83,7 @@ function load(): Settings {
     muted: query.has('mute') || a.muted,
     lang: isLang(s.lang) ? s.lang : detectLang(typeof navigator === 'undefined' ? null : navigator.languages?.length ? navigator.languages : navigator.language),
     partner: isCharacterId(s.partner) ? s.partner : CHARACTER_IDS[Math.floor(Math.random() * CHARACTER_IDS.length)],
+    trainer: isTrainerId(s.trainer) ? s.trainer : TRAINER_IDS[Math.floor(Math.random() * TRAINER_IDS.length)],
     name: typeof s.name === 'string' ? s.name.slice(0, 24) : '',
     showdownName: typeof s.showdownName === 'string' ? s.showdownName.slice(0, 18) : '',
     format: typeof s.format === 'string' ? s.format : 'gen9customgame',

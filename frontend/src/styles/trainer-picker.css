@@ -1,0 +1,31 @@
+/* Trainer model picker (ui/TrainerPicker.tsx). Portrait cards with the player's colour over the outfit. */
+.trainer-picker { display: grid; gap: var(--s-2, 8px); --tp-tint: #3ee6ff; }
+.trainer-picker .tp-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--s-2, 8px);
+  max-height: min(56vh, 420px); overflow-y: auto; padding: 2px;
+}
+.trainer-picker .tp-card {
+  position: relative; display: grid; gap: 4px; justify-items: center; padding: 6px 6px 8px;
+  border: 1px solid var(--line-1, rgba(255, 255, 255, 0.14)); border-radius: var(--r-md, 12px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  color: var(--text-1, #e8ecff); cursor: pointer; transition: border-color 0.15s, transform 0.15s, background 0.15s;
+}
+.trainer-picker .tp-card:hover { border-color: rgba(255, 255, 255, 0.32); transform: translateY(-1px); }
+.trainer-picker .tp-card:focus-visible { outline: 2px solid var(--tp-tint); outline-offset: 2px; }
+.trainer-picker .tp-card.on {
+  border-color: var(--tp-tint);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tp-tint) 22%, transparent), rgba(255, 255, 255, 0.03));
+  box-shadow: 0 0 0 1px var(--tp-tint) inset;
+}
+.trainer-picker .tp-shot { position: relative; display: block; width: 100%; aspect-ratio: 3 / 4; overflow: hidden; border-radius: calc(var(--r-md, 12px) - 4px); }
+.trainer-picker .tp-img, .trainer-picker .tp-tint { position: absolute; inset: 0; width: 100%; height: 100%; }
+.trainer-picker .tp-img { object-fit: contain; user-select: none; }
+/* the outfit, recoloured: a flat colour cut to the outfit mask and multiplied over the neutral portrait */
+.trainer-picker .tp-tint {
+  background: var(--tp-tint); mix-blend-mode: multiply; pointer-events: none;
+  -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+}
+.trainer-picker .tp-name { font: 600 var(--fs-sm, 13px)/1.2 var(--font-body, system-ui); }
+.trainer-picker .tp-credit { margin: 0; font-size: var(--fs-xs, 11px); color: var(--text-3, rgba(232, 236, 255, 0.6)); }
+@media (prefers-reduced-motion: reduce) { .trainer-picker .tp-card { transition: none; } .trainer-picker .tp-card:hover { transform: none; } }

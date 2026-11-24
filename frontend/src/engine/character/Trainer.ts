@@ -23,7 +23,8 @@ import {
   bump, clamp, damp, drift, flipQ, flipV, lerp, makeLimb, quatFromEuler, rand, smooth, solveLimb, spring, wrapAngle,
   type Limb, type Vec3,
 } from '../npc/rig.js';
-import { loadTrainerAsset, takeBoneSlot, type BonePool, type ExprName, type TrainerAsset } from './trainerAsset.js';
+import { HEEL_LUT_N, HEEL_LUT_STEP, TOE_LUT_N, loadTrainerAsset, takeBoneSlot, type BonePool, type ExprName, type TrainerAsset } from './trainerAsset.js';
+import type { TrainerId } from '../../../../shared/src/trainers.js';
 import { trainerDepthMaterial, trainerMaterial, trainerUniforms, type TrainerUniforms } from './trainerMaterial.js';
 
 export type TrainerLook = { outfit: string; accent: string; hair?: string; /** Sporty cap (default true). */ cap?: boolean };
@@ -73,8 +74,11 @@ interface Foot {
   lift: number;                                // 0..1 swing height share
   pitch: number;                               // + toes up, - heel up (rad)
   h: number;                                   // lift height (model metres)
+  gy: number; fgy: number; tgy: number;        // ground height (world y) under the foot, swing start and target
 }
-const newFoot = (): Foot => ({ x: 0, z: 0, yaw: 0, planted: true, settle: false, fx: 0, fz: 0, fyaw: 0, tx: 0, tz: 0, tyaw: 0, t: 0, dur: 0.3, lift: 0, pitch: 0, h: 0 });
+const newFoot = (): Foot => ({ x: 0, z: 0, yaw: 0, planted: true, settle: false, fx: 0, fz: 0, fyaw: 0, tx: 0, tz: 0, tyaw: 0, t: 0, dur: 0.3, lift: 0, pitch: 0, h: 0, gy: 0, fgy: 0, tgy: 0 });
+/** Ground height under a world point (world y). */
+export type GroundFn = (x: number, z: number) => number;
 
 interface Layer { t: number; dur: number; w: number; on: boolean }
 
@@ -91,12 +95,12 @@ export class Trainer {
   readonly height: number;
 
   /** Download once (shared), then build an instance. */
-  static async load(look: TrainerLook, opts: { reducedMotion?: boolean } = {}): Promise<Trainer> {
-    const asset = await loadTrainerAsset();
+  static async load(look: TrainerLook, opts: { reducedMotion?: boolean; model?: TrainerId | string } = {}): Promise<Trainer> {
+    const asset = await loadTrainerAsset(opts.model);
     return new Trainer(asset, look, opts);
   }
-  /** Preload the shared model (idempotent). */
-  static async prefetch(): Promise<void> { await loadTrainerAsset(); }
+  /** Preload a model (idempotent; an unknown id preloads the default). */
+  static async prefetch(model?: TrainerId | string): Promise<void> { await loadTrainerAsset(model); }
 
   private readonly a: TrainerAsset;
   private readonly model = new THREE.Group();
@@ -104,7 +108,7 @@ export class Trainer {
   private readonly bones: THREE.Bone[];
   private readonly skeleton: THREE.Skeleton;
   private readonly pool: BonePool; private readonly slot: number;
-  private readonly body: THREE.SkinnedMesh; private readonly outline: THREE.SkinnedMesh; private readonly face: THREE.SkinnedMesh;
+  private readonly body: THREE.SkinnedMesh; private readonly outline: THREE.SkinnedMesh; private readonly face: THREE.SkinnedMesh | null;
   private readonly u: TrainerUniforms;
   private readonly mats: THREE.Material[];
   private readonly hb: Partial<Record<VRMHumanBoneName, THREE.Bone>> = {};
@@ -113,7 +117,15 @@ export class Trainer {
   private readonly hipsRest = new THREE.Vector3();
   private readonly ucRest = new THREE.Vector3();
   private readonly headRest = new THREE.Vector3();
-  private readonly ankleH: number; private readonly legLen: number; private readonly heel = 0.055; private readonly toe: number;
+  private readonly ankleH: number; private readonly legLen: number; private readonly heel: number;
+  /** Toe joint (ball of the foot) ahead of and above the sole point under the ankle: the heel-up pivot. */
+  private readonly toeZ: number; private readonly toeY: number;
+  /** Ground sample offsets along and across the sole (world units): heel, toe tip, half width. */
+  private readonly solePts: [number, number][];
+  private readonly ballA: number;
+  private ground: GroundFn | null = null;
+  private rootY = 0; private rootYSet = false;
+  private disposed = false;
   private readonly fingerBones: Record<Side, (THREE.Bone | undefined)[]>;
   private readonly hairW: number[];
   private reduced: boolean;
@@ -166,7 +178,7 @@ export class Trainer {
     this.a = asset;
     this.reduced = !!opts.reducedMotion;
     this.root.name = 'Trainer';
-    this.s = TARGET_HEIGHT / asset.rawHeight;
+    this.s = (asset.height || TARGET_HEIGHT) / asset.rawHeight;
     this.height = asset.rawHeight * this.s;
     this.model.scale.setScalar(this.s);
     this.model.rotation.y = Math.PI;               // VRM 0.x faces -z
@@ -178,7 +190,7 @@ export class Trainer {
     asset.bones.forEach((b, i) => (b.parent < 0 ? this.model : this.bones[b.parent]).add(this.bones[i]));
     for (const [n, i] of Object.entries(asset.human) as [VRMHumanBoneName, number][]) this.hb[n] = this.bones[i];
     this.skeleton = new THREE.Skeleton(this.bones, asset.boneInverses);
-    const { pool, slot } = takeBoneSlot(this.bones.length);
+    const { pool, slot } = takeBoneSlot(this.bones.length, asset.id ?? 'default');
     this.pool = pool; this.slot = slot;
     this.skeleton.boneMatrices = pool.data.subarray(slot * pool.stride * 16, (slot * pool.stride + this.bones.length) * 16);
     this.skeleton.boneTexture = pool.tex;
@@ -190,11 +202,15 @@ export class Trainer {
     const mFace = trainerMaterial(asset, this.u, 'face'), mFaceA = trainerMaterial(asset, this.u, 'faceAlpha');
     const mDepth = trainerDepthMaterial(asset, this.u);
     this.mats = [mBody, mOut, mFace, mFaceA, mDepth];
+    // Culling sphere (model space, own copy per instance so nothing can resize the shared one). Measured with
+    // qa/trainer.html `cullCheck` over the ground course: posed vertices reach 0.79 H (classic) to 0.86 H (kyle)
+    // from the centre, past the old 0.75 H radius (1.05 of it on a long stride), so 1.0 H leaves margin.
+    const sphere = new THREE.Sphere(asset.sphere.center.clone(), asset.rawHeight);
     const mk = (geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], name: string) => {
       const m = new THREE.SkinnedMesh(geo, mat as THREE.Material);
       m.name = name;
       m.bind(this.skeleton, _ident);
-      m.boundingSphere = asset.sphere;
+      m.boundingSphere = sphere;
       m.castShadow = false; m.receiveShadow = false;
       this.model.add(m);
       return m;
@@ -214,8 +230,8 @@ export class Trainer {
     };
     this.body.onAfterRender = (_r, _s, _c, geo) => { geo.setDrawRange(0, Infinity); };
     this.outline.renderOrder = 0;
-    this.face = mk(asset.faceGeo, [mFace, mFaceA], 'TrainerFace');
-    this.face.morphTargetInfluences = new Array(asset.morphCount).fill(0);
+    this.face = asset.faceGeo ? mk(asset.faceGeo, [mFace, mFaceA], 'TrainerFace') : null;
+    if (this.face) this.face.morphTargetInfluences = new Array(asset.morphCount).fill(0);
 
     // rig measurements (body space)
     const zero = new THREE.Vector3();
@@ -228,9 +244,21 @@ export class Trainer {
       R(`${s}MiddleProximal`).lengthSq() > 0 ? R(`${s}MiddleProximal`) : new THREE.Vector3(s === 'left' ? 1 : -1, 0, 0), new THREE.Vector3(0, -1, 0));
     const leg = (s: Side) => makeLimb(R(`${s}UpperLeg`), R(`${s}LowerLeg`), R(`${s}Foot`), new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, -1, 0));
     this.limbs = { leftArm: arm('left'), rightArm: arm('right'), leftLeg: leg('left'), rightLeg: leg('right') };
-    this.ankleH = R('hips').y + R('leftUpperLeg').y + R('leftLowerLeg').y + R('leftFoot').y - asset.floor;
+    // the ankle's height over the soles, measured on the shoe when the model has one
+    this.ankleH = asset.ankleUp ?? R('hips').y + R('leftUpperLeg').y + R('leftLowerLeg').y + R('leftFoot').y - asset.floor;
     this.legLen = this.limbs.leftLeg.L1 + this.limbs.leftLeg.L2;
-    this.toe = Math.max(0.06, R('leftToes').z);
+    // heel-up pivot: the toes stay flat on the ground, so the foot turns about the toe joint itself
+    const toesRest = asset.rest.leftToes;
+    this.toeZ = toesRest ? Math.max(0.03, toesRest.z) : 0.07;
+    this.toeY = toesRest ? clamp(this.ankleH + toesRest.y, 0, this.ankleH) : 0;
+    this.heel = asset.heel ?? 0.055;
+    {
+      // a grid under the sole, (along, across) in world units: 8 rows from heel to toe tip, 3 across
+      const tip = asset.toeTip ?? this.toeZ + 0.05, hw = (asset.footHalfW ?? 0.04) * 0.85, s = this.s, h = this.heel;
+      this.solePts = [];
+      for (let i = 0; i < 8; i++) { const a = lerp(-h, tip, i / 7) * s; for (const b of [-hw, 0, hw]) this.solePts.push([a, b * s]); }
+      this.ballA = this.toeZ * s;
+    }
     this.fingerBones = {
       left: FINGER_KEYS.map(k => this.hb[`left${k}` as VRMHumanBoneName]),
       right: FINGER_KEYS.map(k => this.hb[`right${k}` as VRMHumanBoneName]),
@@ -252,7 +280,39 @@ export class Trainer {
   }
 
   // ---------------------------------------------------------------- public API
+  /**
+   * Ground height under a world point (the town's `heightAt`). With a ground the trainer sets its own root
+   * height and puts each foot on the ground under it; without one the root stays where the caller put it and
+   * the ground is flat at that height.
+   */
+  setGround(fn: GroundFn | null): void {
+    this.ground = fn;
+    this.rootYSet = false;
+    if (this.placed) this.resetFeet();
+  }
+
+  /**
+   * Ground level a rigid sole at pitch `p` rests on (world y): every sample point under the heel, middle, ball and
+   * toe tip must stay on or above the ground under it, allowing for how far the pitch lifts that point off the
+   * contact (the heel when the toes are up, the ball when the heel is up). A foot on a curb edge stands on the
+   * curb instead of sinking into it, and toes raised at heel strike pass over a ledge.
+   */
+  private footGnd(x: number, z: number, yaw: number, p: number): number {
+    if (!this.ground) return this.root.position.y;
+    const c = Math.cos(yaw), sn = Math.sin(yaw);
+    const sp = Math.sin(Math.abs(p)), heelA = this.solePts[0][0], ballA = this.ballA;
+    let g = -Infinity;
+    for (const [a, b] of this.solePts) {
+      const rise = p >= 0 ? Math.max(0, a - heelA) * sp : Math.max(0, ballA - a) * sp;
+      g = Math.max(g, this.ground(x + sn * a + c * b, z + c * a - sn * b) - rise);
+    }
+    return g;
+  }
+  /** Pitch a foot lands with (heel strike), the same number the stance phase starts from. */
+  private landPitch(): number { return 0.28 * this.walkW * (1 - 0.6 * this.jogW); }
+
   place(x: number, z: number, face: number): void {
+    if (this.disposed) return;
     this.px = x; this.pz = z; this.face0 = face;
     this.root.position.x = x; this.root.position.z = z;
     if (!this.placed) { this.placed = true; this.lastX = x; this.lastZ = z; this.yaw = face; this.root.rotation.y = face; this.resetFeet(); }
@@ -272,7 +332,7 @@ export class Trainer {
     u.tintHair.value.set(look.hair ?? HAIR_PALETTE[hash % HAIR_PALETTE.length]);
     // tights: the outfit colour pushed deep and slightly desaturated
     u.tintLegs.value.set(look.outfit).lerp(_c.set('#14151f'), 0.72);
-    this.cap = look.cap !== false;
+    this.cap = look.cap !== false && this.a.hasCap;
     const geo = this.cap ? this.a.bodyCapGeo : this.a.bodyGeo;
     this.body.geometry = geo;
     this.outline.geometry = this.cap ? this.a.outlineCapGeo : this.a.outlineGeo;
@@ -291,16 +351,27 @@ export class Trainer {
 
   setReducedMotion(on: boolean): void { this.reduced = on; }
 
+  /** Free this instance's materials and bone slot. Safe to call twice (the second call does nothing). */
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.root.removeFromParent();
+    this.model.visible = false;                     // never drawn again, even if someone re-adds the root
     for (const m of this.mats) m.dispose();
     this.skeleton.boneTexture = null;               // shared pool: never dispose it here
-    this.pool.give(this.slot);
     this.pool.data.fill(0, this.slot * this.pool.stride * 16, (this.slot + 1) * this.pool.stride * 16);
+    this.pool.give(this.slot);
   }
+  get isDisposed(): boolean { return this.disposed; }
+  /**
+   * 0..1, how ready the body is to walk where it was told to face: 0 while the hips still lag more than about
+   * 55 degrees behind (it is stepping round), 1 once within about 20. The town holds the walk on it.
+   */
+  get walkReady(): number { const c = Math.cos(wrapAngle(this.face0 - this.yaw)); return clamp((c - 0.57) / (0.94 - 0.57), 0, 1); }
 
   // ---------------------------------------------------------------- frame
   update(dt: number): void {
+    if (this.disposed) return;
     const t0 = performance.now();
     dt = clamp(dt, 0, 0.1);
     this.time += dt;
@@ -319,10 +390,21 @@ export class Trainer {
 
   // ---------------------------------------------------------------- root motion
   private kinematics(dt: number) {
+    // root height: the ground under the trainer, eased so a small step does not jolt the hips (the legs reach)
+    if (this.ground) {
+      const g = this.ground(this.px, this.pz);
+      this.rootY = this.rootYSet ? this.rootY + (g - this.rootY) * damp(14, dt) : g;
+      this.rootYSet = true;
+      this.root.position.y = this.rootY;
+    } else this.rootY = this.root.position.y;
     if (!this.placed) { this.placed = true; this.resetFeet(); }
     const dx = this.px - this.lastX, dz = this.pz - this.lastZ;
     this.lastX = this.px; this.lastZ = this.pz;
-    if (dx * dx + dz * dz > 0.6 * 0.6) { this.yaw = this.face0; this.yawV.v = 0; this.resetFeet(); this.vx = this.vz = 0; return this.applyYaw(); }
+    if (dx * dx + dz * dz > 0.6 * 0.6) {
+      this.yaw = this.face0; this.yawV.v = 0; this.resetFeet(); this.vx = this.vz = 0;
+      if (this.ground) { this.rootY = this.ground(this.px, this.pz); this.root.position.y = this.rootY; }
+      return this.applyYaw();
+    }
     if (dt > 0) {
       const k = damp(14, dt);
       this.vx += (dx / dt - this.vx) * k; this.vz += (dz / dt - this.vz) * k;
@@ -361,16 +443,18 @@ export class Trainer {
       this.stanceSpot(k, this.yaw, 0, _v1);
       f.x = _v1.x; f.z = _v1.z; f.yaw = this.yaw + (k === 0 ? 0.12 : -0.12);
       f.planted = true; f.settle = false; f.lift = 0; f.pitch = 0; f.h = 0;
+      f.gy = f.fgy = f.tgy = this.footGnd(f.x, f.z, f.yaw, 0);
     }
     this.gaitOn = false;
   }
 
   /** World ground spot for foot k beside the root at heading `yaw`, `fwd` model metres ahead. */
-  private stanceSpot(k: number, yaw: number, fwd: number, out: THREE.Vector3, rx = this.px, rz = this.pz, width = 0.056) {
+  private stanceSpot(k: number, yaw: number, fwd: number, out: THREE.Vector3, rx = this.px, rz = this.pz, width = 0.056, fwdYaw = yaw) {
     const side = k === 0 ? 1 : -1;
-    const lx = side * width * this.s, lz = fwd * this.s + (k === 0 ? 0.004 : -0.01) * this.s;
+    const lx = side * width * this.s, lz = (k === 0 ? 0.004 : -0.01) * this.s, lf = fwd * this.s;
     const c = Math.cos(yaw), s = Math.sin(yaw);
-    return out.set(rx + lx * c + lz * s, 0, rz - lx * s + lz * c);
+    // Width and the small stagger follow the body; the stride itself goes where the body is really travelling.
+    return out.set(rx + lx * c + lz * s + lf * Math.sin(fwdYaw), 0, rz - lx * s + lz * c + lf * Math.cos(fwdYaw));
   }
 
   private footError(k: number): number {
@@ -407,8 +491,8 @@ export class Trainer {
       const lf = this.feet[lead];
       const prog = lf.settle ? clamp(lf.t / lf.dur, 0, 0.9) : 0;
       this.phase = frac(D + (1 - D) * prog - lead * 0.5);
-      for (const ft of this.feet) { if (ft !== lf && ft.settle) { ft.settle = false; ft.planted = true; ft.x = ft.tx; ft.z = ft.tz; ft.yaw = ft.tyaw; ft.lift = 0; } }
-      if (!lf.planted) { lf.settle = false; } else { lf.fx = lf.x; lf.fz = lf.z; lf.fyaw = lf.yaw; lf.planted = false; }
+      for (const ft of this.feet) { if (ft !== lf && ft.settle) { ft.settle = false; ft.planted = true; ft.x = ft.tx; ft.z = ft.tz; ft.yaw = ft.tyaw; ft.lift = 0; ft.h = 0; ft.gy = ft.tgy; } }
+      if (!lf.planted) { lf.settle = false; lf.fx = lf.x; lf.fz = lf.z; lf.fyaw = lf.yaw; lf.fgy = lf.gy; } else { lf.fx = lf.x; lf.fz = lf.z; lf.fyaw = lf.yaw; lf.fgy = lf.gy; lf.planted = false; }
       this.gaitOn = true;
     }
 
@@ -423,7 +507,7 @@ export class Trainer {
         const inSwing = p >= D;
         if (inSwing && ft.planted) {
           if (stopping) continue;                            // stay down: the stop is underway
-          ft.planted = false; ft.fx = ft.x; ft.fz = ft.z; ft.fyaw = ft.yaw;
+          ft.planted = false; ft.fx = ft.x; ft.fz = ft.z; ft.fyaw = ft.yaw; ft.fgy = ft.gy;
         }
         if (!ft.planted) {
           const u = inSwing ? (p - D) / (1 - D) : 1;
@@ -431,20 +515,25 @@ export class Trainer {
           const tau = (1 - (inSwing ? p : 1)) / this.freq;
           const py = this.yaw + clamp(wrapAngle(this.face0 - this.yaw) * Math.min(1, tau * 7), -0.8, 0.8);
           const ahead = stopping ? 0 : this.span * 0.5 - 0.01;
-          this.stanceSpot(k, py, ahead, _v3, this.px + this.vx * tau, this.pz + this.vz * tau, lerp(0.056, 0.045, this.walkW));
+          // Land ahead along the actual travel (during a turn the hips lag behind it), beside the body's line.
+          const vmag = Math.hypot(this.vx, this.vz), travel = vmag > 0.15 * this.s ? Math.atan2(this.vx, this.vz) : py;
+          this.stanceSpot(k, py, ahead, _v3, this.px + this.vx * tau, this.pz + this.vz * tau, lerp(0.056, 0.045, this.walkW), travel);
           ft.tx = _v3.x; ft.tz = _v3.z; ft.tyaw = py + (k === 0 ? 0.1 : -0.1) * (1 - 0.5 * this.jogW);
+          ft.tgy = this.footGnd(ft.tx, ft.tz, ft.tyaw, this.landPitch());
           // jogging feet kick up behind first and travel forward late
           const kick = 0.18 * this.jogW;
           const e = smooth(clamp(((u - kick) / (1 - kick)) * 1.08 - 0.02, 0, 1));
           ft.x = lerp(ft.fx, ft.tx, e); ft.z = lerp(ft.fz, ft.tz, e);
           ft.yaw = ft.fyaw + wrapAngle(ft.tyaw - ft.fyaw) * e;
+          // the swing never dips below the ground it passes over (a curb or a stage rim between the spots)
+          ft.gy = Math.max(lerp(ft.fgy, ft.tgy, e), this.footGnd(ft.x, ft.z, ft.yaw, ft.pitch));
           // lift: rises fast after toe-off, glides down onto the heel
           ft.lift = Math.pow(Math.sin(Math.PI * Math.pow(u, 0.8 - 0.3 * this.jogW)), 1.1);
           const hMax = lerp(0.055 + 0.012 * vm, 0.2, this.jogW) * (0.5 + 0.5 * this.walkW);
           ft.h = hMax * ft.lift;
           // pitch: heel up at toe-off, toes up before the heel strike
           ft.pitch = lerp(-0.62, 0.28, smooth(u * 1.4)) * this.walkW;
-          if (!inSwing) { ft.planted = true; ft.x = ft.tx; ft.z = ft.tz; ft.yaw = ft.tyaw; ft.lift = 0; ft.h = 0; }
+          if (!inSwing) { ft.planted = true; ft.x = ft.tx; ft.z = ft.tz; ft.yaw = ft.tyaw; ft.lift = 0; ft.h = 0; ft.gy = ft.tgy; }
         } else {
           // stance: heel strike rolls flat, then the heel rises toward toe-off
           const u = p / D;
@@ -452,6 +541,7 @@ export class Trainer {
           const roll = -0.62 * smooth((u - 0.62) / 0.38);
           ft.pitch = (strike + roll) * this.walkW * (1 - 0.6 * this.jogW) + (this.jogW * -0.25 * smooth((u - 0.4) / 0.6));
           ft.h = 0; ft.lift = 0;
+          ft.gy = this.footGnd(ft.x, ft.z, ft.yaw, ft.pitch);
         }
       }
       if (stopping && this.feet[0].planted && this.feet[1].planted) this.gaitOn = false;
@@ -460,15 +550,16 @@ export class Trainer {
       for (let k = 0; k < 2; k++) {
         const ft = this.feet[k];
         ft.pitch *= 1 - damp(10, dt);
-        if (!ft.settle) continue;
+        if (!ft.settle) { if (ft.planted && this.ground) ft.gy = this.footGnd(ft.x, ft.z, ft.yaw, ft.pitch); continue; }
         ft.t += dt;
         const u = clamp(ft.t / ft.dur, 0, 1), e = smooth(u);
         ft.x = lerp(ft.fx, ft.tx, e); ft.z = lerp(ft.fz, ft.tz, e);
         ft.yaw = ft.fyaw + wrapAngle(ft.tyaw - ft.fyaw) * e;
+        ft.gy = Math.max(lerp(ft.fgy, ft.tgy, e), this.footGnd(ft.x, ft.z, ft.yaw, ft.pitch));
         ft.lift = Math.sin(Math.PI * u);
         ft.h = (this.reduced ? 0.022 : 0.034) * ft.lift;
         ft.pitch = -0.18 * Math.sin(Math.PI * u);
-        if (u >= 1) { ft.settle = false; ft.planted = true; ft.lift = 0; ft.h = 0; }
+        if (u >= 1) { ft.settle = false; ft.planted = true; ft.lift = 0; ft.h = 0; ft.gy = ft.tgy; }
       }
       const busy = this.feet[0].settle || this.feet[1].settle;
       if (!busy) {
@@ -483,8 +574,8 @@ export class Trainer {
           const ahead = wrapAngle(this.face0 - this.yaw);
           const py = this.yaw + clamp(ahead, -0.75, 0.75);
           this.stanceSpot(k, py, 0, _v3);
-          ft.fx = ft.x; ft.fz = ft.z; ft.fyaw = ft.yaw;
-          ft.tx = _v3.x; ft.tz = _v3.z; ft.tyaw = py + (k === 0 ? 0.12 : -0.12);
+          ft.fx = ft.x; ft.fz = ft.z; ft.fyaw = ft.yaw; ft.fgy = ft.gy;
+          ft.tx = _v3.x; ft.tz = _v3.z; ft.tyaw = py + (k === 0 ? 0.12 : -0.12); ft.tgy = this.footGnd(ft.tx, ft.tz, ft.tyaw, 0);
           ft.settle = true; ft.planted = false; ft.t = 0; ft.dur = (this.reduced ? 0.38 : 0.27) * (turning ? 1 : 1.15);
           this.lastSettle = k;
         }
@@ -544,26 +635,31 @@ export class Trainer {
       this.hipsRest.y - crouch + bobWalk + bobJog - 0.004 * Math.abs(wt) - 0.002 * b * A - dip,
       this.hipsRest.z + 0.01 * w + 0.02 * jw,
     );
-    // ankles first (body space), then the pelvis may not rise above what the planted legs can reach
+    // ---- pelvis rotation (YXZ Euler): needed first, it moves the hip joints the legs hang from
+    const hx = 0.03 * jw;
+    let hy = -0.085 * cyc * w * (1 + 0.4 * jw), hz = 0.045 * swayS * w * (1 - 0.4 * jw) + 0.035 * wt;
+    hz += clamp(-yawRate * this.sp * 0.06, -0.08, 0.08);           // lean into turns
+    hy += 0.02 * wt;
+    quatFromEuler(this.qHips, hx, hy, hz, 'YXZ');
+    // ankles (body space), then the pelvis may not rise above what the planted legs can reach: each hip joint
+    // (pelvis position + rotated rest offset) must stay within a straight leg of its ankle, or the IK would
+    // fall short and the foot would hover over its ground spot
     for (let k = 0; k < 2; k++) this.ankleBody(k, k === 0 ? _v4 : _v5);
     const lmax = this.legLen * 0.992;
     let y = hp.y;
     for (let k = 0; k < 2; k++) {
       const ft = this.feet[k];
       const an = k === 0 ? _v4 : _v5;
-      const hipJ = _v1.set(hp.x + (k === 0 ? 1 : -1) * Math.abs(this.R('leftUpperLeg').x), 0, hp.z);
-      const dxz = Math.hypot(hipJ.x - an.x, hipJ.z - an.z);
-      const reach = an.y - this.R('leftUpperLeg').y + Math.sqrt(Math.max(0, lmax * lmax - dxz * dxz));
-      const share = ft.planted || ft.settle ? 1 - ft.lift : 1 - ft.lift;
+      const off = _v1.copy(this.R(k === 0 ? 'leftUpperLeg' : 'rightUpperLeg')).applyQuaternion(this.qHips);
+      const dxz = Math.hypot(hp.x + off.x - an.x, hp.z + off.z - an.z);
+      const reach = an.y - off.y + Math.sqrt(Math.max(0, lmax * lmax - dxz * dxz));
+      const share = 1 - ft.lift;
       if (share > 0.05) y = smin(y, lerp(y + 0.05, reach, share), 0.012);
     }
     this.hipsYPrev = this.hipsY; this.hipsY = y; hp.y = y;
     if (dt > 0) this.hipsVy += ((this.hipsY - this.hipsYPrev) / dt - this.hipsVy) * damp(20, dt);
 
-    // ---- axial rotations (YXZ Euler, accumulated)
-    let hx = 0.03 * jw, hy = -0.085 * cyc * w * (1 + 0.4 * jw), hz = 0.045 * swayS * w * (1 - 0.4 * jw) + 0.035 * wt;
-    hz += clamp(-yawRate * this.sp * 0.06, -0.08, 0.08);           // lean into turns
-    hy += 0.02 * wt;
+    // ---- spine, chest, neck and head (YXZ Euler, accumulated over the pelvis)
     const lean = (0.03 + 0.03 * clamp(vm / 2.5, 0, 1)) * w + 0.09 * jw + clamp(accel * 0.012, -0.05, 0.06);
     let sx = lean * 0.45 - 0.006 * b * A + 0.004 * drift(t, 1) * A, sy = 0.45 * -hy + 0.008 * drift(t * 0.8, 2) * A, sz = -0.55 * hz;
     let cx = lean * 0.4 - 0.012 * b * A, cy = 0.06 * cyc * w * (1 + 0.5 * jw) + 0.12 * lead, cz = -0.25 * hz + 0.012 * drift(t * 0.7, 4) * A;
@@ -587,7 +683,6 @@ export class Trainer {
     this.setAxial('upperChest', ux, uy, uz);
     this.setAxial('neck', nx, ny, -sumRoll * 0.15);
     this.setAxial('head', gxx, gy, gz);
-    quatFromEuler(this.qHips, hx, hy, hz, 'YXZ');
 
     // ---- arms: locomotion / idle swing (FK), then gesture layers (IK)
     const swingA = (0.42 * clamp(vm / 2.4, 0.3, 1) * w * (1 - jw) + 0.66 * jw) * (this.reduced ? 0.8 : 1);
@@ -650,14 +745,29 @@ export class Trainer {
     const ft = this.feet[k];
     const s = this.s;
     const dx = ft.x - this.px, dz = ft.z - this.pz;
-    const c = Math.cos(this.yaw), sn = Math.sin(this.yaw);
-    const bx = (dx * c - dz * sn) / s, bz = (dx * sn + dz * c) / s;
+    const cy = Math.cos(this.yaw), sn = Math.sin(this.yaw);
+    const bx = (dx * cy - dz * sn) / s, bz = (dx * sn + dz * cy) / s;
     const fy = ft.yaw - this.yaw;
     const p = ft.pitch, ha = this.ankleH;
+    // the ankle turns about the heel's ground point (toes up) or about the toe joint (heel up), which stays put
+    // while the toes lie flat; (fwd, up) is measured from the sole point under the resting ankle
     let fwd: number, up: number;
-    if (p >= 0) { fwd = -this.heel + this.heel * Math.cos(p) - ha * Math.sin(p); up = this.heel * Math.sin(p) + ha * Math.cos(p); }
-    else { fwd = this.toe - this.toe * Math.cos(p) - ha * Math.sin(p); up = -this.toe * Math.sin(p) + ha * Math.cos(p); }
-    return out.set(bx + Math.sin(fy) * fwd, this.a.floor + up + ft.h, bz + Math.cos(fy) * fwd);
+    const c = Math.cos(p), sp = Math.sin(p);
+    const lut = this.a.heelLut;
+    if (p >= 0 && lut) {
+      // measured roll over the rounded heel (no float, no dip at heel strike)
+      const f = Math.min(p / HEEL_LUT_STEP, HEEL_LUT_N - 1.001), i = Math.floor(f), t = f - i;
+      fwd = lerp(lut[i * 2], lut[i * 2 + 2], t); up = lerp(lut[i * 2 + 1], lut[i * 2 + 3], t);
+    } else if (p >= 0) { fwd = -this.heel + this.heel * c - ha * sp; up = this.heel * sp + ha * c; }
+    else {
+      const tz = this.toeZ, ty = this.toeY; fwd = tz - tz * c - (ha - ty) * sp; up = ty - tz * sp + (ha - ty) * c;
+      // a stiff shoe's ball (skinned to the foot, ahead of the toe joint) must not dig in either
+      const tl = this.a.toeLut;
+      if (tl) { const f = Math.min(-p / HEEL_LUT_STEP, TOE_LUT_N - 1.001), i = Math.floor(f); up = Math.max(up, lerp(tl[i], tl[i + 1], f - i)); }
+    }
+    // ground under this foot, relative to the root's height, in model metres
+    const g = (ft.gy - this.rootY) / s;
+    return out.set(bx + Math.sin(fy) * fwd, this.a.floor + up + ft.h + g, bz + Math.cos(fy) * fwd);
   }
 
   private solveLeg(k: number, ankle: THREE.Vector3) {
@@ -678,9 +788,9 @@ export class Trainer {
     this.putBone(`${side}UpperLeg`, L.up);
     this.putBone(`${side}LowerLeg`, L.lo);
     this.putBone(`${side}Foot`, L.ft);
-    // toes stay on the ground while the heel rises
+    // toes stay flat on the ground while the heel rises (exactly undo the foot's pitch)
     const toes = this.hb[`${side}Toes`];
-    if (toes) flipQ(quatFromEuler(toes.quaternion, Math.min(0, p) * 0.9, 0, 0, 'XYZ'));
+    if (toes) flipQ(quatFromEuler(toes.quaternion, Math.min(0, p), 0, 0, 'XYZ'));
   }
 
   private putBone(n: VRMHumanBoneName, q: THREE.Quaternion) {
@@ -797,6 +907,7 @@ export class Trainer {
     this.exHappy += (happyT - this.exHappy) * damp(9, dt);
     this.exAa += (aaT - this.exAa) * damp(12, dt);
     this.exRelaxed += ((0.16 + 0.08 * this.walkW) * (1 - this.exHappy) - this.exRelaxed) * damp(4, dt);
+    if (!this.face) return;
     const inf = this.face.morphTargetInfluences!;
     inf.fill(0);
     this.addExpr(inf, 'blink', clamp(blink, 0, 1) * (1 - clamp(this.exHappy * 1.4, 0, 1)));

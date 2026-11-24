@@ -29,7 +29,7 @@ const connect = c => new Promise((res, rej) => { const ws = new WebSocket(URL); 
 const a = client('a'); const b = client('b'); const c = client('c');
 await connect(a); await connect(b); await connect(c);
 await until(() => a.hello && b.hello && c.hello, 'hello');
-assert.equal(a.hello.protocol, 10);
+assert.equal(a.hello.protocol, 11);
 
 a.send({ type: 'create', name: 'Ana', bestOf: 3, avatar: 'greninja', mode: 'app' });
 await until(() => a.joined && a.state, 'create');

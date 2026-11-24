@@ -1,0 +1,78 @@
+|t:|1795548224
+|gametype|singles
+|player|p1|Ana||
+|player|p2|Beto||
+|gen|9
+|tier|[Gen 9] Custom Game
+|clearpoke
+|poke|p1|Ditto|
+|poke|p1|Mew|
+|poke|p1|Gholdengo|
+|poke|p2|Garchomp, M|
+|poke|p2|Kingambit, F|
+|teampreview
+|request|{"teamPreview":true,"side":{"name":"Ana","id":"p1","pokemon":[{"ident":"p1: Ditto","details":"Ditto","condition":"300/300","active":true,"stats":{"atk":132,"def":133,"spa":132,"spd":195,"spe":132},"moves":["transform"],"baseAbility":"imposter","item":"choicescarf","pokeball":"pokeball","ability":"imposter","commanding":false,"reviving":false,"teraType":"Normal","terastallized":""},{"ident":"p1: Mew","details":"Mew","condition":"341/341","active":false,"stats":{"atk":236,"def":236,"spa":236,"spd":236,"spe":236},"moves":["transform","psychic"],"baseAbility":"synchronize","item":"choicescarf","pokeball":"pokeball","ability":"synchronize","commanding":false,"reviving":false,"teraType":"Psychic","terastallized":""},{"ident":"p1: Gholdengo","details":"Gholdengo","condition":"315/315","active":false,"stats":{"atk":156,"def":226,"spa":302,"spd":218,"spe":204},"moves":["shadowball"],"baseAbility":"goodasgold","item":"leftovers","pokeball":"pokeball","ability":"goodasgold","commanding":false,"reviving":false,"teraType":"Steel","terastallized":""}]}}
+|
+|t:|1795548224
+|teamsize|p1|3
+|teamsize|p2|2
+|start
+|switch|p1a: Ditto|Ditto|300/300
+|switch|p2a: Garchomp|Garchomp, M|357/357
+|-transform|p1a: Ditto|p2a: Garchomp|[from] ability: Imposter
+|turn|1
+|request|{"active":[{"moves":[{"move":"Earthquake","id":"earthquake","pp":5,"maxpp":5,"target":"allAdjacent","disabled":false},{"move":"Swords Dance","id":"swordsdance","pp":5,"maxpp":5,"target":"self","disabled":false}],"canTerastallize":"Normal"}],"side":{"name":"Ana","id":"p1","pokemon":[{"ident":"p1: Ditto","details":"Ditto","condition":"300/300","active":true,"stats":{"atk":132,"def":133,"spa":132,"spd":195,"spe":132},"moves":["earthquake","swordsdance"],"baseAbility":"imposter","item":"choicescarf","pokeball":"pokeball","ability":"roughskin","commanding":false,"reviving":false,"teraType":"Normal","terastallized":""},{"ident":"p1: Mew","details":"Mew","condition":"341/341","active":false,"stats":{"atk":236,"def":236,"spa":236,"spd":236,"spe":236},"moves":["transform","psychic"],"baseAbility":"synchronize","item":"choicescarf","pokeball":"pokeball","ability":"synchronize","commanding":false,"reviving":false,"teraType":"Psychic","terastallized":""},{"ident":"p1: Gholdengo","details":"Gholdengo","condition":"315/315","active":false,"stats":{"atk":156,"def":226,"spa":302,"spd":218,"spe":204},"moves":["shadowball"],"baseAbility":"goodasgold","item":"leftovers","pokeball":"pokeball","ability":"goodasgold","commanding":false,"reviving":false,"teraType":"Steel","terastallized":""}]}}
+|
+|t:|1795548224
+|move|p1a: Ditto|Earthquake|p2a: Garchomp
+|-damage|p2a: Garchomp|206/357
+|move|p2a: Garchomp|Swords Dance|p2a: Garchomp
+|-boost|p2a: Garchomp|atk|2
+|
+|-heal|p2a: Garchomp|228/357|[from] item: Leftovers
+|upkeep
+|turn|2
+|request|{"active":[{"moves":[{"move":"Earthquake","id":"earthquake","pp":4,"maxpp":5,"target":"allAdjacent","disabled":false},{"move":"Swords Dance","id":"swordsdance","pp":5,"maxpp":5,"target":"self","disabled":true}],"canTerastallize":"Normal"}],"side":{"name":"Ana","id":"p1","pokemon":[{"ident":"p1: Ditto","details":"Ditto","condition":"300/300","active":true,"stats":{"atk":132,"def":133,"spa":132,"spd":195,"spe":132},"moves":["earthquake","swordsdance"],"baseAbility":"imposter","item":"choicescarf","pokeball":"pokeball","ability":"roughskin","commanding":false,"reviving":false,"teraType":"Normal","terastallized":""},{"ident":"p1: Mew","details":"Mew","condition":"341/341","active":false,"stats":{"atk":236,"def":236,"spa":236,"spd":236,"spe":236},"moves":["transform","psychic"],"baseAbility":"synchronize","item":"choicescarf","pokeball":"pokeball","ability":"synchronize","commanding":false,"reviving":false,"teraType":"Psychic","terastallized":""},{"ident":"p1: Gholdengo","details":"Gholdengo","condition":"315/315","active":false,"stats":{"atk":156,"def":226,"spa":302,"spd":218,"spe":204},"moves":["shadowball"],"baseAbility":"goodasgold","item":"leftovers","pokeball":"pokeball","ability":"goodasgold","commanding":false,"reviving":false,"teraType":"Steel","terastallized":""}]}}
+|
+|t:|1795548225
+|switch|p1a: Mew|Mew|341/341
+|move|p2a: Garchomp|Swords Dance|p2a: Garchomp
+|-boost|p2a: Garchomp|atk|2
+|
+|-heal|p2a: Garchomp|250/357|[from] item: Leftovers
+|upkeep
+|turn|3
+|request|{"active":[{"moves":[{"move":"Transform","id":"transform","pp":16,"maxpp":16,"target":"normal","disabled":false},{"move":"Psychic","id":"psychic","pp":16,"maxpp":16,"target":"normal","disabled":false}],"canTerastallize":"Psychic"}],"side":{"name":"Ana","id":"p1","pokemon":[{"ident":"p1: Mew","details":"Mew","condition":"341/341","active":true,"stats":{"atk":236,"def":236,"spa":236,"spd":236,"spe":236},"moves":["transform","psychic"],"baseAbility":"synchronize","item":"choicescarf","pokeball":"pokeball","ability":"synchronize","commanding":false,"reviving":false,"teraType":"Psychic","terastallized":""},{"ident":"p1: Ditto","details":"Ditto","condition":"300/300","active":false,"stats":{"atk":132,"def":133,"spa":132,"spd":195,"spe":132},"moves":["transform"],"baseAbility":"imposter","item":"choicescarf","pokeball":"pokeball","ability":"imposter","commanding":false,"reviving":false,"teraType":"Normal","terastallized":""},{"ident":"p1: Gholdengo","details":"Gholdengo","condition":"315/315","active":false,"stats":{"atk":156,"def":226,"spa":302,"spd":218,"spe":204},"moves":["shadowball"],"baseAbility":"goodasgold","item":"leftovers","pokeball":"pokeball","ability":"goodasgold","commanding":false,"reviving":false,"teraType":"Steel","terastallized":""}]}}
+|
+|t:|1795548225
+|move|p1a: Mew|Transform|p2a: Garchomp
+|-transform|p1a: Mew|p2a: Garchomp
+|move|p2a: Garchomp|Earthquake|p1a: Mew
+|-damage|p1a: Mew|0 fnt
+|faint|p1a: Mew
+|
+|-heal|p2a: Garchomp|272/357|[from] item: Leftovers
+|upkeep
+|request|{"forceSwitch":[true],"side":{"name":"Ana","id":"p1","pokemon":[{"ident":"p1: Mew","details":"Mew","condition":"0 fnt","active":true,"stats":{"atk":236,"def":236,"spa":236,"spd":236,"spe":236},"moves":["transform","psychic"],"baseAbility":"synchronize","item":"choicescarf","pokeball":"pokeball","ability":"synchronize","commanding":false,"reviving":false,"teraType":"Psychic","terastallized":""},{"ident":"p1: Ditto","details":"Ditto","condition":"300/300","active":false,"stats":{"atk":132,"def":133,"spa":132,"spd":195,"spe":132},"moves":["transform"],"baseAbility":"imposter","item":"choicescarf","pokeball":"pokeball","ability":"imposter","commanding":false,"reviving":false,"teraType":"Normal","terastallized":""},{"ident":"p1: Gholdengo","details":"Gholdengo","condition":"315/315","active":false,"stats":{"atk":156,"def":226,"spa":302,"spd":218,"spe":204},"moves":["shadowball"],"baseAbility":"goodasgold","item":"leftovers","pokeball":"pokeball","ability":"goodasgold","commanding":false,"reviving":false,"teraType":"Steel","terastallized":""}]},"noCancel":true}
+|
+|t:|1795548225
+|switch|p1a: Ditto|Ditto|300/300
+|-transform|p1a: Ditto|p2a: Garchomp|[from] ability: Imposter
+|turn|4
+|request|{"active":[{"moves":[{"move":"Earthquake","id":"earthquake","pp":5,"maxpp":5,"target":"allAdjacent","disabled":false},{"move":"Swords Dance","id":"swordsdance","pp":5,"maxpp":5,"target":"self","disabled":false}],"canTerastallize":"Normal"}],"side":{"name":"Ana","id":"p1","pokemon":[{"ident":"p1: Ditto","details":"Ditto","condition":"300/300","active":true,"stats":{"atk":132,"def":133,"spa":132,"spd":195,"spe":132},"moves":["earthquake","swordsdance"],"baseAbility":"imposter","item":"choicescarf","pokeball":"pokeball","ability":"roughskin","commanding":false,"reviving":false,"teraType":"Normal","terastallized":""},{"ident":"p1: Mew","details":"Mew","condition":"0 fnt","active":false,"stats":{"atk":236,"def":236,"spa":236,"spd":236,"spe":236},"moves":["transform","psychic"],"baseAbility":"synchronize","item":"choicescarf","pokeball":"pokeball","ability":"synchronize","commanding":false,"reviving":false,"teraType":"Psychic","terastallized":""},{"ident":"p1: Gholdengo","details":"Gholdengo","condition":"315/315","active":false,"stats":{"atk":156,"def":226,"spa":302,"spd":218,"spe":204},"moves":["shadowball"],"baseAbility":"goodasgold","item":"leftovers","pokeball":"pokeball","ability":"goodasgold","commanding":false,"reviving":false,"teraType":"Steel","terastallized":""}]}}
+|
+|t:|1795548225
+|move|p1a: Ditto|Swords Dance|p1a: Ditto
+|-boost|p1a: Ditto|atk|2
+|move|p2a: Garchomp|Earthquake|p1a: Ditto
+|-damage|p1a: Ditto|0 fnt
+|faint|p1a: Ditto
+|
+|-heal|p2a: Garchomp|294/357|[from] item: Leftovers
+|upkeep
+|request|{"forceSwitch":[true],"side":{"name":"Ana","id":"p1","pokemon":[{"ident":"p1: Ditto","details":"Ditto","condition":"0 fnt","active":true,"stats":{"atk":132,"def":133,"spa":132,"spd":195,"spe":132},"moves":["transform"],"baseAbility":"imposter","item":"choicescarf","pokeball":"pokeball","ability":"imposter","commanding":false,"reviving":false,"teraType":"Normal","terastallized":""},{"ident":"p1: Mew","details":"Mew","condition":"0 fnt","active":false,"stats":{"atk":236,"def":236,"spa":236,"spd":236,"spe":236},"moves":["transform","psychic"],"baseAbility":"synchronize","item":"choicescarf","pokeball":"pokeball","ability":"synchronize","commanding":false,"reviving":false,"teraType":"Psychic","terastallized":""},{"ident":"p1: Gholdengo","details":"Gholdengo","condition":"315/315","active":false,"stats":{"atk":156,"def":226,"spa":302,"spd":218,"spe":204},"moves":["shadowball"],"baseAbility":"goodasgold","item":"leftovers","pokeball":"pokeball","ability":"goodasgold","commanding":false,"reviving":false,"teraType":"Steel","terastallized":""}]},"noCancel":true}
+|
+|t:|1795548225
+|switch|p1a: Gholdengo|Gholdengo|315/315
+|turn|5
+|request|{"active":[{"moves":[{"move":"Shadow Ball","id":"shadowball","pp":24,"maxpp":24,"target":"normal","disabled":false}],"canTerastallize":"Steel"}],"side":{"name":"Ana","id":"p1","pokemon":[{"ident":"p1: Gholdengo","details":"Gholdengo","condition":"315/315","active":true,"stats":{"atk":156,"def":226,"spa":302,"spd":218,"spe":204},"moves":["shadowball"],"baseAbility":"goodasgold","item":"leftovers","pokeball":"pokeball","ability":"goodasgold","commanding":false,"reviving":false,"teraType":"Steel","terastallized":""},{"ident":"p1: Mew","details":"Mew","condition":"0 fnt","active":false,"stats":{"atk":236,"def":236,"spa":236,"spd":236,"spe":236},"moves":["transform","psychic"],"baseAbility":"synchronize","item":"choicescarf","pokeball":"pokeball","ability":"synchronize","commanding":false,"reviving":false,"teraType":"Psychic","terastallized":""},{"ident":"p1: Ditto","details":"Ditto","condition":"0 fnt","active":false,"stats":{"atk":132,"def":133,"spa":132,"spd":195,"spe":132},"moves":["transform"],"baseAbility":"imposter","item":"choicescarf","pokeball":"pokeball","ability":"imposter","commanding":false,"reviving":false,"teraType":"Normal","terastallized":""}]}}

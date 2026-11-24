@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { MAX_HUB, cleanHubSpot, poseAfter, type CharacterId, type HubLine, type HubMember, type PlazaEmote, type ServerMessage, type Spot } from '../../shared/src/index.js';
+import { DEFAULT_TRAINER, MAX_HUB, cleanHubSpot, poseAfter, type TrainerId, type CharacterId, type HubLine, type HubMember, type PlazaEmote, type ServerMessage, type Spot } from '../../shared/src/index.js';
 
 /** Lines a trainer walking in can still read. */
 const KEEP_LINES = 40;
@@ -21,10 +21,10 @@ export class Hub {
   has(ws: WebSocket) { return this.members.has(ws); }
 
   /** Walk in at `at` (or a spot near the middle), or change name and partner once in. False when the plaza is full. */
-  enter(ws: WebSocket, name: string, avatar: CharacterId | null, at: Spot | null): boolean {
+  enter(ws: WebSocket, name: string, avatar: CharacterId | null, at: Spot | null, trainer: TrainerId = DEFAULT_TRAINER): boolean {
     const cur = this.members.get(ws);
     if (cur) {
-      if (cur.name !== name || cur.avatar !== avatar) { cur.name = name; cur.avatar = avatar; this.others(ws, { type: 'hubJoin', member: { ...cur } }); }
+      if (cur.name !== name || cur.avatar !== avatar || cur.trainer !== trainer) { cur.name = name; cur.avatar = avatar; cur.trainer = trainer; this.others(ws, { type: 'hubJoin', member: { ...cur } }); }
       return true;
     }
     if (this.members.size >= MAX_HUB) return false;
@@ -34,7 +34,7 @@ export class Hub {
       const a = (Math.random() - 0.5) * 1.6, r = 8 + Math.random() * 1.5;
       spot = cleanHubSpot(Math.sin(a) * r, Math.cos(a) * r, Math.PI);
     }
-    const member: HubMember = { id: `m${++this.nextMember}`, name, avatar, pose: null, ...spot };
+    const member: HubMember = { id: `m${++this.nextMember}`, name, avatar, pose: null, trainer, ...spot };
     this.members.set(ws, member);
     this.send(ws, { type: 'hub', you: member.id, members: [...this.members.values()].map(m => ({ ...m })), chat: this.chat.slice() });
     this.others(ws, { type: 'hubJoin', member: { ...member } });

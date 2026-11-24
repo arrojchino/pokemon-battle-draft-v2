@@ -127,3 +127,117 @@ D.9 [x] This file fully filled in with evidence; final checklist in the reply. E
 E.1 [x] `CLAUDE.md` at the repo root with the multi-part request rules. Evidence: `CLAUDE.md` at the repo root holds the multi-part request rules.
 E.2 [x] No em dashes in code, comments, UI copy or docs touched by this task. Evidence: `grep -rln U+2014` over frontend/src, frontend/tests, shared/src, backend/src, README.md and docs returns nothing; the two "no value" glyphs became en dashes; `i18n.test.ts` rejects em dashes in every message.
 E.3 [x] Publish the result live (standing deploy workflow) and verify the live bundle. Evidence: `pbd_deploy.py prepare --tree --keep-prod` PREPARED (frontend tests 123, backend suites OK on the side port), `publish` commit dd9958dfb5, run 45022238703 success, `LIVE MATCHES BUILD ['index-Dxmuhy3r.js', ...]`; the live bundle has 0 CJK characters, contains the Spanish dictionary and no `ambience`. Production backend: it had stopped together with the tunnel; restarted under the supervisor on the new build, `/health` reports `"protocol":9`, origin check holds (`ws_probe`: Pages OPEN, foreign origin CLOSED 1008), `tests/flow.mjs` through the new tunnel prints `FLOW_OK ... protocol: 9`.
+
+# Task: plaza visibility, trainer grounding and models, Ditto transform, move effects, redesign QA
+
+Brief saved at `C:/Users/Garza/pbd-wip/brief-2-plaza-trainers-ditto-fx.md`. Items are ticked only with evidence.
+
+## P0. Process
+P0.1 [x] Read CLAUDE.md, docs/ARCHITECTURE.md, docs/PERFORMANCE.md, docs/REDESIGN_CHECKLIST.md. Evidence: read at the start of the redesign and this task (CLAUDE.md rules applied: checklist first, no em dashes).
+P0.2 [x] This numbered checklist exists before code. Evidence: this section. Evidence: this section, written before any code of this task.
+P0.3 [ ] No em dashes anywhere touched by this task.
+P0.4 [ ] Browser items verified in a real browser with independent contexts (Playwright or equivalent), not only unit tests.
+P0.5 [ ] Final reply re-reads the brief against this list and ends with the full checklist and status.
+
+## P1. Finish the redesign's open items (no rebuild)
+P1.1 [ ] Go through every open item of docs/REDESIGN_CHECKLIST.md, verify in a real browser, fix failures, record evidence there.
+P1.2 [x] Partner selection: reproduce the reported failure first (the brief's description field was left as a template, so the case is found by testing). Evidence: the brief left the description as a template, so every case was exercised in a real browser (REDESIGN_CHECKLIST "Browser QA evidence"). Failures found: the select panel clipped the 7th tile column and the confirm button at every size; on narrow landscape windows the partner stood behind the panel; floating partners were cut at the top; Create Battle opened the wrong tab.
+P1.3 [x] Partner selection: root cause found and fixed. Evidence: causes: `.shop__grid` used `repeat(7, 1fr)` (tracks cannot shrink below content) and `.shop__actions` nowrap buttons, so the panel content was 563px in a 438px panel; the showcase shot centred the partner where the panel sits; `MultiplayerScreen` ignored `mode`. Fixes in styles/screens.css, World.shotFor (select), MultiplayerScreen.tsx. After: panel scrollWidth 438/438 at 1280x720, 900x600, 1920x1080; partner right of the panel; Flutter Mane fully in frame.
+P1.4 [ ] Partner selection: a Playwright test for the exact case.
+P1.5 [ ] Partner selection: REDESIGN items 1.2 to 1.12 covered.
+P1.6 [~] Flow: skippable cinematic intro, then town plaza with people, then the top-left dropdown menu; plaza never the arena. Screenshot of each step. Evidence: flow verified in the smoke test (intro in its own scene, then the town, menu top-left) with screenshots in the session; screenshots to artifacts/ still to export.
+P1.7 [ ] Acceptance tests 8.1 to 8.18 run and recorded.
+
+## P2. Plaza: other people sometimes invisible
+P2.1 [x] Reproduce with 2 to 4 contexts: join, leave, rejoin, reload, back from the stadium. Evidence: 3 independent browser sessions (pzA2/pzB2/pzC2) on a v10 dev backend (8799) and the production build: join in order, B reload, C to the stadium and back, a server restart with all three inside. Every case: each context lists the other two in `others`, `peers` here=true, trainers in the town scene, name tags at opacity 1 (diag output in the session log).
+P2.2 [x] Root cause found before fixing (written below). Evidence: root cause: the client chose its server as `?ws=` > remembered `pc-backend` > none, and with none, or a remembered quick-tunnel host that no longer exists (cloudflared changes hostname on every restart), the plaza fell back to "your own plaza" silently, so other trainers never appeared. Reproduced on the live site in a clean profile: plain link and a stale stored host both showed "Your plaza". Second cause: `World.syncTrainers` kept a failed `Trainer` import as null for the whole session and left failed loads marked loading forever, so after one network hiccup no trainer appeared again.
+P2.3 [x] Check: production backend still on v9 (radius 9 clamp). Evidence: production was on v9 until it was restarted on the v10 build (health shows protocol 10 locally and through the tunnel). A v9 server clamps town spots to radius 9 (members still visible, placed wrong); now reported to players (P2.4).
+P2.4 [x] Client shows a clear message on protocol mismatch instead of failing silently. Evidence: `frontend/src/net/plazaLink.ts` (states shared/outdated/connecting/unreachable/tooOld/solo), plaza status in `ui/screens/PlazaScreen.tsx` with "Use the current server"; i18n keys plaza.unreachable, plaza.outdated, plaza.tooOld (en+es). Browser: a dead `?ws=` shows "Can't reach the battle server" and the button switches to the advertised server, reaching "2 trainers here".
+P2.5 [x] Restart procedure documented. Evidence: skill pbd-version-deploy Steps 3 (supervisor restart) and the Verify protocol note; `pbd_deploy.py prepare` now writes `frontend/public/backend.json` with the live tunnel (`advertise_backend`), so a restart that changes the tunnel host is picked up by the next deploy.
+P2.6 [ ] Check: BonePool (POOL_CAP 32) releases slots on Trainer.dispose(); new trainers keep showing after 32 joins and rejoins.
+P2.7 [ ] Check: World.syncTrainers 'loading' placeholder.
+P2.8 [x] Check: trainerMod import failing to null forever. Evidence: World.syncTrainers: a failed import resets `trainerMod` and failed loads drop their loading mark and retry every 4 s (`retryTrainers`). Browser: with `*Trainer-*.js` blocked the list is empty; after unblocking the trainer is in the scene within 10 s without reload.
+P2.9 [x] Check: a load finishing while in another environment. Evidence: code read: a load that finishes outside the town only joins the town scene when `envId === "town"`; `moveInto("town")` adds it later. Stadium round trip in the browser kept every trainer.
+P2.10 [x] Check: a member who leaves and rejoins with the same id while still 'loading'. Evidence: member ids are per connection (server assigns a new `m<n>`; backend test asserts "a rejoin is a new member"); for "me", a load that finishes after a leave and re-entry finds a newer entry and disposes itself.
+P2.11 [x] Check: stepTown setHere and anchor() hiding peers whose partner rig is not shown yet. Evidence: setHere uses the partner rig OR the trainer; anchor() for the hub rides the trainer walker, not the partner rig. Browser: tags at opacity 1 for every peer right after joining.
+P2.12 [x] Check: hub join ordering (others before world or town ready), hubResume and hubRigs.clear() on re-entry. Evidence: browser: C joined after A and B and saw both; A saw B and C arrive live; C back from the stadium saw both; after a server restart all three reappeared without reload.
+P2.13 [ ] Check: frustum culling of skinned trainer meshes whose bones live in the shared texture.
+P2.14 [x] Regression tests: frontend unit for the causes found. Evidence: `frontend/tests/plaza-link.test.ts` (5 tests: solo only without backend, unreachable after 6 s instead of solo, outdated flagged, tooOld, shared while reconnecting).
+P2.15 [x] Regression tests: backend tests/hub.mjs for the causes found. Evidence: `backend/tests/hub.mjs` block "Leave, drop and rejoin": town-edge spot (11,3) unclamped, terminated socket announces hubLeave, rejoin announced as a new member, late joiner sees it with no ghost, hub off/on on the same socket. HUB_OK against the v10 dev backend.
+
+## P3. Trainers sink through the ground
+P3.1 [ ] Inspect Trainer.ts (foot IK ground spots, hipsY, crouch/bob/dip, smin, model.position.y).
+P3.2 [ ] Inspect scenes/town: is the ground flat (paths, steps, fountain base, slopes).
+P3.3 [ ] Town ground height query (heightfield or raycast against a simplified walk mesh), cached, no per-frame allocations.
+P3.4 [ ] Used for the trainer root.
+P3.5 [ ] Used for both foot targets.
+P3.6 [ ] Used for partner followers.
+P3.7 [ ] Feet never below the surface and never floating: walk, turn in place, stop, gestures, every trainer scale.
+P3.8 [ ] QA view in qa/trainer.html walking a trainer over every ground type with foot contact shown.
+
+## P4. More trainer models, player choice
+P4.1 [ ] Generalize the bake to any VRM 0.x/1.0 humanoid: per-model asset, missing bones/hair/skirt/expressions handled.
+P4.2 [ ] Shared bone pool per model.
+P4.3 [ ] Each model loaded lazily, only when someone in the plaza uses it.
+P4.4 [ ] Only clearly licensed models; each license verified and recorded in docs/ASSETS.md.
+P4.5 [ ] Older CC0 VRoid samples checked against the VRoid help page on sample model conditions.
+P4.6 [ ] Open Source Avatars / 100Avatars (CC0) checked.
+P4.7 [ ] No AvatarSample_A/B/C or newer presets unless their conditions fit; no ripped Nintendo/Game Freak models.
+P4.8 [ ] 6 to 10 models fitting the look, mix of styles and body types.
+P4.9 [ ] Offline optimization script in scripts/ (texture size, meshopt/Draco, unused morphs stripped).
+P4.10 [ ] Per-model size budget documented and met.
+P4.11 [ ] Trainer picker in My Profile: 3D preview carousel with the colour tint.
+P4.12 [ ] Choice persisted in settings; random default on first visit.
+P4.13 [ ] Sync: trainer model id in hub member state, protocol bumped.
+P4.14 [ ] Server validates against an allowlist.
+P4.15 [ ] Late joiners see it.
+P4.16 [ ] Unknown id falls back to the default.
+P4.17 [ ] Backend tests updated.
+
+## P5. Ditto transform
+P5.1 [ ] `transform` battle fx through controller.ts, stageBridge.ts, BattleStage.ts (also Imposter on switch-in).
+P5.2 [ ] Morph effect: melts into a purple blob, reshapes.
+P5.3 [ ] Swaps to the target species model, preloaded with World.prepareMons as soon as the target is known.
+P5.4 [ ] Subtle Ditto tell (purple rim or shimmer).
+P5.5 [ ] HUD shows "Ditto (Transformed)".
+P5.6 [ ] Reverts on switch out.
+P5.7 [ ] Reverts on faint.
+P5.8 [ ] Correct on log replay / reconnect (resync).
+P5.9 [ ] Works for players and spectators (Watch screen and the plaza diorama).
+P5.10 [ ] Test with a fixture log that includes Imposter.
+
+## P6. Move effects
+P6.1 [ ] qa/moves.html: pick any move, play between two Pokemon of any sizes, replay, slow motion, export a keyframe contact sheet.
+P6.2 [ ] "Before" contact sheets for every move.
+P6.3 [ ] Each type has its own visual language (Fire, Water, Electric, Grass, Ice, Psychic, Ghost, Dragon, Dark, Fairy, Steel, Rock/Ground, Fighting, Poison, Bug, Flying, Normal as described).
+P6.4 [ ] Every move has anticipation, release, impact, linger.
+P6.5 [ ] Techniques: procedural-noise ShaderMaterials (no new textures), ribbon trails, fading ground decals, soft particles, reuse radial blur and flash.
+P6.6 [ ] Each recipe true to how the move looks in the games.
+P6.7 [ ] Rules kept: scale with the Pokemon, pooled and prewarmed, no light-count change, reduced motion and reduced flashing respected.
+P6.8 [ ] Within the PERFORMANCE.md budget; draw calls per move documented.
+P6.9 [ ] Batch 1: the 30 most common moves in shared/src/pool.ts, committed with before/after sheets in artifacts/.
+P6.10 [ ] Batch 2 and later: the rest, committed with before/after sheets.
+P6.11 [ ] Every move has an "after" contact sheet.
+
+## P7. Never blank while a model loads
+P7.1 [ ] Audit every load path and list it here (syncTrainers, partner rigs, battling Pokemon, PlazaHost/Presenter, intro).
+P7.2 [ ] Real browser with Slow 3G and cache disabled: record which ones go blank.
+P7.3 [ ] Trainer placeholder: soft glowing silhouette in the player's tint, name tag visible, spinning Poke Ball "Loading..." badge; can walk while loading.
+P7.4 [ ] Partner and battling Pokemon: keep stand-ins, add a progress ring with real loader progress and the name.
+P7.5 [ ] Materialize effect when ready (flash or dissolve), never a pop.
+P7.6 [ ] Failure: after timeout or error keep the stand-in with "Couldn't load" and retry on click; error logged once; game playable.
+P7.7 [ ] Corner indicator "Loading N models... P%" while anything visible downloads; full-screen veil only for scene entries.
+P7.8 [ ] Placeholders share one geometry and material per kind, compiled before shown.
+P7.9 [ ] Reduced motion respected (no spin, simple fade).
+P7.10 [ ] All text through i18n (English and Spanish).
+P7.11 [ ] Unit test for the placeholder state machine (loading to ready, failed to retry).
+P7.12 [ ] Throttled-network browser run with no blank frames, screenshots in artifacts/.
+
+## Done when
+PD.1 [ ] npm test and npm run build pass, frontend and backend; backend tests pass on the new protocol.
+PD.2 [ ] 3 contexts in the plaza always see each other (including leave, rejoin, reload, stadium round trip).
+PD.3 [ ] Trainers never clip through the ground.
+PD.4 [ ] Each context picks a different trainer model and the others see it.
+PD.5 [ ] Ditto transforms on screen and reverts correctly.
+PD.6 [ ] Every move has an after contact sheet; nothing exceeds the performance budget.
+PD.7 [ ] REDESIGN_CHECKLIST.md and TASK_CHECKLIST.md updated with evidence for every item.

@@ -277,7 +277,7 @@ wss.on('connection', (ws, req) => {
       if (meta) { send(ws, { type: 'error', message: 'Leave your room to enter the plaza' }); return; }
       stopWatching(ws);
       const was = hub.has(ws);
-      if (!hub.enter(ws, msg.name, msg.avatar, msg.at)) { send(ws, { type: 'error', message: 'The plaza is full, try again in a moment' }); return; }
+      if (!hub.enter(ws, msg.name, msg.avatar, msg.at, msg.trainer)) { send(ws, { type: 'error', message: 'The plaza is full, try again in a moment' }); return; }
       if (!was) send(ws, { type: 'hubFeature', feature: featured?.feature ?? null });
       return;
     }

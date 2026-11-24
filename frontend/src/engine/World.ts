@@ -4,7 +4,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import type { CharacterId, CoinSide, PlazaEmote, PlazaPose, Spot } from '@shared';
+import { DEFAULT_TRAINER, type CharacterId, type CoinSide, type PlazaEmote, type PlazaPose, type Spot, type TrainerId } from '@shared';
+import { trainerLook } from './trainerLook.js';
 import { DEFAULT_CHARACTER, characterById, type Emote } from '../characters/roster.js';
 import { CameraDirector, type Shot } from './CameraDirector.js';
 import { FLOOR_Y, MonRig, type Gesture } from './character/MonRig.js';
@@ -49,9 +50,9 @@ export type Layout =
    * The main plaza, a town square of its own: every trainer walks there with their partner following. This
    * player's trainer follows the keys from `spawn`; the others follow the network.
    */
-  | { mode: 'hub'; mine: CharacterId; spawn: Spot; others: HubPeer[] };
+  | { mode: 'hub'; mine: CharacterId; spawn: Spot; others: HubPeer[]; trainer?: TrainerId };
 /** Someone else in the main plaza: their member id, their partner, and where their trainer stood when they came in. */
-export type HubPeer = { id: string; partner: CharacterId; at: Spot };
+export type HubPeer = { id: string; partner: CharacterId; at: Spot; trainer?: TrainerId };
 /** Which environment (scene) shows a layout: the intro, the town square (main plaza, partner showcase) or the stadium. */
 export const envOf = (l: Layout): EnvId => (l.mode === 'intro' ? 'intro' : l.mode === 'hub' || l.mode === 'select' ? 'town' : 'stadium');
 type WalkLayout = Extract<Layout, { mode: 'plaza' | 'hub' }>;
@@ -67,6 +68,8 @@ const GESTURES: Partial<Record<PlazaEmote, Gesture>> = {
 type Pair = { mine: CharacterId | null; theirs: CharacterId | null };
 /** A screen point for overlays (CSS pixels, viewport); `on` is false when the partner is off screen. */
 export type Anchor = { x: number; y: number; on: boolean; d?: number };
+/** A battling Pokemon on screen (CSS px): centre x, head y, feet y, and whether a move animation is playing. */
+export type MonAnchor = { x: number; top: number; bottom: number; on: boolean; attacking: boolean };
 
 type Slot = { key: string; x: number; z: number; facing: number; focus: boolean };
 
@@ -162,6 +165,7 @@ export class World {
   private floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -FLOOR_Y);
   private floorHit = new THREE.Vector3();
   private anchorV = new THREE.Vector3();
+  private anchorFoot = new THREE.Vector3();
   /** A press on the stage is held: the plaza partner follows the pointer. */
   private steering = false;
   /** Someone else's partner fades while it blocks the view of this player's (by rig key). */
@@ -650,12 +654,26 @@ export class World {
         const town = this.town;
         if (town) {
           // The showcase stage in the town: the town's framing for a 1-unit partner, scaled to this one.
-          const sp = town.spots.showcase, c = town.spots.showcaseCam, f = this.framing(l.focus) / 0.95;
+          // 12% headroom: floating partners (Flutter Mane) rise above their nominal height.
+          const sp = town.spots.showcase, c = town.spots.showcaseCam, f = (this.framing(l.focus) / 0.95) * 1.12;
           const sc = (v: number[], base: number[]): [number, number, number] => [base[0] + (v[0] - base[0]) * f, FLOOR_Y + (v[1] - FLOOR_Y) * f, base[2] + (v[2] - base[2]) * f];
           const base = [sp.x, FLOOR_Y, sp.z];
           const portrait = this.camera.aspect < 0.85 ? 1.25 : 1;
           const pos = sc(c.pos, base), target = sc(c.target, base);
           if (portrait > 1) { pos[0] = base[0] + (pos[0] - base[0]) * portrait; pos[2] = base[2] + (pos[2] - base[2]) * portrait; target[1] -= 0.25 * f; }
+          else {
+            // Landscape: frame the partner in the free area right of the select panel (it covers about 440px + margin).
+            const panel = Math.min(0.62, (440 + 80) / Math.max(1, this.host.clientWidth));
+            const shift = Math.max(0, panel - 0.2); // NDC x of the partner: close to the centre of the free area (which is at NDC = panel)
+            if (shift > 0) {
+              const dx = target[0] - pos[0], dz = target[2] - pos[2], d = Math.hypot(dx, dz) || 1;
+              const dist = Math.hypot(dx, target[1] - pos[1], dz);
+              const halfW = dist * Math.tan(THREE.MathUtils.degToRad(c.fov) / 2) * Math.max(1, this.camera.aspect);
+              const k = halfW * shift; // move the camera left along its right vector, so the partner moves right on screen
+              const rx = -dz / d, rz = dx / d;
+              pos[0] -= rx * k; pos[2] -= rz * k; target[0] -= rx * k; target[2] -= rz * k;
+            }
+          }
           return { pos, target, fov: c.fov, time: 1.0 };
         }
         if (!l.focus) return { pos: [0, 1.1, 5.0], target: [0, 0.8, 0], fov: 31, time: 1.2 };
@@ -867,29 +885,56 @@ export class World {
    */
   private syncTrainers(l: Extract<Layout, { mode: 'hub' }> | null) {
     const want = new Map<string, CharacterId>();
-    if (l) { want.set('me', l.mine); for (const o of l.others) want.set(o.id, o.partner); }
+    const model = new Map<string, TrainerId>();
+    if (l) {
+      want.set('me', l.mine); model.set('me', l.trainer ?? DEFAULT_TRAINER);
+      for (const o of l.others) { want.set(o.id, o.partner); model.set(o.id, o.trainer ?? DEFAULT_TRAINER); }
+    }
     for (const [id, tr] of this.trainers) {
-      if (want.has(id)) continue;
+      // A trainer cannot switch model in place: someone who picked another model gets a new trainer.
+      const stale = want.has(id) && this.trainerModels.get(id) !== model.get(id);
+      if (want.has(id) && !stale) continue;
       if (tr !== 'loading') { tr.root.removeFromParent(); tr.dispose(); }
-      this.trainers.delete(id); this.followers.delete(id);
+      this.trainers.delete(id); this.trainerModels.delete(id);
+      if (!stale) this.followers.delete(id);
     }
     if (!l) return;
-    this.trainerMod ??= import('./character/Trainer.js').catch(e => { console.warn('[trainer]', e); return null; });
+    // A failed import is not remembered: the next sync tries again (it used to stay null for the whole session,
+    // and then no trainer ever appeared again).
+    const mod = this.trainerMod ??= import('./character/Trainer.js').catch(e => { console.warn('[trainer]', e); this.trainerMod = null; return null; });
     for (const [id, partner] of want) {
       if (this.trainers.has(id)) continue;
       this.trainers.set(id, 'loading');
+      const which = model.get(id) ?? DEFAULT_TRAINER;
+      this.trainerModels.set(id, which);
       const c = characterById(partner);
-      void this.trainerMod.then(async mod => {
-        if (!mod || this.disposed) return;
+      void mod.then(async m => {
+        if (!m) throw new Error('trainer module unavailable');
+        if (this.disposed) return;
         const look = trainerLook(id, c?.accent ?? '#3ee6ff');
-        const tr = await mod.Trainer.load(look, { reducedMotion: this.reducedMotion });
-        if (this.disposed || this.trainers.get(id) !== 'loading') { tr.dispose(); return; }
-        // The trainer never sets its own height: it stands on the town's ground.
+        const tr = await m.Trainer.load(look, { reducedMotion: this.reducedMotion, model: which });
+        if (this.disposed || this.trainers.get(id) !== 'loading' || this.trainerModels.get(id) !== which) { tr.dispose(); return; }
+        // The trainer stands on the town's ground: its root and both feet follow the ground height under them.
         tr.root.position.y = FLOOR_Y;
+        const town = this.town;
+        if (town?.heightAt) tr.setGround((x, z) => town.heightAt!(x, z));
         this.trainers.set(id, tr);
         if (this.envId === 'town' && this.town) this.town.scene.add(tr.root);
-      }).catch(e => { console.warn('[trainer]', e); });
+      }).catch(e => {
+        console.warn('[trainer]', e);
+        // Drop the 'loading' mark so the next sync (a layout change, someone arriving) retries this trainer.
+        if (this.trainers.get(id) === 'loading') { this.trainers.delete(id); this.trainerRetry ??= window.setTimeout(() => this.retryTrainers(), 4000); }
+      });
     }
+  }
+  private trainerRetry: number | null = null;
+  /** The model each trainer was loaded with (a change of model reloads it). */
+  private trainerModels = new Map<string, TrainerId>();
+  /** Retry trainers whose load failed (once every few seconds while in the town square). */
+  private retryTrainers() {
+    this.trainerRetry = null;
+    const l = this.layout;
+    if (!this.disposed && l?.mode === 'hub' && !this.pendingLayout) this.syncTrainers(l);
   }
   /** The rig for a main-plaza member: an instance of their partner nobody else is using (reused as people come and go). */
   private hubKey(o: HubPeer): string {
@@ -1003,6 +1048,22 @@ export class World {
    * Just above a partner's head on screen, in a plaza or a match: where name tags and chat bubbles go.
    * `who` is 'mine', 'theirs' (a room's rival) or a main-plaza member id.
    */
+  /** Where a battling Pokemon is on screen, for the health bars that sit next to it (stage side 0 is the local player). */
+  monAnchor(side: 0 | 1, out: MonAnchor): MonAnchor {
+    out.on = false; out.attacking = this.battle.attacking;
+    const l = this.layout;
+    if (!l || l.mode !== 'arena' || this.envId !== 'stadium' || this.cut.fade > 0.3) return out;
+    if (!this.battle.monBounds(side, this.anchorV, this.anchorFoot)) return out;
+    const head = this.anchorV.project(this.camera), foot = this.anchorFoot.project(this.camera);
+    if (head.z > 1 || foot.z > 1 || Math.abs(head.x) > 1.4) return out;
+    const r = this.canvas.getBoundingClientRect();
+    out.x = r.left + (head.x * 0.5 + 0.5) * r.width;
+    out.top = r.top + (0.5 - head.y * 0.5) * r.height;
+    out.bottom = r.top + (0.5 - foot.y * 0.5) * r.height;
+    out.on = true;
+    return out;
+  }
+
   anchor(who: string, out: Anchor): Anchor {
     out.on = false;
     const l = this.layout;
@@ -1102,6 +1163,9 @@ export class World {
     p.keyYaw = this.orbit.yaw;
     const sizeTrainer = (w: Walker) => { w.walk = w.run = TRAINER_WALK; w.radius = TRAINER_R; w.turn = 9; };
     sizeTrainer(p.me);
+    // The walk waits for the trainer's body to come round (a 180 is stepped, not spun on planted feet).
+    const meTr = this.trainerOf('me');
+    p.me.gate = meTr ? () => meTr.walkReady : null;
     const peers = this.peerKeys(l);
     for (const [id, key] of peers) { sizeTrainer(p.peer(id)); p.setHere(id, !!this.rigs.get(key)?.isShown || this.trainers.get(id) instanceof Object); }
     const mine = this.rigs.get(l.mine);
@@ -1119,7 +1183,7 @@ export class World {
     const fm = this.follower('me');
     fm.w.size(mine?.height ?? 0.7, mine?.walkSpeed);
     fm.update(dt, lead(p.me), this.hubBounds, !!mine?.resting);
-    if (mine) { mine.place(fm.w.x, fm.w.z, fm.w.face, true); mine.stride(fm.w.speed, fm.w.walk); }
+    if (mine) { mine.place(fm.w.x, fm.w.z, fm.w.face, true); mine.root.position.y = town.heightAt?.(fm.w.x, fm.w.z) ?? FLOOR_Y; mine.stride(fm.w.speed, fm.w.walk); }
     const me = this.trainerOf('me');
     if (me) { me.place(p.me.x, p.me.z, p.me.face); me.move(p.me.speed); }
     // A gesture asked for while the partner was still settling plays once it stands still.
@@ -1150,6 +1214,7 @@ export class World {
       if (tr) { tr.place(w.x, w.z, w.face); tr.move(w.speed); tr.setFade(blockFade(`t:${id}`, w.x, w.z, w.radius, TRAINER_H)); }
       if (!rig) continue;
       rig.place(f.w.x, f.w.z, f.w.face, true);
+      rig.root.position.y = town.heightAt?.(f.w.x, f.w.z) ?? FLOOR_Y;
       this.peerAct(id, key, rig, f.w);
       rig.stride(f.w.speed, f.w.walk);
       rig.setFade(blockFade(key, f.w.x, f.w.z, f.w.radius, rig.height));
@@ -1462,9 +1527,4 @@ const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
  * A trainer's look: outfit and accent from their partner's colour, a stable variation from their id, so the same
  * person looks the same on every screen.
  */
-function trainerLook(id: string, accent: string) {
-  let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  const outfits = ['#2b3a67', '#5a2a3c', '#1f4d4a', '#3d3354', '#4a3b22', '#22324a', '#5b2f2f', '#2d4a2b'];
-  const hair = ['#2a1d16', '#5a3a22', '#c8a26a', '#1b1b22', '#7a2e2e', '#3a4a6a'];
-  return { outfit: outfits[h % outfits.length], accent, hair: hair[(h >>> 4) % hair.length] };
-}
+

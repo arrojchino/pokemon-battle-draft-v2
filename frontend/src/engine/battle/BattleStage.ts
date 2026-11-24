@@ -4,10 +4,12 @@ import { moveInfo } from '@shared';
 import { pokemonArt } from '../../assets.js';
 import { easeOutCubic } from '../math.js';
 import { ARENA, BattleCamera } from './BattleCamera.js';
+import { FieldPersist, type SideLayers } from './persist.js';
 import { Barrier, Beam, Bolts, Cracks, Debris, Flares, Flashes, Particles, Rings, Shape, Slashes, Wave, warmTwin, type DebrisKind, type ParticleOpts } from './fx.js';
 import { impactDelay, recipeFor, windup, type Aura, type Recipe, type SelfEffect } from './moveFx.js';
 import type { Cue } from '../../audio/sound.js';
 import { MonBody, hasModel, loadMonModel } from '../character/monModel.js';
+import { TransformFx } from './transform.js'; // transform (ditto)
 import { monSize } from '../character/size.js';
 
 /** Battling Pokémon models are normalised to this height and stand on the platform top. */
@@ -510,6 +512,13 @@ export class BattleStage {
   private shields: [Barrier, Barrier];
   private walls: [Barrier, Barrier];
   private flashes: Flashes;
+  /** Hazards and screens that stay on the field until the battle removes them. */
+  readonly persist: FieldPersist;
+  /** Weather that keeps falling until it ends (rain, sand, snow, harsh sun motes) and its spawn budget. */
+  private weather: string | null = null;
+  private weatherAcc = 0;
+  /** Stage time until the current move animation has landed (the HUD steps aside until then). */
+  private fxUntil = 0;
   /** Lightning ribbons, light flares, the wave, ground cracks and a smoke field (see makeFx). */
   private fx: ReturnType<BattleStage['makeFx']>;
   /** The camera's position in stage space, refreshed every update (equal to world space for the main stage). */
@@ -544,6 +553,8 @@ export class BattleStage {
     for (const o of this.orbs) this.group.add(o.mesh);
     for (const b of this.beams) this.group.add(b.mesh);
     this.group.add(this.particles.mesh, this.rings.group, this.slashes.group, this.debris.group, this.flashes.group);
+    this.persist = new FieldPersist(() => [this.holos[0].height, this.holos[1].height], this.reduced);
+    this.group.add(this.persist.group);
     const sphere = new THREE.SphereGeometry(0.95, 40, 24);
     this.shields = [new Barrier(sphere), new Barrier(sphere.clone())];
     this.walls = [new Barrier(new THREE.PlaneGeometry(1.8, 1.5)), new Barrier(new THREE.PlaneGeometry(1.8, 1.5))];
@@ -600,6 +611,7 @@ export class BattleStage {
   private switchTint: [string, string] = ['#ffffff', '#ffffff'];
   switchIn(side: 0 | 1, artId: number, name: string, tint: string, instant: boolean) {
     const reduced = this.reduced();
+    this.morph.revert(side); // transform (ditto)
     // The battle's first send-outs (nobody on the field yet): both Pokémon are presented together.
     if (!instant && !this.holos[0].present && !this.holos[1].present) this.cam.openingStart();
     this.switchTint[side] = tint;
@@ -621,6 +633,18 @@ export class BattleStage {
   }
   /** The last Pokémon standing celebrates. */
   victory(side: 0 | 1) { this.holos[side].celebrate(); }
+  // transform (ditto): Transform and Imposter morph a side into another species; transform.ts does the work.
+  private morph = new TransformFx(this.group, () => this.reduced());
+  transform(side: 0 | 1, artId: number, name: string, tint: string, instant: boolean, keep: { status?: string | null; tera?: TypeName | null } = {}) {
+    const h = this.holos[side];
+    this.morph.start(side, h, () => {
+      void h.show(artId, name, tint, true);
+      h.status(keep.status ? STATUS_HEX[keep.status] ?? null : null, keep.status === 'slp');
+      if (keep.tera) h.tera(TYPE_HEX[keep.tera]);
+    }, instant);
+  }
+  untransform(side: 0 | 1) { this.morph.revert(side); }
+  // end transform (ditto)
 
   move(side: 0 | 1, move: string, type: TypeName, category: 'Physical' | 'Special' | 'Status', target: 0 | 1 | null) {
     const r = recipeFor(move, type, category);
@@ -633,6 +657,8 @@ export class BattleStage {
     // Wind-up first (the attacker's anticipation), then the effect; the damage line waits for both.
     const lead = windup(r);
     if (!selfMove && r.kind !== 'hazard' && r.kind !== 'field') this.impactAt[tgt] = this.time + lead + delay;
+    // The health bars clear the view for the attack and come back as it lands, so the HP drop is seen.
+    this.fxUntil = Math.max(this.fxUntil, this.time + lead + delay + (selfMove ? 0.35 : 0.1));
     const style = r.kind === 'dash' ? 'dash'
       : (r.kind === 'rain' && r.debris !== 'coin') || r.kind === 'quake' || r.kind === 'field' || r.kind === 'hazard' || r.kind === 'wave' ? 'field'
         : selfMove ? 'self' : 'projectile';
@@ -1738,6 +1764,7 @@ export class BattleStage {
     const wait = Math.max(0, this.impactAt[side] - this.time);
     this.later(wait, () => {
       this.holos[side].faint();
+      this.morph.revert(side); // transform (ditto)
       this.snd('faint', side);
       this.px(this.fk(side)).burst(this.center(side), 60, 1.4, { color: '#cfd6ff', size: 0.06, ttl: 1.4, rise: 1.2, drag: 1.5 });
       if (!this.reduced()) this.cam.faint(side);
@@ -1764,8 +1791,26 @@ export class BattleStage {
     const at = this.home(side).setY(ARENA.floorY + (up ? h * 0.25 : h * 1.2));
     this.px(this.fk(side)).burst(at, 26, 1.2, { color: up ? '#7fe9ff' : '#ff7a7a', size: 0.06, ttl: 0.8, rise: up ? 1.4 : -1.4, drag: 1 });
   }
+  /** True while a move animation plays (until its impact). */
+  get attacking() { return this.time < this.fxUntil; }
+  /** Head and feet of a side's active Pokemon in world space; false while nobody stands there. */
+  monBounds(side: 0 | 1, head: THREE.Vector3, foot: THREE.Vector3): boolean {
+    const h = this.holos[side];
+    if (!h.present) return false;
+    const m = ARENA.mon[side];
+    head.set(m.x, ARENA.floorY + h.height * 1.02 + 0.04, m.z); foot.set(m.x, ARENA.floorY, m.z);
+    this.group.localToWorld(head); this.group.localToWorld(foot);
+    return true;
+  }
+
+  /** A side's lasting conditions (simulator names to layer counts). */
+  setSideField(side: 0 | 1, layers: SideLayers, instant: boolean) { this.persist.set(side, layers, instant); }
+  setWeather(w: string | null) { this.weather = w; }
+
   clear() {
+    this.persist.clear(); this.weather = null; this.fxUntil = 0;
     for (const h of this.holos) h.hide();
+    this.morph.clear(); // transform (ditto)
     for (const o of this.orbs) o.stop();
     this.particles.clear(); this.rings.clear(); this.debris.clear(); this.flashes.clear();
     this.jobs.length = 0; this.cam.reset(); this.impactAt = [0, 0];
@@ -1794,6 +1839,7 @@ export class BattleStage {
     this.group.updateWorldMatrix(true, false);
     this.localCam.copy(this.camera.position); this.group.worldToLocal(this.localCam);
     for (const h of this.holos) h.update(dt, this.time, this.camera, this.localCam, reduced, this.group.localToWorld(this.holos[1 - h.side].center(this.foeWorld)));
+    this.morph.update(dt); // transform (ditto)
     // Shields and screens fit the Pokémon behind them; the camera frames each one at its size.
     for (const s of [0, 1] as const) {
       const h = this.holos[s], k = Math.max(0.42, h.height / 1.2);
@@ -1804,6 +1850,8 @@ export class BattleStage {
     this.cam.setFrame((this.camera as THREE.PerspectiveCamera).aspect ?? 16 / 9, this.holos[0].footprint, this.holos[1].footprint);
     if (this.cam.isOpening && this.holos[0].settled && this.holos[1].settled) this.cam.openingEnd();
     for (const o of this.orbs) o.update(dt);
+    this.persist.update(dt);
+    this.weatherFall(dt);
     this.particles.update(dt);
     this.rings.update(dt, this.camera);
     for (const b of this.beams) b.update(dt, this.time);
@@ -1815,7 +1863,27 @@ export class BattleStage {
     this.screenFlash.amt = Math.max(0, this.screenFlash.amt - dt * 1.2);
   }
 
+  /** Lasting weather: a steady trickle of particles across the field while it is up. */
+  private weatherFall(dt: number) {
+    const w = this.weather;
+    if (!w || this.lite) { this.weatherAcc = 0; return; }
+    const reduced = this.reduced();
+    const rate = (w === 'RainDance' || w === 'PrimordialSea' ? 110 : w === 'Sandstorm' ? 70 : w === 'Snow' || w === 'Snowscape' || w === 'Hail' ? 45 : w === 'SunnyDay' || w === 'DesolateLand' ? 10 : 0) * (reduced ? 0.4 : 1);
+    this.weatherAcc = Math.min(8, this.weatherAcc + rate * dt);
+    const P = this.particles;
+    while (this.weatherAcc >= 1) {
+      this.weatherAcc -= 1;
+      const x = -3.4 + Math.random() * 6.8, z = -3.2 + Math.random() * 6.2;
+      if (w === 'RainDance' || w === 'PrimordialSea') P.emit(tmp.set(x, 2.8 + Math.random() * 0.6, z), tmp2.set(0.4, -7.5, 0.1), { color: '#9fc8ff', size: 0.03, sizeEnd: 0.02, ttl: 0.42, alpha: 0.55 });
+      else if (w === 'Sandstorm') P.emit(tmp.set(-3.8, ARENA.floorY + Math.random() * 1.8, z), tmp2.set(4.5 + Math.random() * 2, (Math.random() - 0.5) * 0.4, -0.6), { color: Math.random() < 0.5 ? '#d9b77a' : '#b89359', size: 0.04, sizeEnd: 0.025, ttl: 1.6, alpha: 0.6 });
+      else if (w === 'SunnyDay' || w === 'DesolateLand') P.emit(tmp.set(x, ARENA.floorY + 0.2 + Math.random() * 1.6, z), tmp2.set(0, 0.25, 0), { color: '#ffd77a', size: 0.04, sizeEnd: 0.01, ttl: 2.2, alpha: 0.5 });
+      else P.emit(tmp.set(x, 2.6 + Math.random() * 0.6, z), tmp2.set(0.12, -0.7 - Math.random() * 0.3, 0.05), { color: '#ffffff', shape: Shape.Flake, size: 0.045, ttl: 3.4, spin: 1.5 });
+    }
+  }
+
   dispose() {
+    this.persist.dispose();
+    this.morph.dispose(); // transform (ditto)
     for (const h of this.holos) h.dispose();
     for (const o of this.orbs) { o.mesh.geometry.dispose(); o.mat.dispose(); }
     this.particles.dispose(); this.rings.dispose(); this.slashes.dispose(); this.debris.dispose();

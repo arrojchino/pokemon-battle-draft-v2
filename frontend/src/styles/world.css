@@ -166,3 +166,5 @@
   .plaza-status__text > small { display: none; }
   .wpanel { top: 64px; }
 }
+
+.dot--bad { background: var(--danger); }
