@@ -87,6 +87,11 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vect
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
 const _ident = new THREE.Matrix4();
 const TAU = Math.PI * 2;
+/** Leg-crossing guards (radians): how far a planted foot may stay turned off the body before it pivots on its
+ *  ball, and how far a knee or foot may point inward (toward the other leg) or outward. */
+const PIVOT_MAX = 0.35, KNEE_IN = 0.08, KNEE_OUT = 0.45, FOOT_IN = 0.2;
+/** Narrowest a step may land beside the other foot, across the heading (model metres, centre to centre). */
+const FOOT_GAP = 0.075;
 const frac = (x: number) => x - Math.floor(x);
 const smin = (a: number, b: number, k: number) => { const h = clamp(0.5 + (0.5 * (b - a)) / k, 0, 1); return lerp(b, a, h) - k * h * (1 - h); };
 
@@ -141,7 +146,7 @@ export class Trainer {
   // gait
   private feet: [Foot, Foot] = [newFoot(), newFoot()];
   private phase = 0; private gaitOn = false; private freq = 1; private duty = 0.6; private span = 0;
-  private walkW = 0; private jogW = 0; private lastSettle = 1;
+  private walkW = 0; private jogW = 0; private lastSettle = 1; private settleAt = -9; private sharpTurn = false;
   private hipsY = 0; private hipsYPrev = 0; private hipsVy = 0;
   // idle
   private time = 0; private breath = Math.random() * TAU; private weight = 0; private weightV = { v: 0 }; private weightGoal = 0.5; private weightNext = 3;
@@ -367,7 +372,19 @@ export class Trainer {
    * 0..1, how ready the body is to walk where it was told to face: 0 while the hips still lag more than about
    * 55 degrees behind (it is stepping round), 1 once within about 20. The town holds the walk on it.
    */
-  get walkReady(): number { const c = Math.cos(wrapAngle(this.face0 - this.yaw)); return clamp((c - 0.57) / (0.94 - 0.57), 0, 1); }
+  get walkReady(): number {
+    const c = Math.cos(wrapAngle(this.face0 - this.yaw));
+    const facing = clamp((c - 0.57) / (0.94 - 0.57), 0, 1);
+    // a sharp change of direction while walking: brake to a stop first (then square the feet, then go); turning
+    // on the move would leave the old stride's planted foot off to the side of the new heading (a straddle)
+    if (this.gaitOn && c < 0.35) this.sharpTurn = true;
+    if (this.gaitOn) return this.sharpTurn ? 0 : facing;
+    this.sharpTurn = false;
+    // setting off from a stand: the feet are squared under the new heading first (a settle step), or the first
+    // stride starts from a foot planted for the old heading and the legs straddle
+    const square = clamp((1.6 - Math.max(this.footError(0), this.footError(1))) / 0.6, 0, 1);
+    return Math.min(facing, square);
+  }
 
   // ---------------------------------------------------------------- frame
   update(dt: number): void {
@@ -419,7 +436,18 @@ export class Trainer {
     const target = this.yaw + wrapAngle(this.face0 - this.yaw);
     const moving = this.sp > 0.15;
     const om = (moving ? 11 : 7.5) * (this.reduced ? 0.75 : 1);
+    const yawBefore = this.yaw;
     this.yaw = spring(this.yaw, target, this.yawV, om, dt, moving ? 7 : 5);
+    // the body may not turn so far over its feet that they end up crossed under it: it waits for the next step
+    // (a stepping foot counts where it will land)
+    const gapAt = (y: number) => {
+      const a = this.feet[0], b = this.feet[1];
+      const ax = a.planted && !a.settle ? a.x : a.tx, az = a.planted && !a.settle ? a.z : a.tz;
+      const bx = b.planted && !b.settle ? b.x : b.tx, bz = b.planted && !b.settle ? b.z : b.tz;
+      return ((ax - bx) * Math.cos(y) - (az - bz) * Math.sin(y)) / this.s;
+    };
+    const g1 = gapAt(this.yaw);
+    if (g1 < FOOT_GAP * 0.55 && g1 < gapAt(yawBefore)) { this.yaw = yawBefore; this.yawV.v *= 0.3; }
     // the hips cannot twist far past the planted feet, so the feet set the pace of a sharp turn
     const f0 = this.feet[0], f1 = this.feet[1];
     const p0 = f0.planted && !f0.settle, p1 = f1.planted && !f1.settle;
@@ -455,6 +483,31 @@ export class Trainer {
     const c = Math.cos(yaw), s = Math.sin(yaw);
     // Width and the small stagger follow the body; the stride itself goes where the body is really travelling.
     return out.set(rx + lx * c + lz * s + lf * Math.sin(fwdYaw), 0, rz - lx * s + lz * c + lf * Math.cos(fwdYaw));
+  }
+
+  /**
+   * A planted foot pivots on its ball when the body turns past it (people do, rather than twisting the knee): it
+   * keeps within PIVOT_MAX of the body's own facing plus its toe-out. Position stays put; only the heel swings.
+   */
+  private pivotPlanted(k: number, dt: number) {
+    const ft = this.feet[k];
+    const want = this.yaw + (k === 0 ? 0.1 : -0.1);
+    const d = wrapAngle(want - ft.yaw), over = Math.abs(d) - PIVOT_MAX;
+    if (over > 0) ft.yaw += Math.sign(d) * over * damp(this.reduced ? 10 : 16, dt);
+  }
+
+  /**
+   * A step target for foot k at heading `yaw` must land on its own side of the other foot, at least FOOT_GAP
+   * apart across the heading (a left foot never lands right of the right foot): pushed out sideways if not.
+   */
+  private keepApart(k: number, yaw: number, out: THREE.Vector3) {
+    const o = this.feet[1 - k];
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    // body-left axis at this heading is (c, -s) in world x/z (stanceSpot's lateral direction)
+    const lat = (out.x - o.x) * c - (out.z - o.z) * s, side = k === 0 ? 1 : -1;
+    const need = FOOT_GAP * this.s - lat * side;
+    if (need > 0) { out.x += c * need * side; out.z -= s * need * side; }
+    return out;
   }
 
   private footError(k: number): number {
@@ -518,13 +571,16 @@ export class Trainer {
           // Land ahead along the actual travel (during a turn the hips lag behind it), beside the body's line.
           const vmag = Math.hypot(this.vx, this.vz), travel = vmag > 0.15 * this.s ? Math.atan2(this.vx, this.vz) : py;
           this.stanceSpot(k, py, ahead, _v3, this.px + this.vx * tau, this.pz + this.vz * tau, lerp(0.056, 0.045, this.walkW), travel);
+          if (this.feet[1 - k].planted) { this.keepApart(k, py, _v3); this.keepApart(k, this.yaw, _v3); }
           ft.tx = _v3.x; ft.tz = _v3.z; ft.tyaw = py + (k === 0 ? 0.1 : -0.1) * (1 - 0.5 * this.jogW);
           ft.tgy = this.footGnd(ft.tx, ft.tz, ft.tyaw, this.landPitch());
           // jogging feet kick up behind first and travel forward late
           const kick = 0.18 * this.jogW;
           const e = smooth(clamp(((u - kick) / (1 - kick)) * 1.08 - 0.02, 0, 1));
           ft.x = lerp(ft.fx, ft.tx, e); ft.z = lerp(ft.fz, ft.tz, e);
-          ft.yaw = ft.fyaw + wrapAngle(ft.tyaw - ft.fyaw) * e;
+          // the foot turns toward where it will land in the first part of the swing, as people do, instead of
+          // spending the whole step pointing across the other leg after a turn
+          ft.yaw = ft.fyaw + wrapAngle(ft.tyaw - ft.fyaw) * smooth(clamp(u * 2.4, 0, 1));
           // the swing never dips below the ground it passes over (a curb or a stage rim between the spots)
           ft.gy = Math.max(lerp(ft.fgy, ft.tgy, e), this.footGnd(ft.x, ft.z, ft.yaw, ft.pitch));
           // lift: rises fast after toe-off, glides down onto the heel
@@ -541,6 +597,7 @@ export class Trainer {
           const roll = -0.62 * smooth((u - 0.62) / 0.38);
           ft.pitch = (strike + roll) * this.walkW * (1 - 0.6 * this.jogW) + (this.jogW * -0.25 * smooth((u - 0.4) / 0.6));
           ft.h = 0; ft.lift = 0;
+          this.pivotPlanted(k, dt);
           ft.gy = this.footGnd(ft.x, ft.z, ft.yaw, ft.pitch);
         }
       }
@@ -550,7 +607,7 @@ export class Trainer {
       for (let k = 0; k < 2; k++) {
         const ft = this.feet[k];
         ft.pitch *= 1 - damp(10, dt);
-        if (!ft.settle) { if (ft.planted && this.ground) ft.gy = this.footGnd(ft.x, ft.z, ft.yaw, ft.pitch); continue; }
+        if (!ft.settle) { if (ft.planted) { this.pivotPlanted(k, dt); if (this.ground) ft.gy = this.footGnd(ft.x, ft.z, ft.yaw, ft.pitch); } continue; }
         ft.t += dt;
         const u = clamp(ft.t / ft.dur, 0, 1), e = smooth(u);
         ft.x = lerp(ft.fx, ft.tx, e); ft.z = lerp(ft.fz, ft.tz, e);
@@ -568,12 +625,17 @@ export class Trainer {
         const th = turning ? 1 : 0.65;
         if (Math.max(e0, e1) > th) {
           const other = this.lastSettle === 0 ? 1 : 0;
-          const k = (other === 0 ? e0 : e1) > th * 0.55 ? other : e0 > e1 ? 0 : 1;
+          // a big turn starts with the foot on the inside of the turn (turning left: the left foot opens first)
+          const turnDir = wrapAngle(this.face0 - this.yaw);
+          const inside = Math.abs(turnDir) > 0.6 && this.time - this.settleAt > 0.45 ? (turnDir > 0 ? 0 : 1) : -1;
+          const k: 0 | 1 = inside === 0 || inside === 1 ? inside : (other === 0 ? e0 : e1) > th * 0.55 ? other : e0 > e1 ? 0 : 1;
           const ft = this.feet[k];
           // aim the step at where the body is heading (the turn target), not only where it is now
           const ahead = wrapAngle(this.face0 - this.yaw);
           const py = this.yaw + clamp(ahead, -0.75, 0.75);
           this.stanceSpot(k, py, 0, _v3);
+          this.keepApart(k, py, _v3); this.keepApart(k, this.yaw, _v3);
+          this.settleAt = this.time;
           ft.fx = ft.x; ft.fz = ft.z; ft.fyaw = ft.yaw; ft.fgy = ft.gy;
           ft.tx = _v3.x; ft.tz = _v3.z; ft.tyaw = py + (k === 0 ? 0.12 : -0.12); ft.tgy = this.footGnd(ft.tx, ft.tz, ft.tyaw, 0);
           ft.settle = true; ft.planted = false; ft.t = 0; ft.dur = (this.reduced ? 0.38 : 0.27) * (turning ? 1 : 1.15);
@@ -778,10 +840,13 @@ export class Trainer {
     const g = this.goal;
     g.target.copy(ankle).sub(this.hipsPos).applyQuaternion(inv);
     const fy = ft.yaw - this.yaw;
-    g.pole.set(Math.sin(fy) * 0.9 + (k === 0 ? 0.14 : -0.14), 0, Math.cos(fy)).applyQuaternion(inv);
+    // the knee points over the foot, but never inward across the other leg and only a little outward
+    const ky = k === 0 ? clamp(fy, -KNEE_IN, KNEE_OUT) : clamp(fy, -KNEE_OUT, KNEE_IN);
+    g.pole.set(Math.sin(ky) * 0.9 + (k === 0 ? 0.14 : -0.14), 0, Math.cos(ky)).applyQuaternion(inv);
     const p = ft.pitch;
-    g.along.set(Math.sin(fy) * Math.cos(p), Math.sin(p), Math.cos(fy) * Math.cos(p)).applyQuaternion(inv);
-    g.normal.set(Math.sin(fy) * Math.sin(p), -Math.cos(p), Math.cos(fy) * Math.sin(p)).applyQuaternion(inv);
+    const fa = k === 0 ? clamp(fy, -FOOT_IN, 1.2) : clamp(fy, -1.2, FOOT_IN);
+    g.along.set(Math.sin(fa) * Math.cos(p), Math.sin(p), Math.cos(fa) * Math.cos(p)).applyQuaternion(inv);
+    g.normal.set(Math.sin(fa) * Math.sin(p), -Math.cos(p), Math.cos(fa) * Math.sin(p)).applyQuaternion(inv);
     g.twistShare = 0;
     const L = this.legQ;
     solveLimb(limb, g, L.up, L.lo, L.ft);
